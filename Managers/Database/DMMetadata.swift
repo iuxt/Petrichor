@@ -19,13 +19,8 @@ extension DatabaseManager {
         track.year = metadata.year?.nilIfEmpty ?? ""
         track.duration = HelperUtils.sanitizedDuration(metadata.duration)
         
-        // Avoid storing album art in track table for tracks with albums
-        // as we'll store it in albums table instead.
-        if track.album == "Unknown Album" || track.album.isEmpty {
-            track.trackArtworkData = metadata.artworkData
-        } else {
-            track.trackArtworkData = nil
-        }
+        // Artwork is resolved from source files through ArtworkResolver and is not stored in SQLite.
+        track.trackArtworkData = nil
 
         // Additional metadata
         track.albumArtist = metadata.albumArtist
@@ -131,18 +126,9 @@ extension DatabaseManager {
             hasChanges = true
         }
 
-        if let newArtworkData = metadata.artworkData {
-            let shouldStoreInTrack = (track.album == "Unknown Album" || track.album.isEmpty)
-            
-            if shouldStoreInTrack && track.trackArtworkData == nil {
-                // Store artwork for tracks without albums
-                track.trackArtworkData = newArtworkData
-                hasChanges = true
-            } else if !shouldStoreInTrack && track.trackArtworkData != nil {
-                // Clear artwork for tracks with albums
-                track.trackArtworkData = nil
-                hasChanges = true
-            }
+        if track.trackArtworkData != nil {
+            track.trackArtworkData = nil
+            hasChanges = true
         }
 
         return hasChanges
@@ -275,7 +261,6 @@ extension DatabaseManager {
 
     func updateArtistInfo(
         artistId: Int64,
-        imageData: Data? = nil,
         imageUrl: String? = nil,
         imageSource: String? = nil,
         bio: String? = nil,
@@ -285,7 +270,6 @@ extension DatabaseManager {
             _ = try dbQueue.write { db in
                 var assignments: [ColumnAssignment] = []
 
-                if let imageData { assignments.append(Artist.Columns.artworkData.set(to: imageData)) }
                 if let imageUrl { assignments.append(Artist.Columns.imageUrl.set(to: imageUrl)) }
                 if let imageSource {
                     assignments.append(Artist.Columns.imageSource.set(to: imageSource))
@@ -316,7 +300,6 @@ extension DatabaseManager {
                     .filter(Artist.Columns.id == artistId)
                     .updateAll(
                         db,
-                        Artist.Columns.artworkData.set(to: nil),
                         Artist.Columns.imageUrl.set(to: nil),
                         Artist.Columns.imageSource.set(to: "deleted"),
                         Artist.Columns.imageUpdatedAt.set(to: Date()),
