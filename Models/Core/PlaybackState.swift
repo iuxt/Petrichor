@@ -4,7 +4,6 @@ struct PlaybackUIState: Codable {
     let trackTitle: String
     let trackArtist: String
     let trackAlbum: String
-    let artworkData: Data?
     let playbackPosition: Double
     let trackDuration: Double
     let volume: Float
@@ -146,7 +145,6 @@ struct PlaybackState: Codable {
             trackTitle: track.title,
             trackArtist: track.artist,
             trackAlbum: track.album,
-            artworkData: track.artworkData,
             playbackPosition: playbackPosition,
             trackDuration: trackDuration,
             volume: volume

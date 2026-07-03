@@ -48,6 +48,7 @@ struct AsyncArtworkImage<Placeholder: View>: View {
             return
         }
 
+        image = nil
         let data = await ArtworkResolver.shared.artworkData(for: request)
         guard !Task.isCancelled else { return }
 

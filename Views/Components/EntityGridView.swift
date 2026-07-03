@@ -159,35 +159,27 @@ private struct EntityGridItem<T: Entity>: View {
     var body: some View {
         VStack(spacing: 8) {
             Group {
-                if let image = renderedImage {
+                if let albumEntity = entity as? AlbumEntity {
+                    AsyncArtworkImage(request: albumEntity.artworkRequest) {
+                        placeholderArtwork
+                    }
+                    .frame(width: ViewDefaults.gridArtworkSize, height: ViewDefaults.gridArtworkSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                } else if let image = renderedImage {
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
                         .frame(width: ViewDefaults.gridArtworkSize, height: ViewDefaults.gridArtworkSize)
                         .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
                 } else {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: ViewDefaults.gridArtworkSize, height: ViewDefaults.gridArtworkSize)
-                        .overlay(
-                            Group {
-                                if entity is ArtistEntity {
-                                    Text(entity.name.artistInitials)
-                                        .font(.system(size: 40, weight: .medium, design: .rounded))
-                                        .foregroundColor(.gray)
-                                } else {
-                                    Image(systemName: Icons.entityIcon(for: entity))
-                                        .font(.system(size: 48))
-                                        .foregroundColor(.gray)
-                                }
-                            }
-                        )
-                        .cornerRadius(8)
-                        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                    placeholderArtwork
                 }
             }
             .task(id: artworkTaskID) {
-                await loadArtwork()
+                if !(entity is AlbumEntity) {
+                    await loadArtwork()
+                }
             }
             
             VStack(alignment: .leading, spacing: 2) {
@@ -243,6 +235,27 @@ private struct EntityGridItem<T: Entity>: View {
     
     private var artworkTaskID: String {
         "\(entity.id.uuidString)-\(entity.artworkData?.count ?? 0)"
+    }
+
+    private var placeholderArtwork: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: ViewDefaults.gridArtworkSize, height: ViewDefaults.gridArtworkSize)
+            .overlay(
+                Group {
+                    if entity is ArtistEntity {
+                        Text(entity.name.artistInitials)
+                            .font(.system(size: 40, weight: .medium, design: .rounded))
+                            .foregroundColor(.gray)
+                    } else {
+                        Image(systemName: Icons.entityIcon(for: entity))
+                            .font(.system(size: 48))
+                            .foregroundColor(.gray)
+                    }
+                }
+            )
+            .cornerRadius(8)
+            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
     }
 
     private func loadArtwork() async {

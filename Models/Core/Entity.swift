@@ -113,6 +113,12 @@ struct AlbumEntity: Entity {
         year
     }
 
+    var artworkRequest: ArtworkRequest? {
+        representativeTrackURL.map {
+            ArtworkRequest.album(albumId: albumId, representativeTrackURL: $0)
+        }
+    }
+
     init(name: String, tracks: [Track]) {
         self.id = UUID(name: name.lowercased(), namespace: EntityNamespaces.album)
         self.name = name

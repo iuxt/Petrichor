@@ -13,6 +13,7 @@ struct EntityDetailView: View {
     @State private var isBackButtonHovered = false
     @State private var artistBio: String?
     @State private var gradientColors: [Color] = []
+    @State private var resolvedArtworkData: Data?
 
     init(entity: any Entity, onBack: (() -> Void)? = nil, pinnedItem: PinnedItem? = nil) {
         self.entity = entity
@@ -162,17 +163,26 @@ struct EntityDetailView: View {
         }
     }
     
-    private var displayedArtworkData: Data? {
-        entity.artworkData
-    }
-
     private var isPersonEntity: Bool {
         entity is ArtistEntity
     }
 
     private var entityArtwork: some View {
         Group {
-            if let artworkData = displayedArtworkData,
+            if let albumEntity = entity as? AlbumEntity {
+                AsyncArtworkImage(
+                    request: albumEntity.artworkRequest,
+                    onDataLoaded: { data in
+                        resolvedArtworkData = data
+                        updateGradientColors()
+                    }
+                ) {
+                    entityArtworkPlaceholder
+                }
+                .frame(width: 120, height: 120)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+            } else if let artworkData = entity.artworkData,
                let nsImage = NSImage(data: artworkData) {
                 Image(nsImage: nsImage)
                     .resizable()
@@ -181,30 +191,34 @@ struct EntityDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
             } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(width: 120, height: 120)
-                    .overlay(
-                        Group {
-                            if isPersonEntity {
-                                Text(entity.name.artistInitials)
-                                    .font(.system(size: 36, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
-                            } else if entity is CategoryEntity {
-                                Text(entity.name)
-                                    .font(.system(size: entity.name.count <= 5 ? 28 : 16, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(8)
-                            } else {
-                                Image(systemName: Icons.opticalDiscFill)
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    )
+                entityArtworkPlaceholder
             }
         }
+    }
+
+    private var entityArtworkPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color.secondary.opacity(0.2))
+            .frame(width: 120, height: 120)
+            .overlay(
+                Group {
+                    if isPersonEntity {
+                        Text(entity.name.artistInitials)
+                            .font(.system(size: 36, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    } else if entity is CategoryEntity {
+                        Text(entity.name)
+                            .font(.system(size: entity.name.count <= 5 ? 28 : 16, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(8)
+                    } else {
+                        Image(systemName: Icons.opticalDiscFill)
+                            .font(.system(size: 40))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            )
     }
     
     private var entityTypeLabel: String {
@@ -433,7 +447,15 @@ extension EntityDetailView {
             return
         }
 
-        gradientColors = entity.backgroundGradientColors(isDark: colorScheme == .dark)
+        if let resolvedArtworkData {
+            gradientColors = ImageUtils.cachedBackgroundGradientColors(
+                id: entity.id,
+                imageData: resolvedArtworkData,
+                isDark: colorScheme == .dark
+            )
+        } else {
+            gradientColors = entity.backgroundGradientColors(isDark: colorScheme == .dark)
+        }
     }
 
     private func loadTracks() {

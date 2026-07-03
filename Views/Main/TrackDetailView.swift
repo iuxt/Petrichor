@@ -7,6 +7,7 @@ struct TrackDetailView: View {
     @State private var fullTrack: FullTrack?
     @State private var isLoading = true
     @State private var gradientColors: [Color] = []
+    @State private var resolvedArtworkData: Data?
 
     @AppStorage("useArtworkColors")
     private var useArtworkColors = true
@@ -95,6 +96,7 @@ struct TrackDetailView: View {
             if oldId != newId {
                 isLoading = true
                 fullTrack = nil
+                resolvedArtworkData = nil
                 loadFullTrack()
                 updateGradientColors()
             }
@@ -112,7 +114,15 @@ struct TrackDetailView: View {
             gradientColors = []
             return
         }
-        gradientColors = track.backgroundGradientColors(isDark: colorScheme == .dark)
+        if let resolvedArtworkData {
+            gradientColors = ImageUtils.cachedBackgroundGradientColors(
+                id: track.id,
+                imageData: resolvedArtworkData,
+                isDark: colorScheme == .dark
+            )
+        } else {
+            gradientColors = track.backgroundGradientColors(isDark: colorScheme == .dark)
+        }
     }
 
     // MARK: - Load Full Track
@@ -163,26 +173,25 @@ struct TrackDetailView: View {
 
     private func artworkSection(for fullTrack: FullTrack) -> some View {
         ZStack {
-            if let artworkData = fullTrack.artworkData,
-               let nsImage = NSImage(data: artworkData) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 250, height: 250)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-                    .id(fullTrack.id)
-            } else {
+            AsyncArtworkImage(
+                request: ArtworkRequest.album(albumId: fullTrack.albumId, representativeTrackURL: fullTrack.url),
+                onDataLoaded: { data in
+                    resolvedArtworkData = data
+                    updateGradientColors()
+                }
+            ) {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.gray.opacity(0.2))
-                    .frame(width: 250, height: 250)
                     .overlay(
                         Image(systemName: Icons.musicNote)
                             .font(.system(size: 60))
                             .foregroundColor(.secondary)
                     )
-                    .id("placeholder-\(fullTrack.id)")
             }
+            .frame(width: 250, height: 250)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+            .id(fullTrack.id)
         }
         .padding(.top, 10)
     }

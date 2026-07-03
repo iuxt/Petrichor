@@ -101,6 +101,12 @@ private class PlaylistArtworkCache {
     }
 }
 
+private struct PlaylistCollageArtworkItem {
+    let trackId: Int64?
+    let albumId: Int64?
+    let data: Data
+}
+
 struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
     var id: UUID
     var name: String
@@ -309,8 +315,7 @@ struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
         if let customCover = coverArtworkData {
             return customCover
         }
-        let selected = collageTracks()
-        let selectedIDs = selected.compactMap { $0.trackId }
+        let selectedIDs = collageCandidateTracks().compactMap { $0.trackId }
         return PlaylistArtworkCache.shared.getCachedArtwork(for: id, currentTrackIDs: selectedIDs)
     }
 
@@ -318,9 +323,9 @@ struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
         if let customCover = coverArtworkData {
             return customCover
         }
-        let selected = collageTracks()
-        let selectedIDs = selected.compactMap { $0.trackId }
-        if let cached = PlaylistArtworkCache.shared.getCachedArtwork(for: id, currentTrackIDs: selectedIDs) {
+        let candidateIDs = collageCandidateTracks().compactMap { $0.trackId }
+        let selected = await collageArtworkItems()
+        if let cached = PlaylistArtworkCache.shared.getCachedArtwork(for: id, currentTrackIDs: candidateIDs) {
             return cached
         }
         let playlistID = id
@@ -328,7 +333,7 @@ struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
             Self.renderCollageArtwork(from: selected)
         }.value
         if let collage {
-            PlaylistArtworkCache.shared.setCachedArtwork(collage, for: playlistID, trackIDs: selectedIDs)
+            PlaylistArtworkCache.shared.setCachedArtwork(collage, for: playlistID, trackIDs: candidateIDs)
         }
         return collage
     }
@@ -357,29 +362,39 @@ struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
     /// Returns up to 4 tracks with artwork, preferring unique albums. Selection is
     /// order-independent (candidates are taken in stable `trackId` order) so the cover is a
     /// function of the playlist's *contents*, not its current sort/manual order.
-    private func collageTracks() -> [Track] {
-        let candidates = tracks
-            .filter { $0.artworkData != nil }
-            .sorted { ($0.trackId ?? .max) < ($1.trackId ?? .max) }
+    private func collageCandidateTracks() -> [Track] {
+        tracks.sorted { ($0.trackId ?? .max) < ($1.trackId ?? .max) }
+    }
+
+    private func collageArtworkItems() async -> [PlaylistCollageArtworkItem] {
+        let candidates = collageCandidateTracks()
 
         var seenAlbumIds = Set<Int64>()
-        var result: [Track] = []
+        var result: [PlaylistCollageArtworkItem] = []
         for track in candidates {
             guard let albumId = track.albumId, !seenAlbumIds.contains(albumId) else { continue }
+            guard let item = await collageArtworkItem(for: track) else { continue }
             seenAlbumIds.insert(albumId)
-            result.append(track)
+            result.append(item)
             if result.count == 4 { return result }
         }
         if result.count < 4 {
-            for track in candidates where !result.contains(where: { $0.id == track.id }) {
-                result.append(track)
+            for track in candidates where !result.contains(where: { $0.trackId == track.trackId }) {
+                guard let item = await collageArtworkItem(for: track) else { continue }
+                result.append(item)
                 if result.count == 4 { break }
             }
         }
         return result
     }
 
-    fileprivate static func renderCollageArtwork(from collageTracks: [Track]) -> Data? {
+    private func collageArtworkItem(for track: Track) async -> PlaylistCollageArtworkItem? {
+        let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url)
+        guard let data = await ArtworkResolver.shared.artworkData(for: request) else { return nil }
+        return PlaylistCollageArtworkItem(trackId: track.trackId, albumId: track.albumId, data: data)
+    }
+
+    private static func renderCollageArtwork(from collageTracks: [PlaylistCollageArtworkItem]) -> Data? {
         guard !collageTracks.isEmpty else { return nil }
 
         let pixelSize = 256
@@ -404,8 +419,7 @@ struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
         let count = collageTracks.count
 
         if count == 1 {
-            if let data = collageTracks[0].artworkData,
-               let source = CGImageSourceCreateWithData(data as CFData, nil),
+            if let source = CGImageSourceCreateWithData(collageTracks[0].data as CFData, nil),
                let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
                 context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
             }
@@ -414,8 +428,7 @@ struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
             for (index, (col, row)) in positions.enumerated() {
                 let trackIndex = count == 2 ? (index == 0 || index == 3 ? 0 : 1) : index % count
 
-                guard let data = collageTracks[trackIndex].artworkData,
-                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                guard let source = CGImageSourceCreateWithData(collageTracks[trackIndex].data as CFData, nil),
                       let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { continue }
 
                 context.draw(cgImage, in: CGRect(
