@@ -148,14 +148,9 @@ extension DatabaseManager {
             // Use the same dispatch as the Library sidebar so pinned-item track lists
             // match Library track lists for multi-artist filter types (artists, album
             // artists, composers).
-            var tracks = filterType.usesMultiArtistParsing && filterValue != filterType.unknownPlaceholder
+            return filterType.usesMultiArtistParsing && filterValue != filterType.unknownPlaceholder
                 ? getTracksByFilterTypeContaining(filterType, value: filterValue)
                 : getTracksByFilterType(filterType, value: filterValue)
-
-            // Populate album artwork if needed
-            populateAlbumArtworkForTracks(&tracks)
-
-            return tracks
 
         case .folder:
             guard let path = item.filterValue else { return [] }

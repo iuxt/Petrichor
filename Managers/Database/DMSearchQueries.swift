@@ -11,7 +11,7 @@ extension DatabaseManager {
     /// Search tracks using FTS5 with language-aware query strategy
     func searchTracksUsingFTS(_ searchText: String) -> [Track] {
         do {
-            var tracks = try dbQueue.read { db in
+            return try dbQueue.read { db in
                 let ftsQuery = buildFTS5Query(searchText)
                 let duplicateClause = UserDefaults.standard.bool(forKey: "hideDuplicateTracks") ? " AND t.is_duplicate = 0" : ""
 
@@ -28,10 +28,6 @@ extension DatabaseManager {
                     arguments: [ftsQuery]
                 )
             }
-            
-            populateAlbumArtworkForTracks(&tracks)
-            
-            return tracks
         } catch {
             Logger.error("FTS search failed: \(error)")
             return []
@@ -45,7 +41,7 @@ extension DatabaseManager {
         }
         
         do {
-            var tracks = try dbQueue.read { db in
+            return try dbQueue.read { db in
                 let prefixQuery = buildFTS5Query(searchText)
                 
                 // Respect the "hide duplicate songs" setting so playlist search results
@@ -82,10 +78,6 @@ extension DatabaseManager {
                     arguments: arguments
                 )
             }
-            
-            populateAlbumArtworkForTracks(&tracks)
-            
-            return tracks
         } catch {
             Logger.error("FTS playlist search failed: \(error)")
             return []

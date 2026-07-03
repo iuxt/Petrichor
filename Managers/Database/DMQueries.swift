@@ -9,43 +9,6 @@ import Foundation
 import GRDB
 
 extension DatabaseManager {
-    /// Populate track album art from albums table, falling back to track's own artwork
-    func populateAlbumArtworkForTracks(_ tracks: inout [Track], db: Database) throws {
-        // Populate from albums table
-        try populateAlbumArtwork(for: &tracks, db: db)
-        
-        // Fallback to track's own artwork when there's no album info associated with it
-        try populateTrackArtwork(for: &tracks, db: db)
-    }
-
-    func populateAlbumArtworkForTracks(_ tracks: inout [Track]) {
-        do {
-            try dbQueue.read { db in
-                try populateAlbumArtworkForTracks(&tracks, db: db)
-            }
-        } catch {
-            Logger.error("Failed to populate album artwork: \(error)")
-        }
-    }
-    
-    /// Populate album artwork for a single FullTrack
-    func populateAlbumArtworkForFullTrack(_ track: inout FullTrack) {
-        guard let albumId = track.albumId else { return }
-        
-        do {
-            if let artworkData = try dbQueue.read({ db in
-                try Album
-                    .select(Album.Columns.artworkData)
-                    .filter(Album.Columns.id == albumId)
-                    .fetchOne(db)?[Album.Columns.artworkData] as Data?
-            }) {
-                track.albumArtworkData = artworkData
-            }
-        } catch {
-            Logger.error("Failed to populate album artwork for full track: \(error)")
-        }
-    }
-    
     /// Get tracks for the Discover feature
     func getDiscoverTracks(limit: Int = 50, excludeTrackIds: Set<Int64> = []) -> [Track] {
         do {
@@ -83,8 +46,6 @@ extension DatabaseManager {
                     tracks.append(contentsOf: additionalTracks)
                 }
                 
-                try populateAlbumArtworkForTracks(&tracks, db: db)
-                
                 return tracks
             }
         } catch {
@@ -107,7 +68,7 @@ extension DatabaseManager {
         }
     }
 
-    /// Get tracks by IDs with their album artwork populated, in a single read. Tracks are
+    /// Get tracks by IDs in a single read. Tracks are
     /// returned in the same order as `trackIds` (a plain `IN` fetch returns DB order), so
     /// callers building a playlist preserve the intended track order.
     func getTracksWithArtwork(byIds trackIds: [Int64]) -> [Track] {
@@ -116,7 +77,6 @@ extension DatabaseManager {
                 var tracks = try Track
                     .filter(trackIds.contains(Track.Columns.trackId))
                     .fetchAll(db)
-                try self.populateAlbumArtworkForTracks(&tracks, db: db)
 
                 let positionByID = Dictionary(uniqueKeysWithValues: trackIds.enumerated().map { ($1, $0) })
                 tracks.sort { (positionByID[$0.trackId ?? -1] ?? .max) < (positionByID[$1.trackId ?? -1] ?? .max) }
@@ -350,9 +310,6 @@ extension DatabaseManager {
                 // Order results
                 tracks = tracks.sorted { $0.title < $1.title }
                 
-                // Populate album artwork
-                try populateAlbumArtworkForTracks(&tracks, db: db)
-                
                 return tracks
             }
         } catch {
@@ -433,7 +390,6 @@ extension DatabaseManager {
                     .fetchAll(db)
             }
             
-            populateAlbumArtworkForTracks(&tracks)
             return tracks
         } catch {
             Logger.error("Failed to get tracks for artist entity: \(error)")
@@ -470,7 +426,6 @@ extension DatabaseManager {
                 }
             }
             
-            populateAlbumArtworkForTracks(&tracks)
             return tracks
         } catch {
             Logger.error("Failed to get tracks for album entity: \(error)")
@@ -561,8 +516,6 @@ extension DatabaseManager {
                     .fetchAll(db)
             }
 
-            populateAlbumArtworkForTracks(&tracks)
-            
             return tracks
         } catch {
             Logger.error("Failed to fetch all tracks: \(error)")
@@ -578,8 +531,6 @@ extension DatabaseManager {
                     .order(Track.Columns.title)
                     .fetchAll(db)
             }
-            
-            populateAlbumArtworkForTracks(&tracks)
             
             return tracks
         } catch {
@@ -610,8 +561,6 @@ extension DatabaseManager {
             }
 
             tracks = tracks.filter { $0.url.deletingLastPathComponent().path == folderPath }
-
-            populateAlbumArtworkForTracks(&tracks)
 
             return tracks
         } catch {
@@ -771,60 +720,4 @@ extension DatabaseManager {
         return query
     }
     
-    // MARK: - Private Helpers
-
-    private func populateAlbumArtwork(for tracks: inout [Track], db: Database) throws {
-        let albumIds = tracks.compactMap { $0.albumId }.removingDuplicates()
-        guard !albumIds.isEmpty else { return }
-        
-        let request = Album
-            .select(Album.Columns.id, Album.Columns.artworkData)
-            .filter(albumIds.contains(Album.Columns.id))
-        
-        let rows = try Row.fetchAll(db, request)
-        
-        let artworkMap: [Int64: Data] = rows.reduce(into: [:]) { dict, row in
-            if let id: Int64 = row["id"],
-               let artwork: Data = row["artwork_data"] {
-                dict[id] = artwork
-            }
-        }
-        
-        for i in 0..<tracks.count {
-            if let albumId = tracks[i].albumId,
-               let artwork = artworkMap[albumId] {
-                tracks[i].albumArtworkData = artwork
-            }
-        }
-    }
-
-    private func populateTrackArtwork(for tracks: inout [Track], db: Database) throws {
-        let trackIdsNeedingArtwork = tracks
-            .filter { $0.albumArtworkData == nil }
-            .compactMap { $0.trackId }
-        
-        guard !trackIdsNeedingArtwork.isEmpty else { return }
-        
-        let request = FullTrack
-            .select(FullTrack.Columns.trackId, FullTrack.Columns.trackArtworkData)
-            .filter(trackIdsNeedingArtwork.contains(FullTrack.Columns.trackId))
-            .filter(FullTrack.Columns.trackArtworkData != nil)
-        
-        let rows = try Row.fetchAll(db, request)
-        
-        let artworkMap: [Int64: Data] = rows.reduce(into: [:]) { dict, row in
-            if let id: Int64 = row["id"],
-               let artwork: Data = row["track_artwork_data"] {
-                dict[id] = artwork
-            }
-        }
-        
-        for i in 0..<tracks.count {
-            if tracks[i].albumArtworkData == nil,
-               let trackId = tracks[i].trackId,
-               let artwork = artworkMap[trackId] {
-                tracks[i].albumArtworkData = artwork
-            }
-        }
-    }
 }

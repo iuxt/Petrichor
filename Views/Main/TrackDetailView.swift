@@ -120,9 +120,7 @@ struct TrackDetailView: View {
     private func loadFullTrack() {
         Task {
             do {
-                if var loaded = try await track.fullTrack(using: libraryManager.databaseManager.dbQueue) {
-                    libraryManager.databaseManager.populateAlbumArtworkForFullTrack(&loaded)
-                    
+                if let loaded = try await track.fullTrack(using: libraryManager.databaseManager.dbQueue) {
                     await MainActor.run {
                         self.fullTrack = loaded
                         self.isLoading = false
