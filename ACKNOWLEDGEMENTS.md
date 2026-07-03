@@ -136,12 +136,6 @@ All audio codec libraries listed above are **dynamically linked** at runtime and
 
 Petrichor's modern playback engine and its scan-time metadata reader are provided by Crescendo, distributed via the CrescendoKit package as three dynamically linked, embedded xcframeworks. These are used at runtime when the modern playback engine is enabled.
 
-### Crescendo
-
-- **Source**: https://github.com/kushalpandya/CrescendoKit
-- **License**: Proprietary (binary distribution; see the CrescendoKit LICENSE)
-- **Copyright**: Copyright (c) Kushal Pandya
-
 ### FFmpeg (via CFFmpeg)
 
 - **Source**: https://ffmpeg.org/

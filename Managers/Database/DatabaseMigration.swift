@@ -294,8 +294,17 @@ enum DatabaseMigrator {
             Logger.info("v15_remove_track_favorites migration completed")
         }
 
+        migrator.registerMigration("v16_clear_artwork_blobs") { db in
+            try db.execute(sql: "UPDATE albums SET artwork_data = NULL")
+            try db.execute(sql: "UPDATE artists SET artwork_data = NULL")
+            try db.execute(sql: "UPDATE tracks SET track_artwork_data = NULL")
+            try db.execute(sql: "UPDATE playlists SET cover_artwork_data = NULL")
+
+            Logger.info("v16_clear_artwork_blobs migration completed")
+        }
+
         // MARK: - Future Migrations
-        // Add new migrations here as: migrator.registerMigration("v16_description") { db in ... }
+        // Add new migrations here as: migrator.registerMigration("v17_description") { db in ... }
 
         return migrator
     }

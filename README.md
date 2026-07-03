@@ -26,28 +26,9 @@
 
 💡 **Tip**: Petrichor relies heavily on tracks having good metadata for all its features to work well.
 
-### ⌛ Upcoming Features
-
-- ~~Better file format support (eg; Opus & OGG)~~ (✅ [v.1.2.0](https://github.com/kushalpandya/Petrichor/releases/tag/v1.2.0))
-- ~~Audio Equalizer~~ (✅ [v.1.2.0](https://github.com/kushalpandya/Petrichor/releases/tag/v1.2.0))
-- AirPlay 2 casting support
-- Miniplayer and full-screen modes
-- Smart playlists with user-configurable conditional filters
-- Online album & artist information fetching
-- ... and much more!
-
 ###  Requirements
 
 - macOS 14 or later
-
-### ⚙️ Installation
-
-#### Manually
-
-- Go to [Releases](https://github.com/kushalpandya/Petrichor/releases) and download the latest `.dmg`.
-- Open the it and drag the app icon into the Applications folder.
-- In Applications, right-click **Petrichor > Open**.
-
 
 
 ### 🔒 Privacy & Data Access

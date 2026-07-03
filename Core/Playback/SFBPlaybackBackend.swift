@@ -388,11 +388,13 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
 
     // MARK: - Internal Methods (called by delegate bridge)
 
-    func handlePlaybackStateChanged(_ newState: SFBPlayerPlaybackState) {
+    func handlePlaybackStateChanged(_: SFBPlayerPlaybackState) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
-            switch newState {
+            let effectiveState = self.sfbPlayer.playbackState
+
+            switch effectiveState {
             case .playing:
                 if self.state != .playing {
                     self.state = .playing
@@ -421,6 +423,11 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
         if let entryId = currentEntryId {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
+
+                if self.sfbPlayer.playbackState != .stopped {
+                    Logger.info("Ignoring stale SFB end-of-audio callback while replacement playback is active")
+                    return
+                }
 
                 self.state = .stopped
                 self.backendDelegate?.backendDidFinishPlaying(

@@ -294,18 +294,15 @@ EOF
     
     # Step 4: Create DMG
     info "Creating DMG for $display_name..."
-    cd "$export_path"
-    
+
     if command -v create-dmg >/dev/null 2>&1; then
         local dmg_title="$APP_NAME $VERSION"
         [ "$suffix" != "Universal" ] && dmg_title="$APP_NAME-$suffix"
-        create-dmg "$APP_NAME.app" --dmg-title="$dmg_title" || {
+        create-dmg --volname "$dmg_title" "$dmg_path" "$export_path" || {
             error "create-dmg failed"; return 1
         }
-        mv *.dmg "../${APP_NAME}-${VERSION}-$suffix.dmg"
     else
         # Fallback to hdiutil
-        cd ..
         DMG_DIR="$BUILD_DIR/dmg-$suffix"
         mkdir -p "$DMG_DIR"
         cp -R "$export_path/$APP_NAME.app" "$DMG_DIR/"
@@ -314,8 +311,7 @@ EOF
             -srcfolder "$DMG_DIR" -ov -format UDZO "$dmg_path"
         rm -rf "$DMG_DIR"
     fi
-    
-    cd - >/dev/null
+
     [ -f "$dmg_path" ] || { error "DMG creation failed!"; return 1; }
     
     # Step 5: Sign DMG if we have Developer ID
@@ -374,13 +370,9 @@ create_local_installer() {
 
     info "Creating unsigned local DMG for $display_name..."
     if command -v create-dmg >/dev/null 2>&1; then
-        (
-            cd "$export_path"
-            local dmg_title="$APP_NAME $VERSION Local"
-            [ "$suffix" != "Universal" ] && dmg_title="$APP_NAME-$suffix Local"
-            create-dmg "$APP_NAME.app" --dmg-title="$dmg_title"
-            mv *.dmg "$dmg_path"
-        ) || {
+        local dmg_title="$APP_NAME $VERSION Local"
+        [ "$suffix" != "Universal" ] && dmg_title="$APP_NAME-$suffix Local"
+        create-dmg --volname "$dmg_title" "$dmg_path" "$export_path" || {
             error "create-dmg failed"
             return 1
         }
