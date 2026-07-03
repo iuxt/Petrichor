@@ -381,6 +381,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "desktopLyricsClickThrough": false,
             "desktopLyricsFontName": DesktopLyricsSettings.systemFontName,
             "desktopLyricsFontSize": 28.0,
+            "appLanguage": AppLanguage.system.rawValue,
             MediaBackend.userDefaultsKey: true
         ]
 

@@ -3,12 +3,14 @@ import SwiftUI
 @main
 struct PetrichorApp: App {
     @StateObject private var appCoordinator: AppCoordinator
+    @StateObject private var localizationSettings: LocalizationSettings
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     var appDelegate
 
     init() {
         AppDelegate.registerUserDefaultsDefaults()
         _appCoordinator = StateObject(wrappedValue: AppCoordinator())
+        _localizationSettings = StateObject(wrappedValue: LocalizationSettings())
     }
     
     @AppStorage("showFoldersTab")
@@ -37,6 +39,8 @@ struct PetrichorApp: App {
                 .environmentObject(appCoordinator.playbackManager.playbackProgressState)
                 .environmentObject(appCoordinator.libraryManager)
                 .environmentObject(appCoordinator.playlistManager)
+                .environmentObject(localizationSettings)
+                .environment(\.locale, localizationSettings.locale)
                 .onReceive(appCoordinator.playlistManager.$repeatMode) { _ in
                     menuUpdateTrigger = UUID()
                 }
@@ -95,6 +99,8 @@ struct PetrichorApp: App {
         WindowGroup("Equalizer", id: "equalizer") {
             EqualizerView()
                 .environmentObject(appCoordinator.playbackManager)
+                .environmentObject(localizationSettings)
+                .environment(\.locale, localizationSettings.locale)
         }
         .handlesExternalEvents(matching: [])
         .defaultSize(width: 500, height: 300)
