@@ -244,7 +244,7 @@ struct ImmersiveView: View {
             artworkView(side: layout.artSide, cornerRadius: layout.cornerRadius)
 
             VStack(spacing: layout.titleSpacing) {
-                Text(playbackManager.currentTrack?.title ?? String(localized: "Not Playing"))
+                Text(playbackManager.currentTrack?.title ?? String(appLocalized: "Not Playing"))
                     .font(.system(size: layout.titleFontSize, weight: .semibold))
                     .foregroundColor(adaptiveText)
                     .lineLimit(1)
@@ -373,8 +373,8 @@ struct ImmersiveView: View {
                 isActive: panel == .queue,
                 isEnabled: true,
                 activeTint: artworkTint,
-                activeHelp: String(localized: "Hide Queue"),
-                inactiveHelp: String(localized: "Show Queue"),
+                activeHelp: String(appLocalized: "Hide Queue"),
+                inactiveHelp: String(appLocalized: "Show Queue"),
                 action: { toggle(.queue) },
                 label: {
                     Image(systemName: Icons.queueList)
@@ -386,8 +386,8 @@ struct ImmersiveView: View {
                 isActive: panel == .lyrics,
                 isEnabled: hasCurrentTrack,
                 activeTint: artworkTint,
-                activeHelp: String(localized: "Hide Lyrics"),
-                inactiveHelp: String(localized: "Show Lyrics"),
+                activeHelp: String(appLocalized: "Hide Lyrics"),
+                inactiveHelp: String(appLocalized: "Show Lyrics"),
                 action: { toggle(.lyrics) },
                 label: {
                     Image(Icons.customLyrics)
@@ -401,8 +401,8 @@ struct ImmersiveView: View {
                 isActive: false,
                 isEnabled: true,
                 activeTint: artworkTint,
-                activeHelp: String(localized: "Close Immersive Mode"),
-                inactiveHelp: String(localized: "Close Immersive Mode"),
+                activeHelp: String(appLocalized: "Close Immersive Mode"),
+                inactiveHelp: String(appLocalized: "Close Immersive Mode"),
                 action: { close() },
                 label: {
                     Image(systemName: "xmark")

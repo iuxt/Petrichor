@@ -164,7 +164,7 @@ struct LibrarySidebarView: View {
             }
             .buttonStyle(.borderless)
             .hoverEffect(scale: 1.1)
-            .help(sortAscending ? String(localized: "Sort descending") : String(localized: "Sort ascending"))
+            .help(sortAscending ? String(appLocalized: "Sort descending") : String(appLocalized: "Sort ascending"))
         }
     }
 

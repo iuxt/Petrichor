@@ -61,10 +61,10 @@ struct GeneralTabView: View {
 
     private var engineToggleHelp: String {
         if notificationManager.isActivityInProgress {
-            return String(localized: "Unavailable while the library is updating")
+            return String(appLocalized: "Unavailable while the library is updating")
         }
         // swiftlint:disable:next line_length - localization key must remain a single literal for extraction.
-        let message = String(localized: "Switches the engine used to play your music. Changing this will cause the playback to stop, and you can resume it later.")
+        let message = String(appLocalized: "Switches the engine used to play your music. Changing this will cause the playback to stop, and you can resume it later.")
         return message
     }
 
@@ -83,10 +83,10 @@ struct GeneralTabView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     engineInfoPoint(
-                        String(localized: "Gapless playback, so albums and live recordings flow from one track to the next with no silent pause.")
+                        String(appLocalized: "Gapless playback, so albums and live recordings flow from one track to the next with no silent pause.")
                     )
-                    engineInfoPoint(String(localized: "Wider, more spacious stereo sound."))
-                    engineInfoPoint(String(localized: "Spatial Audio on supported headphones."))
+                    engineInfoPoint(String(appLocalized: "Wider, more spacious stereo sound."))
+                    engineInfoPoint(String(appLocalized: "Spatial Audio on supported headphones."))
                 }
 
                 Text("Turn it off to switch back to the classic engine. Your music and library stay exactly the same either way.")

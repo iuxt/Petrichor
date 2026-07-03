@@ -35,139 +35,139 @@ public enum EqualizerPreset: String, CaseIterable {
         case .flat:
             return (
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                String(localized: "Flat"),
+                String(appLocalized: "Flat"),
                 "No adjustments"
             )
         case .acoustic:
             return (
                 [5, 4, 3, 1, 2, 2, 3, 3, 3, 2],
-                String(localized: "Acoustic"),
+                String(appLocalized: "Acoustic"),
                 "Enhanced clarity and warmth for acoustic music"
             )
         case .rock:
             return (
                 [4, 3, -1, -1, 1, 2, 3, 3, 3, 3],
-                String(localized: "Rock"),
+                String(appLocalized: "Rock"),
                 "Enhanced bass and treble with boosted mids"
             )
         case .pop:
             return (
                 [-1, -1, 0, 2, 4, 4, 2, 0, -1, -1],
-                String(localized: "Pop"),
+                String(appLocalized: "Pop"),
                 "Boosted mids with controlled bass and treble"
             )
         case .jazz:
             return (
                 [3, 2, 1, 2, -1, -1, 0, 1, 2, 3],
-                String(localized: "Jazz"),
+                String(appLocalized: "Jazz"),
                 "Enhanced warmth with clear highs"
             )
         case .classical:
             return (
                 [4, 3, 2, 0, 0, 0, -1, -2, -2, -3],
-                String(localized: "Classical"),
+                String(appLocalized: "Classical"),
                 "Natural sound with enhanced clarity"
             )
         case .electronic:
             return (
                 [6, 5, 3, 0, -2, 0, 2, 3, 4, 5],
-                String(localized: "Electronic"),
+                String(appLocalized: "Electronic"),
                 "Strong bass with crystal clear highs"
             )
         case .dance:
             return (
                 [5, 6, 4, 0, 2, 3, 4, 3, 2, 1],
-                String(localized: "Dance"),
+                String(appLocalized: "Dance"),
                 "Strong bass with punchy mids"
             )
         case .hipHop:
             return (
                 [7, 6, 3, 2, -1, -1, 1, 2, 3, 4],
-                String(localized: "Hip-Hop"),
+                String(appLocalized: "Hip-Hop"),
                 "Heavy bass with vocal clarity"
             )
         case .rnb:
             return (
                 [6, 5, 2, -1, -2, 1, 2, 2, 3, 4],
-                String(localized: "R&B"),
+                String(appLocalized: "R&B"),
                 "Smooth bass with vocal presence"
             )
         case .latin:
             return (
                 [4, 3, 0, 0, -1, -1, 2, 3, 4, 5],
-                String(localized: "Latin"),
+                String(appLocalized: "Latin"),
                 "Bright and energetic sound"
             )
         case .increaseBass:
             return (
                 [8, 7, 6, 4, 2, 0, 0, 0, 0, 0],
-                String(localized: "Bass Booster"),
+                String(appLocalized: "Bass Booster"),
                 "Maximum bass boost"
             )
         case .reduceBass:
             return (
                 [-6, -5, -4, -2, -1, 0, 0, 0, 0, 0],
-                String(localized: "Bass Reducer"),
+                String(appLocalized: "Bass Reducer"),
                 "Reduced bass frequencies"
             )
         case .increaseTreble:
             return (
                 [0, 0, 0, 0, 0, 2, 4, 6, 7, 8],
-                String(localized: "Treble Booster"),
+                String(appLocalized: "Treble Booster"),
                 "Maximum treble boost"
             )
         case .reduceTreble:
             return (
                 [0, 0, 0, 0, 0, -1, -2, -4, -5, -6],
-                String(localized: "Treble Reducer"),
+                String(appLocalized: "Treble Reducer"),
                 "Reduced treble frequencies"
             )
         case .increaseVocals:
             return (
                 [-2, -1, -1, 1, 3, 4, 4, 3, 1, 0],
-                String(localized: "Vocal Booster"),
+                String(appLocalized: "Vocal Booster"),
                 "Enhanced vocal presence"
             )
         case .deep:
             return (
                 [7, 6, 4, 2, 1, -1, -2, -3, -3, -4],
-                String(localized: "Deep"),
+                String(appLocalized: "Deep"),
                 "Maximum bass presence"
             )
         case .lounge:
             return (
                 [-3, -2, -1, 1, 3, 2, 0, -1, 2, 1],
-                String(localized: "Lounge"),
+                String(appLocalized: "Lounge"),
                 "Smooth and relaxed sound"
             )
         case .piano:
             return (
                 [-1, 0, 1, 2, 3, 2, 1, 3, 4, 3],
-                String(localized: "Piano"),
+                String(appLocalized: "Piano"),
                 "Clarity for piano and strings"
             )
         case .spokenWord:
             return (
                 [-3, -2, 0, 1, 3, 4, 4, 3, 2, 0],
-                String(localized: "Spoken Word"),
+                String(appLocalized: "Spoken Word"),
                 "Enhanced vocal clarity for podcasts"
             )
         case .smallSpeakers:
             return (
                 [5, 4, 3, 2, 1, 0, -1, -2, -2, -3],
-                String(localized: "Small Speakers"),
+                String(appLocalized: "Small Speakers"),
                 "Optimized for small speakers"
             )
         case .loudness:
             return (
                 [6, 4, 0, 0, 0, 0, -1, 3, 5, 6],
-                String(localized: "Loudness"),
+                String(appLocalized: "Loudness"),
                 "Enhanced perceived loudness"
             )
         case .wow:
             return (
                 [8, 7, 5, 2, 1, 1, 2, 3, 4, 3],
-                String(localized: "Wow"),
+                String(appLocalized: "Wow"),
                 "Extreme enhancement for maximum impact"
             )
         }

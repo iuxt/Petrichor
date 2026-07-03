@@ -8,8 +8,8 @@ private enum EditorTab: TabbedItem {
 
     var title: String {
         switch self {
-        case .playlist: return String(localized: "Playlist")
-        case .add: return String(localized: "Add Songs")
+        case .playlist: return String(appLocalized: "Playlist")
+        case .add: return String(appLocalized: "Add Songs")
         }
     }
 
@@ -139,11 +139,11 @@ struct RegularPlaylistEditorSheet: View {
     // MARK: - Header
 
     private var headerTitle: String {
-        isEditing ? String(localized: "Edit Playlist") : String(localized: "New Playlist")
+        isEditing ? String(appLocalized: "Edit Playlist") : String(appLocalized: "New Playlist")
     }
 
     private var saveButtonTitle: String {
-        isEditing ? String(localized: "Save") : String(localized: "Create")
+        isEditing ? String(appLocalized: "Save") : String(appLocalized: "Create")
     }
 
     private var nameSection: some View {
@@ -397,7 +397,7 @@ extension RegularPlaylistEditorSheet {
     }
 
     private var removeHelp: String {
-        isFiltering ? String(localized: "Remove matching songs") : String(localized: "Remove all songs")
+        isFiltering ? String(appLocalized: "Remove matching songs") : String(appLocalized: "Remove all songs")
     }
 
     /// Tracks staged that weren't in the original playlist.
@@ -439,11 +439,11 @@ extension RegularPlaylistEditorSheet {
         let added = addedCount
         let removed = removedCount
         if added > 0 && removed > 0 {
-            return String(localized: "Add \(HelperUtils.songCount(added)), remove \(HelperUtils.songCount(removed))")
+            return String(appLocalized: "Add \(HelperUtils.songCount(added)), remove \(HelperUtils.songCount(removed))")
         } else if added > 0 {
-            return String(localized: "Add \(HelperUtils.songCount(added))")
+            return String(appLocalized: "Add \(HelperUtils.songCount(added))")
         } else if removed > 0 {
-            return String(localized: "Remove \(HelperUtils.songCount(removed))")
+            return String(appLocalized: "Remove \(HelperUtils.songCount(removed))")
         }
         return nil
     }

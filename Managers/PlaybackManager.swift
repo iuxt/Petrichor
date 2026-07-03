@@ -206,7 +206,7 @@ class PlaybackManager: NSObject, ObservableObject {
         
         guard FileManager.default.fileExists(atPath: track.url.path) else {
             Logger.warning("Track file does not exist: \(track.url.path)")
-            NotificationManager.shared.addMessage(.error, String(localized: "Cannot play '\(track.title)': File not found"))
+            NotificationManager.shared.addMessage(.error, String(appLocalized: "Cannot play '\(track.title)': File not found"))
             
             // Auto-skip to next track if in queue
             if playlistManager.currentQueue.count > 1 {
@@ -223,7 +223,7 @@ class PlaybackManager: NSObject, ObservableObject {
                     await MainActor.run {
                         guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                         Logger.error("Failed to fetch full track data for: \(track.title)")
-                        NotificationManager.shared.addMessage(.error, String(localized: "Cannot play track - missing data"))
+                        NotificationManager.shared.addMessage(.error, String(appLocalized: "Cannot play track - missing data"))
                     }
                     return
                 }
@@ -236,7 +236,7 @@ class PlaybackManager: NSObject, ObservableObject {
                 await MainActor.run {
                     guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                     Logger.error("Failed to fetch track data: \(error)")
-                    NotificationManager.shared.addMessage(.error, String(localized: "Failed to load track for playback"))
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to load track for playback"))
                 }
             }
         }
@@ -984,7 +984,7 @@ extension PlaybackManager: AudioPlayerDelegate {
                 self.currentTime = 0
                 self.isPlaying = false
                 Logger.error("Playback finished with error")
-                NotificationManager.shared.addMessage(.error, String(localized: "Playback error occurred"))
+                NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error occurred"))
             }
         }
     }
@@ -992,7 +992,7 @@ extension PlaybackManager: AudioPlayerDelegate {
     func audioPlayerUnexpectedError(player: PlaybackEngine, error: AudioPlayerError) {
         DispatchQueue.main.async {
             Logger.error("Audio player error: \(error.localizedDescription)")
-            NotificationManager.shared.addMessage(.error, String(localized: "Playback error: \(error.localizedDescription)"))
+            NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error: \(error.localizedDescription)"))
         }
     }
 

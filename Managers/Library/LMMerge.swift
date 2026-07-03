@@ -51,7 +51,7 @@ extension LibraryManager {
     }
 
     private func mergeButton(for request: MergeRequest) -> ContextMenuItem {
-        .button(title: String(localized: "Merge with..."), role: nil) {
+        .button(title: String(appLocalized: "Merge with..."), role: nil) {
             self.requestMerge(request)
         }
     }
@@ -138,13 +138,13 @@ extension LibraryManager {
 
             NotificationManager.shared.addMessage(
                 .info,
-                String(localized: "Merged \(result.mergedCount) into \(result.canonicalName)")
+                String(appLocalized: "Merged \(result.mergedCount) into \(result.canonicalName)")
             )
         } catch {
             Logger.error("Merge failed: \(error)")
             NotificationManager.shared.addMessage(
                 .error,
-                String(localized: "Merge failed: \(error.localizedDescription)")
+                String(appLocalized: "Merge failed: \(error.localizedDescription)")
             )
         }
     }

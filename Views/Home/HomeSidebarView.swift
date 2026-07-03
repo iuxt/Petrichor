@@ -198,7 +198,7 @@ struct HomeSidebarView: View {
 
         // Pinned library item (artist/album/etc.): just unpin.
         return [
-            .button(title: String(localized: "Remove from Home"), role: nil) {
+            .button(title: String(appLocalized: "Remove from Home"), role: nil) {
                 Task {
                     await libraryManager.removePinnedItem(pinnedItem)
                 }

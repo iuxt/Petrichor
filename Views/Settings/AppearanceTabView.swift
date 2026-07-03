@@ -63,9 +63,9 @@ struct AppearanceTabView: View {
 
         var displayName: String {
             switch self {
-            case .light: return String(localized: "Light")
-            case .dark: return String(localized: "Dark")
-            case .auto: return String(localized: "Auto")
+            case .light: return String(appLocalized: "Light")
+            case .dark: return String(appLocalized: "Dark")
+            case .auto: return String(appLocalized: "Auto")
             }
         }
 
@@ -111,7 +111,7 @@ struct AppearanceTabView: View {
 
                 Picker("Font", selection: $desktopLyricsFontName) {
                     ForEach(desktopLyricsFontFamilies, id: \.self) { fontName in
-                        Text(fontName == DesktopLyricsSettings.systemFontName ? String(localized: "System Font") : fontName)
+                        Text(fontName == DesktopLyricsSettings.systemFontName ? String(appLocalized: "System Font") : fontName)
                             .tag(fontName)
                     }
                 }

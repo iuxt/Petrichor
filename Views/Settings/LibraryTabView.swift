@@ -110,7 +110,7 @@ struct LibraryTabView: View {
             updateStableScanningState(newValue)
         }
         .alert(
-            foldersToRemove.count == 1 ? String(localized: "Remove Folder") : String(localized: "Remove Folders"),
+            foldersToRemove.count == 1 ? String(appLocalized: "Remove Folder") : String(appLocalized: "Remove Folders"),
             isPresented: .init(
                 get: { !foldersToRemove.isEmpty },
                 set: { if !$0 { foldersToRemove = [] } }
@@ -122,8 +122,8 @@ struct LibraryTabView: View {
                 Task {
                     await MainActor.run {
                         let message = folders.count == 1
-                            ? String(localized: "Removing folder '\(folders[0].name)'...")
-                            : String(localized: "Removing \(folders.count) folders...")
+                            ? String(appLocalized: "Removing folder '\(folders[0].name)'...")
+                            : String(appLocalized: "Removing \(folders.count) folders...")
                         NotificationManager.shared.startActivity(message)
                     }
 
@@ -136,8 +136,8 @@ struct LibraryTabView: View {
 
                     await MainActor.run {
                         let message = folders.count == 1
-                            ? String(localized: "Removed folder '\(folders[0].name)'")
-                            : String(localized: "Removed \(folders.count) folders")
+                            ? String(appLocalized: "Removed folder '\(folders[0].name)'")
+                            : String(appLocalized: "Removed \(folders.count) folders")
                         NotificationManager.shared.addMessage(.info, message)
 
                         selectedFolderIDs.removeAll()
@@ -172,7 +172,7 @@ struct LibraryTabView: View {
 
             Button(action: { libraryManager.refreshLibrary(hardRefresh: isCommandKeyPressed) }, label: {
                 Label(
-                    isCommandKeyPressed ? String(localized: "Force Refresh") : String(localized: "Refresh"),
+                    isCommandKeyPressed ? String(appLocalized: "Force Refresh") : String(appLocalized: "Refresh"),
                     systemImage: isCommandKeyPressed ? Icons.arrowClockwiseCircle : Icons.arrowClockwise
                 )
             })
@@ -186,7 +186,7 @@ struct LibraryTabView: View {
                 // Selection + Add Folder controls
                 HStack {
                     Button(action: toggleSelectMode) {
-                        Text(isSelectMode ? String(localized: "Done") : String(localized: "Select"))
+                        Text(isSelectMode ? String(appLocalized: "Done") : String(appLocalized: "Select"))
                             .font(.system(size: 12))
                     }
                     .buttonStyle(.bordered)
@@ -442,7 +442,7 @@ struct LibraryTabView: View {
             await MainActor.run {
                 refreshArtworkCacheSize()
                 isClearingArtworkCache = false
-                NotificationManager.shared.addMessage(.info, String(localized: "Artwork cache cleared"))
+                NotificationManager.shared.addMessage(.info, String(appLocalized: "Artwork cache cleared"))
             }
         }
     }
@@ -487,11 +487,11 @@ struct LibraryTabView: View {
 
     private func showRestartAlert() {
         let alert = NSAlert()
-        alert.messageText = String(localized: "Restart Required")
-        alert.informativeText = String(localized: "App preferences have been reset. Please restart Petrichor for changes to take full effect.")
+        alert.messageText = String(appLocalized: "Restart Required")
+        alert.informativeText = String(appLocalized: "App preferences have been reset. Please restart Petrichor for changes to take full effect.")
         alert.alertStyle = .informational
-        alert.addButton(withTitle: String(localized: "Quit Now"))
-        alert.addButton(withTitle: String(localized: "Later"))
+        alert.addButton(withTitle: String(appLocalized: "Quit Now"))
+        alert.addButton(withTitle: String(appLocalized: "Later"))
 
         if alert.runModal() == .alertFirstButtonReturn {
             exit(0)
@@ -500,21 +500,21 @@ struct LibraryTabView: View {
 
     private func showResetConfirmation() {
         let alert = NSAlert()
-        alert.messageText = String(localized: "Reset Library Data")
-        alert.informativeText = String(localized: """
+        alert.messageText = String(appLocalized: "Reset Library Data")
+        alert.informativeText = String(appLocalized: """
             This will permanently remove all library data, including added folders, tracks, playlists, \
             and pinned items. This action cannot be undone.
             """)
         alert.alertStyle = .critical
         alert.icon = nil
 
-        let resetButton = alert.addButton(withTitle: String(localized: "Reset All Data"))
+        let resetButton = alert.addButton(withTitle: String(appLocalized: "Reset All Data"))
         resetButton.hasDestructiveAction = true
 
-        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.addButton(withTitle: String(appLocalized: "Cancel"))
 
         alert.showsSuppressionButton = true
-        alert.suppressionButton?.title = String(localized: "Also reset app preferences")
+        alert.suppressionButton?.title = String(appLocalized: "Also reset app preferences")
 
         let response = alert.runModal()
 
@@ -602,8 +602,8 @@ private struct CompactFolderRowView: View {
                     }
                     .buttonStyle(.plain)
                     .help(isCommandKeyPressed
-                        ? String(localized: "⌘ + Click for deep refresh (re-scans all metadata)")
-                        : String(localized: "Refresh this folder. Hold ⌘ for deep refresh"))
+                        ? String(appLocalized: "⌘ + Click for deep refresh (re-scans all metadata)")
+                        : String(appLocalized: "Refresh this folder. Hold ⌘ for deep refresh"))
 
                     Button(action: onRemove) {
                         Image(systemName: Icons.minusCircleFill)

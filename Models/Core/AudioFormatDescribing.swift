@@ -71,12 +71,12 @@ extension AudioFormatDescribing {
     var channelsDisplay: String? {
         guard let channels = channels, channels > 0 else { return nil }
         switch channels {
-        case 1: return String(localized: "Mono")
-        case 2: return String(localized: "Stereo")
-        case 4: return String(localized: "Quadraphonic")
-        case 6: return String(localized: "5.1 Surround")
-        case 8: return String(localized: "7.1 Surround")
-        default: return String(localized: "\(channels) channels")
+        case 1: return String(appLocalized: "Mono")
+        case 2: return String(appLocalized: "Stereo")
+        case 4: return String(appLocalized: "Quadraphonic")
+        case 6: return String(appLocalized: "5.1 Surround")
+        case 8: return String(appLocalized: "7.1 Surround")
+        default: return String(appLocalized: "\(channels) channels")
         }
     }
 }

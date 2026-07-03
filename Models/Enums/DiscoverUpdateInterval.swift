@@ -8,10 +8,10 @@ enum DiscoverUpdateInterval: String, CaseIterable, Codable {
     
     var displayName: String {
         switch self {
-        case .daily: return String(localized: "Daily")
-        case .weekly: return String(localized: "Every week")
-        case .biweekly: return String(localized: "Every 2 weeks")
-        case .monthly: return String(localized: "Every month")
+        case .daily: return String(appLocalized: "Daily")
+        case .weekly: return String(appLocalized: "Every week")
+        case .biweekly: return String(appLocalized: "Every 2 weeks")
+        case .monthly: return String(appLocalized: "Every month")
         }
     }
     

@@ -49,13 +49,13 @@ enum LibraryFilterType: String, CaseIterable {
 
     var singularDisplayName: String {
         switch self {
-        case .artists: return String(localized: "Artist")
-        case .albums: return String(localized: "Album")
-        case .albumArtists: return String(localized: "Album Artist")
-        case .composers: return String(localized: "Composer")
-        case .genres: return String(localized: "Genre")
-        case .decades: return String(localized: "Decade")
-        case .years: return String(localized: "Year")
+        case .artists: return String(appLocalized: "Artist")
+        case .albums: return String(appLocalized: "Album")
+        case .albumArtists: return String(appLocalized: "Album Artist")
+        case .composers: return String(appLocalized: "Composer")
+        case .genres: return String(appLocalized: "Genre")
+        case .decades: return String(appLocalized: "Decade")
+        case .years: return String(appLocalized: "Year")
         }
     }
 
@@ -64,13 +64,13 @@ enum LibraryFilterType: String, CaseIterable {
     /// identifier for persistence and queries.
     var pluralDisplayName: String {
         switch self {
-        case .artists: return String(localized: "Artists")
-        case .albums: return String(localized: "Albums")
-        case .albumArtists: return String(localized: "Album Artists")
-        case .composers: return String(localized: "Composers")
-        case .genres: return String(localized: "Genres")
-        case .decades: return String(localized: "Decades")
-        case .years: return String(localized: "Years")
+        case .artists: return String(appLocalized: "Artists")
+        case .albums: return String(appLocalized: "Albums")
+        case .albumArtists: return String(appLocalized: "Album Artists")
+        case .composers: return String(appLocalized: "Composers")
+        case .genres: return String(appLocalized: "Genres")
+        case .decades: return String(appLocalized: "Decades")
+        case .years: return String(appLocalized: "Years")
         }
     }
 
@@ -79,13 +79,13 @@ enum LibraryFilterType: String, CaseIterable {
     /// and persistence remain stable.
     var localizedUnknownPlaceholder: String {
         switch self {
-        case .artists: return String(localized: "Unknown Artist")
-        case .albums: return String(localized: "Unknown Album")
-        case .albumArtists: return String(localized: "Unknown Album Artist")
-        case .composers: return String(localized: "Unknown Composer")
-        case .genres: return String(localized: "Unknown Genre")
-        case .decades: return String(localized: "Unknown Decade")
-        case .years: return String(localized: "Unknown Year")
+        case .artists: return String(appLocalized: "Unknown Artist")
+        case .albums: return String(appLocalized: "Unknown Album")
+        case .albumArtists: return String(appLocalized: "Unknown Album Artist")
+        case .composers: return String(appLocalized: "Unknown Composer")
+        case .genres: return String(appLocalized: "Unknown Genre")
+        case .decades: return String(appLocalized: "Unknown Decade")
+        case .years: return String(appLocalized: "Unknown Year")
         }
     }
 
@@ -100,25 +100,25 @@ enum LibraryFilterType: String, CaseIterable {
     /// order across languages).
     var allItemsTitle: String {
         switch self {
-        case .artists: return String(localized: "All Artists")
-        case .albums: return String(localized: "All Albums")
-        case .albumArtists: return String(localized: "All Album Artists")
-        case .composers: return String(localized: "All Composers")
-        case .genres: return String(localized: "All Genres")
-        case .decades: return String(localized: "All Decades")
-        case .years: return String(localized: "All Years")
+        case .artists: return String(appLocalized: "All Artists")
+        case .albums: return String(appLocalized: "All Albums")
+        case .albumArtists: return String(appLocalized: "All Album Artists")
+        case .composers: return String(appLocalized: "All Composers")
+        case .genres: return String(appLocalized: "All Genres")
+        case .decades: return String(appLocalized: "All Decades")
+        case .years: return String(appLocalized: "All Years")
         }
     }
 
     var filterPlaceholder: String {
         switch self {
-        case .artists: return String(localized: "Filter Artists...")
-        case .albums: return String(localized: "Filter Albums...")
-        case .albumArtists: return String(localized: "Filter Album Artists...")
-        case .composers: return String(localized: "Filter Composers...")
-        case .genres: return String(localized: "Filter Genres...")
-        case .decades: return String(localized: "Filter Decades...")
-        case .years: return String(localized: "Filter Years...")
+        case .artists: return String(appLocalized: "Filter Artists...")
+        case .albums: return String(appLocalized: "Filter Albums...")
+        case .albumArtists: return String(appLocalized: "Filter Album Artists...")
+        case .composers: return String(appLocalized: "Filter Composers...")
+        case .genres: return String(appLocalized: "Filter Genres...")
+        case .decades: return String(appLocalized: "Filter Decades...")
+        case .years: return String(appLocalized: "Filter Years...")
         }
     }
 
@@ -148,13 +148,13 @@ enum LibraryFilterType: String, CaseIterable {
 
     var emptyStateMessage: String {
         switch self {
-        case .artists: return String(localized: "No artists found in your library")
-        case .albums: return String(localized: "No albums found in your library")
-        case .albumArtists: return String(localized: "No album artists found in your library")
-        case .composers: return String(localized: "No composers found in your library")
-        case .genres: return String(localized: "No genres found in your library")
-        case .decades: return String(localized: "No decades found in your library")
-        case .years: return String(localized: "No release years found in your library")
+        case .artists: return String(appLocalized: "No artists found in your library")
+        case .albums: return String(appLocalized: "No albums found in your library")
+        case .albumArtists: return String(appLocalized: "No album artists found in your library")
+        case .composers: return String(appLocalized: "No composers found in your library")
+        case .genres: return String(appLocalized: "No genres found in your library")
+        case .decades: return String(appLocalized: "No decades found in your library")
+        case .years: return String(appLocalized: "No release years found in your library")
         }
     }
 

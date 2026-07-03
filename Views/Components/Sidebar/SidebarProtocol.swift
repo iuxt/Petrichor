@@ -55,10 +55,10 @@ struct HomeSidebarItem: SidebarItem {
 
         var title: String {
             switch self {
-            case .discover: return String(localized: "Discover")
-            case .tracks: return String(localized: "Tracks")
-            case .artists: return String(localized: "Artists")
-            case .albums: return String(localized: "Albums")
+            case .discover: return String(appLocalized: "Discover")
+            case .tracks: return String(appLocalized: "Tracks")
+            case .artists: return String(appLocalized: "Artists")
+            case .albums: return String(appLocalized: "Albums")
             }
         }
 
@@ -83,11 +83,11 @@ struct HomeSidebarItem: SidebarItem {
         // Set subtitle based on type
         switch type {
         case .discover, .tracks:
-            self.subtitle = String(localized: "\(trackCount ?? 0) songs")
+            self.subtitle = String(appLocalized: "\(trackCount ?? 0) songs")
         case .artists:
-            self.subtitle = String(localized: "\(artistCount ?? 0) artists")
+            self.subtitle = String(appLocalized: "\(artistCount ?? 0) artists")
         case .albums:
-            self.subtitle = String(localized: "\(albumCount ?? 0) albums")
+            self.subtitle = String(appLocalized: "\(albumCount ?? 0) albums")
         }
     }
     
@@ -97,7 +97,7 @@ struct HomeSidebarItem: SidebarItem {
         self.type = nil
         self.source = .pinned(pinnedItem)
         self.title = playlist.map(DefaultPlaylists.displayName) ?? pinnedItem.displayName
-        self.subtitle = String(localized: "\(trackCount) songs")
+        self.subtitle = String(appLocalized: "\(trackCount) songs")
         self.icon = HomeSidebarItem.deriveIcon(for: pinnedItem, playlist: playlist)
     }
 
@@ -148,7 +148,7 @@ struct LibrarySidebarItem: SidebarItem {
     init(filterItem: LibraryFilterItem) {
         self.id = filterItem.id
         self.title = filterItem.name
-        self.subtitle = String(localized: "\(filterItem.count) songs")
+        self.subtitle = String(appLocalized: "\(filterItem.count) songs")
         self.icon = Self.getIcon(for: filterItem.filterType, isAllItem: false)
         self.count = nil
         self.filterType = filterItem.filterType
@@ -160,7 +160,7 @@ struct LibrarySidebarItem: SidebarItem {
     init(allItemFor filterType: LibraryFilterType, count: Int) {
         self.id = UUID(uuidString: "00000000-0000-0000-0000-\(String(format: "%012d", filterType.stableIndex))") ?? UUID()
         self.title = filterType.allItemsTitle
-        self.subtitle = String(localized: "\(count) songs")
+        self.subtitle = String(appLocalized: "\(count) songs")
         self.icon = Self.getIcon(for: filterType, isAllItem: true)
         self.count = nil
         self.filterType = filterType
@@ -193,13 +193,13 @@ struct PlaylistSidebarItem: SidebarItem {
         if playlist.type == .smart {
             let trackCount = playlist.trackCount
             if let limit = playlist.trackLimit {
-                self.subtitle = String(localized: "\(trackCount) / \(limit) songs")
+                self.subtitle = String(appLocalized: "\(trackCount) / \(limit) songs")
             } else {
-                self.subtitle = String(localized: "\(trackCount) songs")
+                self.subtitle = String(appLocalized: "\(trackCount) songs")
             }
             self.count = nil
         } else {
-            self.subtitle = String(localized: "\(playlist.trackCount) songs")
+            self.subtitle = String(appLocalized: "\(playlist.trackCount) songs")
             self.count = nil
         }
     }
@@ -228,11 +228,11 @@ struct FolderNodeSidebarItem: SidebarItem {
 
         let trackCount = folderNode.displayTrackCount
         if folderNode.immediateFolderCount > 0 && trackCount > 0 {
-            self.subtitle = String(localized: "\(folderNode.immediateFolderCount) folders, \(trackCount) tracks")
+            self.subtitle = String(appLocalized: "\(folderNode.immediateFolderCount) folders, \(trackCount) tracks")
         } else if folderNode.immediateFolderCount > 0 {
-            self.subtitle = String(localized: "\(folderNode.immediateFolderCount) folders")
+            self.subtitle = String(appLocalized: "\(folderNode.immediateFolderCount) folders")
         } else if trackCount > 0 {
-            self.subtitle = String(localized: "\(trackCount) tracks")
+            self.subtitle = String(appLocalized: "\(trackCount) tracks")
         } else {
             self.subtitle = nil
         }

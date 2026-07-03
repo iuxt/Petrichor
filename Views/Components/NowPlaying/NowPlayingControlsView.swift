@@ -60,7 +60,7 @@ struct NowPlayingControlsView: View {
         .buttonStyle(ControlButtonStyle())
         .hoverEffect(scale: 1.1)
         .disabled(!hasCurrentTrack)
-        .help(playlistManager.isShuffleEnabled ? String(localized: "Disable Shuffle") : String(localized: "Enable Shuffle"))
+        .help(playlistManager.isShuffleEnabled ? String(appLocalized: "Disable Shuffle") : String(appLocalized: "Enable Shuffle"))
     }
 
     private var previousButton: some View {
@@ -104,7 +104,7 @@ struct NowPlayingControlsView: View {
             perform: {}
         )
         .disabled(!hasCurrentTrack)
-        .help(playbackManager.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
+        .help(playbackManager.isPlaying ? String(appLocalized: "Pause") : String(appLocalized: "Play"))
     }
 
     private var nextButton: some View {

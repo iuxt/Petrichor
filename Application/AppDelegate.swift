@@ -50,19 +50,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.alertStyle = isResumable ? .informational : .warning
-        alert.messageText = String(localized: "Library Optimization in Progress")
+        alert.messageText = String(appLocalized: "Library Optimization in Progress")
 
         if isResumable {
-            alert.informativeText = String(localized: "This will automatically continue where it left off on next launch.")
-            alert.addButton(withTitle: String(localized: "Quit"))
-            alert.addButton(withTitle: String(localized: "Continue"))
+            alert.informativeText = String(appLocalized: "This will automatically continue where it left off on next launch.")
+            alert.addButton(withTitle: String(appLocalized: "Quit"))
+            alert.addButton(withTitle: String(appLocalized: "Continue"))
         } else {
-            alert.informativeText = String(localized: """
+            alert.informativeText = String(appLocalized: """
                 Quitting now will cancel the current operation. It will need to start over on next launch, \
                 which may take a while.
                 """)
-            alert.addButton(withTitle: String(localized: "Quit Anyway"))
-            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.addButton(withTitle: String(appLocalized: "Quit Anyway"))
+            alert.addButton(withTitle: String(appLocalized: "Cancel"))
         }
 
         let response = alert.runModal()
@@ -194,7 +194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let playlistManager = coordinator.playlistManager
         
         // Now Playing header
-        let nowPlayingItem = NSMenuItem(title: String(localized: "Now Playing"), action: nil, keyEquivalent: "")
+        let nowPlayingItem = NSMenuItem(title: String(appLocalized: "Now Playing"), action: nil, keyEquivalent: "")
         nowPlayingItem.isEnabled = false
         menu.addItem(nowPlayingItem)
         
@@ -217,7 +217,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             // No track playing
             // swiftlint:disable:next localized_appkit_string - already localized; leading literal is indentation
-            let noTrackItem = NSMenuItem(title: "  " + String(localized: "No track playing"), action: nil, keyEquivalent: "")
+            let noTrackItem = NSMenuItem(title: "  " + String(appLocalized: "No track playing"), action: nil, keyEquivalent: "")
             noTrackItem.isEnabled = false
             menu.addItem(noTrackItem)
         }
@@ -229,7 +229,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         repeatMenu.autoenablesItems = false
         
         let repeatOffItem = NSMenuItem(
-            title: String(localized: "Off"),
+            title: String(appLocalized: "Off"),
             action: #selector(setRepeatOff),
             keyEquivalent: ""
         )
@@ -238,7 +238,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         repeatMenu.addItem(repeatOffItem)
         
         let repeatOneItem = NSMenuItem(
-            title: String(localized: "One"),
+            title: String(appLocalized: "One"),
             action: #selector(setRepeatOne),
             keyEquivalent: ""
         )
@@ -247,7 +247,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         repeatMenu.addItem(repeatOneItem)
         
         let repeatAllItem = NSMenuItem(
-            title: String(localized: "All"),
+            title: String(appLocalized: "All"),
             action: #selector(setRepeatAll),
             keyEquivalent: ""
         )
@@ -255,13 +255,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         repeatAllItem.state = playlistManager.repeatMode == .all ? .on : .off
         repeatMenu.addItem(repeatAllItem)
         
-        let repeatMenuItem = NSMenuItem(title: String(localized: "Repeat"), action: nil, keyEquivalent: "")
+        let repeatMenuItem = NSMenuItem(title: String(appLocalized: "Repeat"), action: nil, keyEquivalent: "")
         repeatMenuItem.submenu = repeatMenu
         menu.addItem(repeatMenuItem)
         
         // Shuffle toggle
         let shuffleItem = NSMenuItem(
-            title: String(localized: "Shuffle"),
+            title: String(appLocalized: "Shuffle"),
             action: #selector(toggleShuffle),
             keyEquivalent: ""
         )
@@ -272,7 +272,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         
         // Playback controls
-        let playPauseTitle = playbackManager.isPlaying ? String(localized: "Pause") : String(localized: "Play")
+        let playPauseTitle = playbackManager.isPlaying ? String(appLocalized: "Pause") : String(appLocalized: "Play")
         let playPauseItem = NSMenuItem(
             title: playPauseTitle,
             action: #selector(togglePlayPause),
@@ -283,7 +283,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(playPauseItem)
         
         let nextItem = NSMenuItem(
-            title: String(localized: "Next"),
+            title: String(appLocalized: "Next"),
             action: #selector(playNext),
             keyEquivalent: ""
         )
@@ -292,7 +292,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(nextItem)
 
         let previousItem = NSMenuItem(
-            title: String(localized: "Previous"),
+            title: String(appLocalized: "Previous"),
             action: #selector(playPrevious),
             keyEquivalent: ""
         )

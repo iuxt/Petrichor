@@ -20,7 +20,7 @@ struct MiniPlayerWindowButtons: View {
             trafficLight(
                 color: Color(red: 1.0, green: 0.37, blue: 0.34),
                 glyph: "xmark",
-                help: String(localized: "Close")
+                help: String(appLocalized: "Close")
             ) {
                 // The borderless window has no `.closable` style mask, so
                 // performClose(nil) would just beep. close() still posts

@@ -41,6 +41,7 @@ struct ContentView: View {
     @EnvironmentObject var playbackManager: PlaybackManager
     @EnvironmentObject var libraryManager: LibraryManager
     @EnvironmentObject var playlistManager: PlaylistManager
+    @EnvironmentObject private var localizationSettings: LocalizationSettings
         
     @AppStorage("showFoldersTab")
     private var showFoldersTab = false
@@ -92,6 +93,8 @@ struct ContentView: View {
             playerControls
                 .animation(.easeInOut(duration: 0.3), value: libraryManager.folders.isEmpty)
         }
+        .environment(\.locale, localizationSettings.locale)
+        .id(localizationSettings.appLanguage.id)
         .onKeyPress(.space) {
             if isCurrentlyEditingText() {
                 return .ignored

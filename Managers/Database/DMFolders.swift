@@ -93,7 +93,7 @@ extension DatabaseManager {
                 await MainActor.run {
                     completion(.failure(error))
                     Logger.error("Failed to add folders: \(error)")
-                    NotificationManager.shared.addMessage(.error, String(localized: "Failed to add folders"))
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to add folders"))
                 }
             }
         }
@@ -208,9 +208,9 @@ extension DatabaseManager {
             do {
                 await MainActor.run {
                     self.isScanning = true
-                    self.scanStatusMessage = String(localized: "Refreshing \(folder.name)...")
+                    self.scanStatusMessage = String(appLocalized: "Refreshing \(folder.name)...")
                     if manageActivityIndicator {
-                        NotificationManager.shared.startActivity(String(localized: "Refreshing \(folder.name)..."))
+                        NotificationManager.shared.startActivity(String(appLocalized: "Refreshing \(folder.name)..."))
                     }
                 }
 
@@ -265,7 +265,7 @@ extension DatabaseManager {
                     }
                     completion(.failure(error))
                     Logger.error("Failed to refresh folder \(folder.name): \(error)")
-                    NotificationManager.shared.addMessage(.error, String(localized: "Failed to refresh folder \(folder.name)"))
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to refresh folder \(folder.name)"))
                 }
             }
         }
@@ -291,7 +291,7 @@ extension DatabaseManager {
                 await MainActor.run {
                     completion(.failure(error))
                     Logger.error("Failed to remove folder '\(folder.name)': \(error)")
-                    NotificationManager.shared.addMessage(.error, String(localized: "Failed to remove folder '\(folder.name)'"))
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to remove folder '\(folder.name)'"))
                 }
             }
         }
@@ -379,8 +379,8 @@ extension DatabaseManager {
         if showActivityInTray && totalFolders > 0 {
             await MainActor.run {
                 let message = isInitialScan
-                    ? String(localized: "Scanning your music library...")
-                    : String(localized: "Scanning \(totalFolders) folders...")
+                    ? String(appLocalized: "Scanning your music library...")
+                    : String(appLocalized: "Scanning \(totalFolders) folders...")
                 NotificationManager.shared.startActivity(message)
             }
         }
@@ -412,7 +412,7 @@ extension DatabaseManager {
             } catch {
                 Logger.error("Failed to scan folder \(folder.name): \(error)")
                 Task.detached { @MainActor in
-                    NotificationManager.shared.addMessage(.error, String(localized: "Failed to scan folder '\(folder.name)'"))
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to scan folder '\(folder.name)'"))
                 }
             }
             
@@ -430,14 +430,14 @@ extension DatabaseManager {
         try await cleanupOrphanedData()
 
         await MainActor.run {
-            self.scanStatusMessage = String(localized: "Scan complete")
+            self.scanStatusMessage = String(appLocalized: "Scan complete")
             if showActivityInTray {
                 NotificationManager.shared.stopActivity()
             }
             
             let completionMessage = isInitialScan
-                ? String(localized: "Library scan complete: \(self.getTotalTrackCount()) tracks found")
-                : String(localized: "Added \(totalFolders) folders to library")
+                ? String(appLocalized: "Library scan complete: \(self.getTotalTrackCount()) tracks found")
+                : String(appLocalized: "Added \(totalFolders) folders to library")
             NotificationManager.shared.addMessage(.info, completionMessage)
         }
     }
@@ -684,11 +684,11 @@ extension DatabaseManager {
         // Report results to user
         await MainActor.run {
             if !hasRemainingFiles {
-                NotificationManager.shared.addMessage(.info, String(localized: "Folder '\(folderName)' is now empty, removed \(removedCount) tracks"))
+                NotificationManager.shared.addMessage(.info, String(appLocalized: "Folder '\(folderName)' is now empty, removed \(removedCount) tracks"))
             } else {
                 let message = removedCount == 1
-                    ? String(localized: "Removed 1 missing track from '\(folderName)'")
-                    : String(localized: "Removed \(removedCount) missing tracks from '\(folderName)'")
+                    ? String(appLocalized: "Removed 1 missing track from '\(folderName)'")
+                    : String(appLocalized: "Removed \(removedCount) missing tracks from '\(folderName)'")
                 NotificationManager.shared.addMessage(.info, message)
             }
         }
@@ -696,17 +696,17 @@ extension DatabaseManager {
 
     func scanProgressDetail(_ progress: GlobalScanProgress) -> String {
         let base = progress.total > 0
-            ? String(localized: "\(progress.processed) of \(progress.total) files processed")
-            : String(localized: "\(progress.processed) files processed")
+            ? String(appLocalized: "\(progress.processed) of \(progress.total) files processed")
+            : String(appLocalized: "\(progress.processed) files processed")
 
         var changes: [String] = []
         if progress.added > 0 {
             changes.append(progress.isInitial
-                ? String(localized: "\(progress.added) tracks found")
-                : String(localized: "\(progress.added) new tracks found"))
+                ? String(appLocalized: "\(progress.added) tracks found")
+                : String(appLocalized: "\(progress.added) new tracks found"))
         }
         if progress.removed > 0 {
-            changes.append(String(localized: "\(progress.removed) tracks removed"))
+            changes.append(String(appLocalized: "\(progress.removed) tracks removed"))
         }
 
         guard !changes.isEmpty else { return base }
@@ -769,8 +769,8 @@ extension DatabaseManager {
         if !failedFiles.isEmpty {
             await MainActor.run {
                 let message = failedFiles.count == 1
-                    ? String(localized: "Failed to process 1 file in '\(folder.name)'")
-                    : String(localized: "Failed to process \(failedFiles.count) files in '\(folder.name)'")
+                    ? String(appLocalized: "Failed to process 1 file in '\(folder.name)'")
+                    : String(appLocalized: "Failed to process \(failedFiles.count) files in '\(folder.name)'")
                 NotificationManager.shared.addMessage(.warning, message)
             }
         }
@@ -787,8 +787,8 @@ extension DatabaseManager {
             
             await MainActor.run {
                 let message = skippedFiles.count == 1
-                    ? String(localized: "1 file skipped in '\(folder.name)' - unsupported format")
-                    : String(localized: "\(skippedFiles.count) files skipped in '\(folder.name)' - unsupported formats: \(topExtensions)")
+                    ? String(appLocalized: "1 file skipped in '\(folder.name)' - unsupported format")
+                    : String(appLocalized: "\(skippedFiles.count) files skipped in '\(folder.name)' - unsupported formats: \(topExtensions)")
                 NotificationManager.shared.addMessage(.warning, message)
             }
         }

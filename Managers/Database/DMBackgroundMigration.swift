@@ -64,7 +64,7 @@ extension DatabaseManager {
     }
 
     private func loadKnownArtistsAndRebuild(progress: String?) async {
-        NotificationManager.shared.startActivity(String(localized: "Updating Artists..."))
+        NotificationManager.shared.startActivity(String(appLocalized: "Updating Artists..."))
 
         var resumeOffset = 0
         if let progress = progress,
@@ -79,11 +79,11 @@ extension DatabaseManager {
 
             completeBackgroundMigration(Self.knownArtistsMigrationIdentifier)
             NotificationManager.shared.stopActivity()
-            NotificationManager.shared.addMessage(.info, String(localized: "Artists information updated successfully"))
+            NotificationManager.shared.addMessage(.info, String(appLocalized: "Artists information updated successfully"))
             Logger.info("Known artists migration completed")
         } catch {
             NotificationManager.shared.stopActivity()
-            NotificationManager.shared.addMessage(.error, String(localized: "Failed to update artists information"))
+            NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to update artists information"))
             Logger.error("Known artists migration failed: \(error)")
         }
     }
@@ -255,7 +255,7 @@ extension DatabaseManager {
     }
 
     private func backfillAlbumArtists(progress: String?) async {
-        NotificationManager.shared.startActivity(String(localized: "Updating album artists..."))
+        NotificationManager.shared.startActivity(String(appLocalized: "Updating album artists..."))
 
         var resumeOffset = 0
         if let progress = progress,

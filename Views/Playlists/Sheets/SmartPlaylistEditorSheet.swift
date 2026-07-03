@@ -84,11 +84,11 @@ struct SmartPlaylistEditorSheet: View {
     private var isEditing: Bool { editingPlaylistID != nil }
 
     private var headerTitle: String {
-        isEditing ? String(localized: "Edit Smart Playlist") : String(localized: "New Smart Playlist")
+        isEditing ? String(appLocalized: "Edit Smart Playlist") : String(appLocalized: "New Smart Playlist")
     }
 
     private var saveButtonTitle: String {
-        isEditing ? String(localized: "Save") : String(localized: "Create")
+        isEditing ? String(appLocalized: "Save") : String(appLocalized: "Create")
     }
 
     private var canSave: Bool {
@@ -291,8 +291,8 @@ struct SmartPlaylistEditorSheet: View {
     /// debounced query is in flight, otherwise "Matches N songs".
     private var matchSummary: String? {
         guard rules.contains(where: { $0.isComplete }) else { return nil }
-        guard let count = matchCount else { return String(localized: "Checking matches…") }
-        return String(localized: "Matches \(HelperUtils.songCount(count))")
+        guard let count = matchCount else { return String(appLocalized: "Checking matches…") }
+        return String(appLocalized: "Matches \(HelperUtils.songCount(count))")
     }
 
     private func scheduleMatchCount() {

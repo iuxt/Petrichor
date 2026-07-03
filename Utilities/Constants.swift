@@ -209,9 +209,9 @@ extension DefaultPlaylists {
     static func displayName(forStoredName name: String) -> String {
         switch name {
         case DefaultPlaylists.mostPlayed:
-            return String(localized: "Top 25 Most Played")
+            return String(appLocalized: "Top 25 Most Played")
         case DefaultPlaylists.recentlyPlayed:
-            return String(localized: "Top 25 Recently Played")
+            return String(appLocalized: "Top 25 Recently Played")
         default:
             return name
         }
@@ -221,28 +221,28 @@ extension DefaultPlaylists {
         if playlist.type == .smart && !playlist.isUserEditable {
             switch playlist.name {
             case DefaultPlaylists.mostPlayed:
-                return String(localized: "No Frequently Played Songs")
+                return String(appLocalized: "No Frequently Played Songs")
             case DefaultPlaylists.recentlyPlayed:
-                return String(localized: "No Recently Played Songs")
+                return String(appLocalized: "No Recently Played Songs")
             default:
-                return String(localized: "Empty Smart Playlist")
+                return String(appLocalized: "Empty Smart Playlist")
             }
         }
-        return String(localized: "Empty Playlist")
+        return String(appLocalized: "Empty Playlist")
     }
     
     static func emptyStateText(for playlist: Playlist) -> String {
         if playlist.type == .smart && !playlist.isUserEditable {
             switch playlist.name {
             case DefaultPlaylists.mostPlayed:
-                return String(localized: "Songs played 5 or more times will appear here")
+                return String(appLocalized: "Songs played 5 or more times will appear here")
             case DefaultPlaylists.recentlyPlayed:
-                return String(localized: "Songs played in the last week will appear here")
+                return String(appLocalized: "Songs played in the last week will appear here")
             default:
-                return String(localized: "This smart playlist will update automatically based on its criteria")
+                return String(appLocalized: "This smart playlist will update automatically based on its criteria")
             }
         }
-        return String(localized: "Add some tracks to this playlist to get started")
+        return String(appLocalized: "Add some tracks to this playlist to get started")
     }
 }
 

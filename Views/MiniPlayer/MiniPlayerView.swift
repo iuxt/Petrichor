@@ -251,8 +251,8 @@ struct MiniPlayerView: View {
                         isActive: panel == .queue,
                         isEnabled: true,
                         activeTint: artworkTint,
-                        activeHelp: String(localized: "Hide Queue"),
-                        inactiveHelp: String(localized: "Show Queue"),
+                        activeHelp: String(appLocalized: "Hide Queue"),
+                        inactiveHelp: String(appLocalized: "Show Queue"),
                         action: { toggle(.queue) },
                         label: {
                             Image(systemName: Icons.queueList)
@@ -264,8 +264,8 @@ struct MiniPlayerView: View {
                         isActive: panel == .lyrics,
                         isEnabled: hasCurrentTrack,
                         activeTint: artworkTint,
-                        activeHelp: String(localized: "Hide Lyrics"),
-                        inactiveHelp: String(localized: "Show Lyrics"),
+                        activeHelp: String(appLocalized: "Hide Lyrics"),
+                        inactiveHelp: String(appLocalized: "Show Lyrics"),
                         action: { toggle(.lyrics) },
                         label: {
                             Image(Icons.customLyrics)
@@ -285,7 +285,7 @@ struct MiniPlayerView: View {
             Spacer()
             VStack(spacing: 10) {
                 VStack(spacing: 2) {
-                    Text(playbackManager.currentTrack?.title ?? String(localized: "Not Playing"))
+                    Text(playbackManager.currentTrack?.title ?? String(appLocalized: "Not Playing"))
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(overlayTextColor)
                         .lineLimit(1)
@@ -398,7 +398,7 @@ struct MiniPlayerView: View {
             }
             .buttonStyle(.plain)
 
-            Text(panel == .queue ? String(localized: "Play Queue") : String(localized: "Lyrics"))
+            Text(panel == .queue ? String(appLocalized: "Play Queue") : String(appLocalized: "Lyrics"))
                 .font(.headline)
 
             Spacer()

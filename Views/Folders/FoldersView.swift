@@ -43,7 +43,7 @@ struct FoldersView: View {
                 tableRowSize: $trackTableRowSize
             )
         } else {
-            TrackListHeader(title: String(localized: "Select a Folder"), trackCount: 0)
+            TrackListHeader(title: String(appLocalized: "Select a Folder"), trackCount: 0)
         }
     }
 

@@ -17,7 +17,7 @@ enum PlaylistMenuBuilder {
 
         // "Edit" opens the editor sheet for both kinds (rules for smart, contents for regular);
         // the label is kept identical for consistency.
-        items.append(.button(title: String(localized: "Edit")) {
+        items.append(.button(title: String(appLocalized: "Edit")) {
             if playlist.type == .smart {
                 playlistManager.showEditSmartPlaylistModal(playlist)
             } else {
@@ -27,7 +27,7 @@ enum PlaylistMenuBuilder {
 
         items.append(.divider)
 
-        items.append(.button(title: String(localized: "Delete"), role: .destructive) {
+        items.append(.button(title: String(appLocalized: "Delete"), role: .destructive) {
             onDelete()
         })
 

@@ -7,9 +7,9 @@ enum SpecialTableColumn: String, Codable {
 
     var displayName: String {
         switch self {
-        case .title: return String(localized: "Title")
-        case .duration: return String(localized: "Duration")
-        case .trackNumber: return String(localized: "Track number")
+        case .title: return String(appLocalized: "Title")
+        case .duration: return String(appLocalized: "Duration")
+        case .trackNumber: return String(appLocalized: "Track number")
         }
     }
 }

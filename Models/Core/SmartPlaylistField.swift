@@ -44,20 +44,20 @@ enum SmartField: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .title: return String(localized: "Title")
-        case .artist: return String(localized: "Artist")
-        case .album: return String(localized: "Album")
-        case .albumArtist: return String(localized: "Album Artist")
-        case .genre: return String(localized: "Genre")
-        case .composer: return String(localized: "Composer")
-        case .filename: return String(localized: "Filename")
-        case .year: return String(localized: "Year")
-        case .playCount: return String(localized: "Play Count")
-        case .trackNumber: return String(localized: "Track Number")
-        case .discNumber: return String(localized: "Disc Number")
-        case .duration: return String(localized: "Duration")
-        case .lastPlayedDate: return String(localized: "Last Played")
-        case .dateAdded: return String(localized: "Date Added")
+        case .title: return String(appLocalized: "Title")
+        case .artist: return String(appLocalized: "Artist")
+        case .album: return String(appLocalized: "Album")
+        case .albumArtist: return String(appLocalized: "Album Artist")
+        case .genre: return String(appLocalized: "Genre")
+        case .composer: return String(appLocalized: "Composer")
+        case .filename: return String(appLocalized: "Filename")
+        case .year: return String(appLocalized: "Year")
+        case .playCount: return String(appLocalized: "Play Count")
+        case .trackNumber: return String(appLocalized: "Track Number")
+        case .discNumber: return String(appLocalized: "Disc Number")
+        case .duration: return String(appLocalized: "Duration")
+        case .lastPlayedDate: return String(appLocalized: "Last Played")
+        case .dateAdded: return String(appLocalized: "Date Added")
         }
     }
 
@@ -124,41 +124,41 @@ extension SmartPlaylistCriteria.Condition {
 
     private var dateLabel: String {
         switch self {
-        case .equals: return String(localized: "is on")
-        case .greaterThan: return String(localized: "is after")
-        case .lessThan: return String(localized: "is before")
+        case .equals: return String(appLocalized: "is on")
+        case .greaterThan: return String(appLocalized: "is after")
+        case .lessThan: return String(appLocalized: "is before")
         default: return rawValue
         }
     }
 
     private var numberLabel: String {
         switch self {
-        case .equals: return String(localized: "is")
-        case .greaterThan: return String(localized: "is greater than")
-        case .greaterThanOrEqual: return String(localized: "is at least")
-        case .lessThan: return String(localized: "is less than")
-        case .lessThanOrEqual: return String(localized: "is at most")
+        case .equals: return String(appLocalized: "is")
+        case .greaterThan: return String(appLocalized: "is greater than")
+        case .greaterThanOrEqual: return String(appLocalized: "is at least")
+        case .lessThan: return String(appLocalized: "is less than")
+        case .lessThanOrEqual: return String(appLocalized: "is at most")
         default: return rawValue
         }
     }
 
     private var durationLabel: String {
         switch self {
-        case .equals: return String(localized: "is")
-        case .greaterThan: return String(localized: "is longer than")
-        case .greaterThanOrEqual: return String(localized: "is at least")
-        case .lessThan: return String(localized: "is shorter than")
-        case .lessThanOrEqual: return String(localized: "is at most")
+        case .equals: return String(appLocalized: "is")
+        case .greaterThan: return String(appLocalized: "is longer than")
+        case .greaterThanOrEqual: return String(appLocalized: "is at least")
+        case .lessThan: return String(appLocalized: "is shorter than")
+        case .lessThanOrEqual: return String(appLocalized: "is at most")
         default: return rawValue
         }
     }
 
     private var textLabel: String {
         switch self {
-        case .equals: return String(localized: "is")
-        case .contains: return String(localized: "contains")
-        case .startsWith: return String(localized: "starts with")
-        case .endsWith: return String(localized: "ends with")
+        case .equals: return String(appLocalized: "is")
+        case .contains: return String(appLocalized: "contains")
+        case .startsWith: return String(appLocalized: "starts with")
+        case .endsWith: return String(appLocalized: "ends with")
         default: return rawValue
         }
     }

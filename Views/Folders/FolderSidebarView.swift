@@ -136,11 +136,11 @@ private struct FolderNodeRow: View {
         let folderCount = node.immediateFolderCount
         let trackCount = node.displayTrackCount
         if folderCount > 0 && trackCount > 0 {
-            return String(localized: "\(folderCount) folders, \(trackCount) tracks")
+            return String(appLocalized: "\(folderCount) folders, \(trackCount) tracks")
         } else if folderCount > 0 {
-            return String(localized: "\(folderCount) folders")
+            return String(appLocalized: "\(folderCount) folders")
         } else if trackCount > 0 {
-            return String(localized: "\(trackCount) tracks")
+            return String(appLocalized: "\(trackCount) tracks")
         }
         return nil
     }

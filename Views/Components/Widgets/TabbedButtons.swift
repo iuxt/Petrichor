@@ -400,11 +400,11 @@ extension Sections: TabbedItem {
 extension SettingsView.SettingsTab: TabbedItem {
     var title: String {
         switch self {
-        case .general: return String(localized: "General")
-        case .appearance: return String(localized: "Appearance")
-        case .library: return String(localized: "Library")
-        case .integrations: return String(localized: "Integrations")
-        case .about: return String(localized: "About")
+        case .general: return String(appLocalized: "General")
+        case .appearance: return String(appLocalized: "Appearance")
+        case .library: return String(appLocalized: "Library")
+        case .integrations: return String(appLocalized: "Integrations")
+        case .about: return String(appLocalized: "About")
         }
     }
 }

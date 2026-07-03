@@ -258,9 +258,9 @@ struct NotificationTray: View {
     
     private var tooltipText: String {
         if manager.isActivityInProgress {
-            return manager.activityMessage.isEmpty ? String(localized: "Refreshing Library...") : manager.activityMessage
+            return manager.activityMessage.isEmpty ? String(appLocalized: "Refreshing Library...") : manager.activityMessage
         } else if hasNotifications {
-            return String(localized: "\(manager.messages.count) notifications")
+            return String(appLocalized: "\(manager.messages.count) notifications")
         }
         return ""
     }
@@ -390,7 +390,7 @@ struct NotificationRow: View {
         let interval = now.timeIntervalSince(message.timestamp)
 
         if interval < 60 {
-            return String(localized: "Just now")
+            return String(appLocalized: "Just now")
         }
 
         let formatter = RelativeDateTimeFormatter()

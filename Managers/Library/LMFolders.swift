@@ -14,8 +14,8 @@ extension LibraryManager {
         openPanel.canChooseFiles = false
         openPanel.canChooseDirectories = true
         openPanel.allowsMultipleSelection = true
-        openPanel.prompt = String(localized: "Add Music Folder")
-        openPanel.message = String(localized: "Select folders containing your music files")
+        openPanel.prompt = String(appLocalized: "Add Music Folder")
+        openPanel.message = String(appLocalized: "Select folders containing your music files")
 
         guard let keyWindow = NSApp.keyWindow else {
             Logger.error("Cannot add folder: no key window available")
@@ -81,7 +81,7 @@ extension LibraryManager {
                 // Stop the activity indicator on failure too
                 NotificationManager.shared.stopActivity()
                 // Show error message
-                NotificationManager.shared.addMessage(.error, String(localized: "Failed to remove folder '\(folder.name)'"))
+                NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to remove folder '\(folder.name)'"))
             }
         }
     }
@@ -101,7 +101,7 @@ extension LibraryManager {
             // Show the indicator before counting: enumerating a large folder can take
             // a moment, and refreshLibrary() starts activity before counting too.
             await MainActor.run {
-                NotificationManager.shared.startActivity(String(localized: "Refreshing \(folder.name)..."))
+                NotificationManager.shared.startActivity(String(appLocalized: "Refreshing \(folder.name)..."))
             }
 
             // Pre-count files so the progress bar can advance (needs a
@@ -121,7 +121,7 @@ extension LibraryManager {
                 NotificationManager.shared.updateActivityProgress(
                     current: 0,
                     total: totalFiles,
-                    detail: totalFiles > 0 ? String(localized: "0 of \(totalFiles) files") : String(localized: "Preparing files...")
+                    detail: totalFiles > 0 ? String(appLocalized: "0 of \(totalFiles) files") : String(appLocalized: "Preparing files...")
                 )
             }
 
@@ -165,7 +165,7 @@ extension LibraryManager {
         }
         
         Logger.info("Found \(foldersToRemove.count) missing folders to optimize")
-        NotificationManager.shared.startActivity(String(localized: "Optimizing database..."))
+        NotificationManager.shared.startActivity(String(appLocalized: "Optimizing database..."))
         
         let group = DispatchGroup()
         var removedFolders: [String] = []
@@ -193,13 +193,13 @@ extension LibraryManager {
             
             if !removedFolders.isEmpty {
                 let message = removedFolders.count == 1
-                    ? String(localized: "Folder '\(removedFolders[0])' was removed as it no longer exists")
-                    : String(localized: "\(removedFolders.count) folders were removed as they no longer exist")
+                    ? String(appLocalized: "Folder '\(removedFolders[0])' was removed as it no longer exists")
+                    : String(appLocalized: "\(removedFolders.count) folders were removed as they no longer exist")
                 NotificationManager.shared.addMessage(.info, message)
             }
             
             if !failedRemovals.isEmpty {
-                let message = String(localized: "Failed to remove \(failedRemovals.count) missing folders")
+                let message = String(appLocalized: "Failed to remove \(failedRemovals.count) missing folders")
                 NotificationManager.shared.addMessage(.error, message)
             }
             
@@ -265,16 +265,16 @@ extension LibraryManager {
                         let savedMB = Double(spaceSaved) / (1024.0 * 1024.0)
                         NotificationManager.shared.addMessage(
                             .info,
-                            String(localized: "Database optimization completed - reclaimed \(String(format: "%.1f", savedMB)) MB")
+                            String(appLocalized: "Database optimization completed - reclaimed \(String(format: "%.1f", savedMB)) MB")
                         )
                     } else {
-                        NotificationManager.shared.addMessage(.info, String(localized: "Database optimization completed"))
+                        NotificationManager.shared.addMessage(.info, String(appLocalized: "Database optimization completed"))
                     }
                 }
             } catch {
                 Logger.error("Database \(context) failed: \(error)")
                 await MainActor.run {
-                    NotificationManager.shared.addMessage(.error, String(localized: "Database optimization failed"))
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Database optimization failed"))
                 }
             }
         }

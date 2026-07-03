@@ -9,8 +9,8 @@ enum PlayerBarBackgroundStyle: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .behindArtwork: return String(localized: "Behind album art")
-        case .fullWidth: return String(localized: "Full width")
+        case .behindArtwork: return String(appLocalized: "Behind album art")
+        case .fullWidth: return String(appLocalized: "Full width")
         }
     }
 }
@@ -191,7 +191,7 @@ struct PlayerView: View {
         .buttonStyle(ControlButtonStyle())
         .hoverEffect(scale: 1.1)
         .disabled(playbackManager.currentTrack == nil)
-        .help(playlistManager.isShuffleEnabled ? String(localized: "Disable Shuffle") : String(localized: "Enable Shuffle"))
+        .help(playlistManager.isShuffleEnabled ? String(appLocalized: "Disable Shuffle") : String(appLocalized: "Enable Shuffle"))
     }
 
     private var previousButton: some View {
@@ -234,7 +234,7 @@ struct PlayerView: View {
             perform: {}
         )
         .disabled(playbackManager.currentTrack == nil)
-        .help(playbackManager.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
+        .help(playbackManager.isPlaying ? String(appLocalized: "Pause") : String(appLocalized: "Play"))
         .id("playPause")
     }
 
@@ -355,7 +355,7 @@ struct PlayerView: View {
         }
         .buttonStyle(.plain)
         .hoverEffect(scale: 1.1)
-        .help(isMuted ? String(localized: "Unmute") : String(localized: "Mute"))
+        .help(isMuted ? String(appLocalized: "Unmute") : String(appLocalized: "Mute"))
     }
 
     private var volumeSlider: some View {
@@ -418,7 +418,7 @@ struct PlayerView: View {
         })
         .buttonStyle(PlainButtonStyle())
         .hoverEffect(scale: 1.1)
-        .help(rightSidebarContent == .queue ? String(localized: "Hide Queue") : String(localized: "Show Queue"))
+        .help(rightSidebarContent == .queue ? String(appLocalized: "Hide Queue") : String(appLocalized: "Show Queue"))
     }
     
     private var immersiveButton: some View {
@@ -478,7 +478,7 @@ struct PlayerView: View {
         .disabled(!hasCurrentTrack)
         .opacity(hasCurrentTrack ? 1.0 : 0.5)
         .hoverEffect(scale: hasCurrentTrack ? 1.1 : 1.0)
-        .help(rightSidebarContent == .lyrics ? String(localized: "Hide Lyrics") : String(localized: "Show Lyrics"))
+        .help(rightSidebarContent == .lyrics ? String(appLocalized: "Hide Lyrics") : String(appLocalized: "Show Lyrics"))
     }
 
     // MARK: - Computed Properties

@@ -116,7 +116,7 @@ enum TrackContextMenu {
         var items: [ContextMenuItem] = []
         
         // Play
-        items.append(.button(title: String(localized: "Play"), icon: Icons.playFill) {
+        items.append(.button(title: String(appLocalized: "Play"), icon: Icons.playFill) {
             switch currentContext {
             case .library:
                 playlistManager.playTrack(track, fromTracks: [track])
@@ -130,12 +130,12 @@ enum TrackContextMenu {
         })
         
         // Play Next
-        items.append(.button(title: String(localized: "Play Next"), icon: "text.line.first.and.arrowtriangle.forward") {
+        items.append(.button(title: String(appLocalized: "Play Next"), icon: "text.line.first.and.arrowtriangle.forward") {
             playlistManager.playNext(track)
         })
         
         // Add to Queue
-        items.append(.button(title: String(localized: "Add to Queue"), icon: "text.append") {
+        items.append(.button(title: String(appLocalized: "Add to Queue"), icon: "text.append") {
             playlistManager.addToQueue(track)
         })
         
@@ -149,21 +149,21 @@ enum TrackContextMenu {
         var items: [ContextMenuItem] = []
         
         // Play
-        items.append(.button(title: String(localized: "Play"), icon: Icons.playFill) {
+        items.append(.button(title: String(appLocalized: "Play"), icon: Icons.playFill) {
             if let firstTrack = tracks.first {
                 playlistManager.playTrack(firstTrack, fromTracks: tracks)
             }
         })
         
         // Play Next
-        items.append(.button(title: String(localized: "Play Next"), icon: "text.line.first.and.arrowtriangle.forward") {
+        items.append(.button(title: String(appLocalized: "Play Next"), icon: "text.line.first.and.arrowtriangle.forward") {
             for track in tracks.reversed() {
                 playlistManager.playNext(track)
             }
         })
         
         // Add to Queue
-        items.append(.button(title: String(localized: "Add to Queue"), icon: "text.append") {
+        items.append(.button(title: String(appLocalized: "Add to Queue"), icon: "text.append") {
             for track in tracks {
                 playlistManager.addToQueue(track)
             }
@@ -173,7 +173,7 @@ enum TrackContextMenu {
     }
     
     private static func createShowInfoItem(for track: Track) -> ContextMenuItem {
-        .button(title: String(localized: "Show Info"), icon: Icons.infoCircle) {
+        .button(title: String(appLocalized: "Show Info"), icon: Icons.infoCircle) {
             NotificationCenter.default.post(
                 name: NSNotification.Name("ShowTrackInfo"),
                 object: nil,
@@ -183,13 +183,13 @@ enum TrackContextMenu {
     }
     
     private static func createRevealInFinderItem(for track: Track) -> ContextMenuItem {
-        .button(title: String(localized: "Reveal in Finder"), icon: "finder") {
+        .button(title: String(appLocalized: "Reveal in Finder"), icon: "finder") {
             NSWorkspace.shared.selectFile(track.url.path, inFileViewerRootedAtPath: "")
         }
     }
 
     private static func createMoveToTrashItem(for track: Track) -> ContextMenuItem {
-        .button(title: String(localized: "Move to Trash..."), icon: Icons.trash, role: .destructive) {
+        .button(title: String(appLocalized: "Move to Trash..."), icon: Icons.trash, role: .destructive) {
             guard confirmMoveToTrash(track) else { return }
             Task {
                 await TrackTrashManager.moveTrackToTrash(track)
@@ -200,12 +200,12 @@ enum TrackContextMenu {
     private static func confirmMoveToTrash(_ track: Track) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(localized: "Move '\(track.title)' to Trash?")
-        alert.informativeText = String(localized: """
+        alert.messageText = String(appLocalized: "Move '\(track.title)' to Trash?")
+        alert.informativeText = String(appLocalized: """
         The audio file will be moved to the Trash. Orphaned lyrics and cover artwork sidecar files may also be moved to the Trash.
         """)
-        alert.addButton(withTitle: String(localized: "Move to Trash"))
-        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.addButton(withTitle: String(appLocalized: "Move to Trash"))
+        alert.addButton(withTitle: String(appLocalized: "Cancel"))
         return alert.runModal() == .alertFirstButtonReturn
     }
     
@@ -226,7 +226,7 @@ enum TrackContextMenu {
             }
         }
         
-        return .menu(title: String(localized: "Go to"), icon: "arrow.up.right.square", items: goToItems)
+        return .menu(title: String(appLocalized: "Go to"), icon: "arrow.up.right.square", items: goToItems)
     }
     
     private static func createMultiValueFilterItems(
@@ -294,7 +294,7 @@ enum TrackContextMenu {
         var playlistItems: [ContextMenuItem] = []
         
         // Create new playlist item
-        playlistItems.append(.button(title: String(localized: "New Playlist...")) {
+        playlistItems.append(.button(title: String(appLocalized: "New Playlist...")) {
             playlistManager.showCreatePlaylistModal(with: [track])
         })
         
@@ -321,7 +321,7 @@ enum TrackContextMenu {
             }
         }
         
-        items.append(.menu(title: String(localized: "Add to Playlist"), icon: "text.badge.plus", items: playlistItems))
+        items.append(.menu(title: String(appLocalized: "Add to Playlist"), icon: "text.badge.plus", items: playlistItems))
         
         return items
     }
@@ -336,7 +336,7 @@ enum TrackContextMenu {
         let playlists = playlistManager.playlists.filter { $0.type == .regular }
         var playlistItems: [ContextMenuItem] = []
         
-        playlistItems.append(.button(title: String(localized: "New Playlist...")) {
+        playlistItems.append(.button(title: String(appLocalized: "New Playlist...")) {
             playlistManager.showCreatePlaylistModal(with: tracks)
         })
         
@@ -352,10 +352,10 @@ enum TrackContextMenu {
             }
         }
         
-        items.append(.menu(title: String(localized: "Add to Playlist"), icon: "text.badge.plus", items: playlistItems))
+        items.append(.menu(title: String(appLocalized: "Add to Playlist"), icon: "text.badge.plus", items: playlistItems))
         
         if case .playlist(let playlist) = currentContext, playlist.type == .regular {
-            items.append(.button(title: String(localized: "Remove from Playlist"), icon: Icons.trash, role: .destructive) {
+            items.append(.button(title: String(appLocalized: "Remove from Playlist"), icon: Icons.trash, role: .destructive) {
                 Task {
                     await playlistManager.removeTracksFromPlaylist(tracks: tracks, playlistID: playlist.id)
                 }
@@ -375,7 +375,7 @@ enum TrackContextMenu {
         switch currentContext {
         case .folder:
             items.append(.divider)
-            items.append(.button(title: String(localized: "Show in Finder"), icon: "finder") {
+            items.append(.button(title: String(appLocalized: "Show in Finder"), icon: "finder") {
                 NSWorkspace.shared.selectFile(
                     track.url.path,
                     inFileViewerRootedAtPath: track.url.deletingLastPathComponent().path
@@ -384,7 +384,7 @@ enum TrackContextMenu {
             
         case .playlist(let playlist):
             if playlist.type == .regular {
-                items.append(.button(title: String(localized: "Remove from Playlist"), icon: Icons.trash, role: .destructive) {
+                items.append(.button(title: String(appLocalized: "Remove from Playlist"), icon: Icons.trash, role: .destructive) {
                     playlistManager.removeTrackFromPlaylist(
                         track: track,
                         playlistID: playlist.id

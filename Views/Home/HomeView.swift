@@ -62,7 +62,7 @@ struct HomeView: View {
                         emptySelectionView
                     }
                 }
-                .navigationTitle(selectedSidebarItem?.title ?? String(localized: "Home"))
+                .navigationTitle(selectedSidebarItem?.title ?? String(appLocalized: "Home"))
                 .navigationSubtitle("")
 
                 // Entity detail overlay
@@ -138,7 +138,7 @@ struct HomeView: View {
     private var discoverView: some View {
         VStack(alignment: .leading, spacing: 0) {
             TrackListHeader(
-                title: String(localized: "Discover"),
+                title: String(appLocalized: "Discover"),
                 sortOrder: $trackTableSortOrder,
                 tableRowSize: $trackTableRowSize
             ) {
@@ -206,7 +206,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             TrackListHeader(
-                title: String(localized: "All tracks"),
+                title: String(appLocalized: "All tracks"),
                 sortOrder: $trackTableSortOrder,
                 tableRowSize: $trackTableRowSize
             )
@@ -257,7 +257,7 @@ struct HomeView: View {
         VStack(spacing: 0) {
             // Header
             TrackListHeader(
-                title: String(localized: "All Artists"),
+                title: String(appLocalized: "All Artists"),
                 trackCount: libraryManager.artistEntities.count
             ) {
                 Button(action: {
@@ -270,7 +270,7 @@ struct HomeView: View {
                 })
                 .buttonStyle(.borderless)
                 .hoverEffect(scale: 1.1)
-                .help(entitySortAscending ? String(localized: "Sort descending") : String(localized: "Sort ascending"))
+                .help(entitySortAscending ? String(appLocalized: "Sort descending") : String(appLocalized: "Sort ascending"))
             }
             
             Divider()
@@ -308,7 +308,7 @@ struct HomeView: View {
         VStack(spacing: 0) {
             // Header
             TrackListHeader(
-                title: String(localized: "All Albums"),
+                title: String(appLocalized: "All Albums"),
                 trackCount: libraryManager.albumEntities.count
             ) {
                 Menu {

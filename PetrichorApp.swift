@@ -50,6 +50,10 @@ struct PetrichorApp: App {
                 .onReceive(appCoordinator.playlistManager.$isShuffleEnabled) { _ in
                     menuUpdateTrigger = UUID()
                 }
+                .onReceive(localizationSettings.$appLanguage) { _ in
+                    menuUpdateTrigger = UUID()
+                    appCoordinator.menuBarManager.refreshMenu()
+                }
                 .onAppear {
                     if desktopLyricsEnabled {
                         DesktopLyricsWindowManager.shared.show()
@@ -657,9 +661,9 @@ extension PetrichorApp {
     
     private var repeatModeLabel: String {
         switch appCoordinator.playlistManager.repeatMode {
-        case .off: return String(localized: "Repeat: Off")
-        case .one: return String(localized: "Repeat: Current Track")
-        case .all: return String(localized: "Repeat: All")
+        case .off: return String(appLocalized: "Repeat: Off")
+        case .one: return String(appLocalized: "Repeat: Current Track")
+        case .all: return String(appLocalized: "Repeat: All")
         }
     }
 }

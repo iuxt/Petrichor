@@ -34,6 +34,13 @@ class MenuBarManager: NSObject {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppLanguageDidChange),
+            name: .appLanguageDidChange,
+            object: nil
+        )
+
         // Defer menubar setup until app is fully launched
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             if UserDefaults.standard.bool(forKey: "closeToMenubar") {
@@ -102,6 +109,13 @@ class MenuBarManager: NSObject {
     }
 
     @objc
+    private func handleAppLanguageDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshMenu()
+        }
+    }
+
+    @objc
     private func updateMenu() {
         guard let statusItem = statusItem else { return }
 
@@ -111,7 +125,7 @@ class MenuBarManager: NSObject {
 
         // Play/Pause
         let playPauseItem = NSMenuItem(
-            title: playbackManager.isPlaying ? String(localized: "Pause") : String(localized: "Play"),
+            title: playbackManager.isPlaying ? String(appLocalized: "Pause") : String(appLocalized: "Play"),
             action: #selector(togglePlayPause),
             keyEquivalent: ""
         )
@@ -126,7 +140,7 @@ class MenuBarManager: NSObject {
 
         // Next
         let nextItem = NSMenuItem(
-            title: String(localized: "Next"),
+            title: String(appLocalized: "Next"),
             action: #selector(playNext),
             keyEquivalent: ""
         )
@@ -141,7 +155,7 @@ class MenuBarManager: NSObject {
 
         // Previous
         let previousItem = NSMenuItem(
-            title: String(localized: "Previous"),
+            title: String(appLocalized: "Previous"),
             action: #selector(playPrevious),
             keyEquivalent: ""
         )
@@ -158,7 +172,7 @@ class MenuBarManager: NSObject {
 
         // Shuffle
         let shuffleItem = NSMenuItem(
-            title: String(localized: "Shuffle"),
+            title: String(appLocalized: "Shuffle"),
             action: #selector(toggleShuffle),
             keyEquivalent: ""
         )
@@ -176,7 +190,7 @@ class MenuBarManager: NSObject {
 
         // Show App Window
         let showWindowItem = NSMenuItem(
-            title: String(localized: "Show Petrichor"),
+            title: String(appLocalized: "Show Petrichor"),
             action: #selector(showMainWindow),
             keyEquivalent: ""
         )
@@ -193,7 +207,7 @@ class MenuBarManager: NSObject {
 
         // Quit
         let quitItem = NSMenuItem(
-            title: String(localized: "Quit Petrichor"),
+            title: String(appLocalized: "Quit Petrichor"),
             action: #selector(quitApp),
             keyEquivalent: ""
         )
@@ -207,6 +221,10 @@ class MenuBarManager: NSObject {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+    }
+
+    func refreshMenu() {
+        updateMenu()
     }
 
     // MARK: - Actions

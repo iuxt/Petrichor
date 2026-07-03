@@ -73,7 +73,7 @@ struct ArtistEntity: Entity {
     var displayName: String { LibraryFilterType.artists.localizedDisplay(name) }
 
     var subtitle: String? {
-        String(localized: "\(trackCount) songs")
+        String(appLocalized: "\(trackCount) songs")
     }
 
     init(name: String, tracks: [Track]) {
@@ -176,7 +176,7 @@ struct CategoryEntity: Entity {
     var displayName: String { filterType.localizedDisplay(name) }
 
     var subtitle: String? {
-        String(localized: "\(trackCount) songs")
+        String(appLocalized: "\(trackCount) songs")
     }
 
     init(name: String, trackCount: Int, filterType: LibraryFilterType) {
@@ -197,7 +197,7 @@ struct FolderEntity: Entity {
     let artworkData: Data?
 
     var subtitle: String? {
-        String(localized: "\(trackCount) songs")
+        String(appLocalized: "\(trackCount) songs")
     }
 
     init(path: String, name: String, trackCount: Int) {

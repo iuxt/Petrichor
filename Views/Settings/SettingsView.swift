@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var libraryManager: LibraryManager
+    @EnvironmentObject private var localizationSettings: LocalizationSettings
     @State private var selectedTab: SettingsTab = .general
     
     @Environment(\.dismiss)
@@ -79,6 +80,8 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .environment(\.locale, localizationSettings.locale)
+        .id(localizationSettings.appLanguage.id)
         .frame(width: 650, height: 670)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SettingsSelectTab"))) { notification in
             if let tab = notification.object as? SettingsTab {
@@ -102,4 +105,5 @@ struct SettingsView: View {
             let manager = LibraryManager()
             return manager
         }())
+        .environmentObject(LocalizationSettings())
 }

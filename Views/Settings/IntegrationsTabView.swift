@@ -181,7 +181,7 @@ struct IntegrationsTabView: View {
         KeychainManager.delete(key: KeychainManager.Keys.lastfmSessionKey)
 
         Logger.info("Disconnected from Last.fm")
-        NotificationManager.shared.addMessage(.info, String(localized: "Disconnected from Last.fm"))
+        NotificationManager.shared.addMessage(.info, String(appLocalized: "Disconnected from Last.fm"))
     }
 }
 

@@ -149,15 +149,15 @@ struct LibraryView: View {
 
     private var headerTitle: String {
         if !libraryManager.globalSearchText.isEmpty {
-            return String(localized: "Search Results")
+            return String(appLocalized: "Search Results")
         } else if let filterItem = selectedFilterItem {
             if filterItem.isAllItem {
-                return String(localized: "All Tracks")
+                return String(appLocalized: "All Tracks")
             } else {
                 return filterItem.name
             }
         } else {
-            return String(localized: "All Tracks")
+            return String(appLocalized: "All Tracks")
         }
     }
 

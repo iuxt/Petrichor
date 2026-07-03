@@ -47,13 +47,13 @@ struct MergeEntitySheet: View {
 
     private var summary: String? {
         guard !selectedIds.isEmpty else { return nil }
-        return String(localized: "Merging \(selectedIds.count) into “\(trimmedName)”")
+        return String(appLocalized: "Merging \(selectedIds.count) into “\(trimmedName)”")
     }
 
     private var namePlaceholder: String {
         switch request.kind {
-        case .album: return String(localized: "Album Title")
-        default: return String(localized: "Name")
+        case .album: return String(appLocalized: "Album Title")
+        default: return String(appLocalized: "Name")
         }
     }
 
@@ -61,7 +61,7 @@ struct MergeEntitySheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PlaylistEditorHeader(title: String(localized: "Merge \(request.kind.filterType.pluralDisplayName)")) {
+            PlaylistEditorHeader(title: String(appLocalized: "Merge \(request.kind.filterType.pluralDisplayName)")) {
                 dismiss()
             }
             Divider()
@@ -73,7 +73,7 @@ struct MergeEntitySheet: View {
             Divider()
             PlaylistEditorFooter(
                 summary: summary,
-                saveTitle: String(localized: "Merge"),
+                saveTitle: String(appLocalized: "Merge"),
                 canSave: canMerge,
                 onCancel: { dismiss() },
                 onSave: { showingConfirmation = true }
@@ -82,13 +82,13 @@ struct MergeEntitySheet: View {
         .frame(width: 640, height: 700)
         .onAppear { loadCandidates() }
         .confirmationDialog(
-            String(localized: "Merge \(selectedIds.count) into “\(trimmedName)”?"),
+            String(appLocalized: "Merge \(selectedIds.count) into “\(trimmedName)”?"),
             isPresented: $showingConfirmation,
             titleVisibility: .visible
         ) {
-            Button(String(localized: "Merge")) { performMerge() }
+            Button(String(appLocalized: "Merge")) { performMerge() }
                 .keyboardShortcut(.defaultAction)
-            Button(String(localized: "Cancel"), role: .cancel) {}
+            Button(String(appLocalized: "Cancel"), role: .cancel) {}
         } message: {
             Text("This will combine the selected entries into a single entry under the provided title. It cannot be undone.")
         }
@@ -173,9 +173,9 @@ struct MergeEntitySheet: View {
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if candidates.isEmpty {
-            emptyState(message: String(localized: "No other entries to merge with"))
+            emptyState(message: String(appLocalized: "No other entries to merge with"))
         } else if filteredCandidates.isEmpty {
-            emptyState(message: String(localized: "No matches"))
+            emptyState(message: String(appLocalized: "No matches"))
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {

@@ -3,7 +3,7 @@ import Foundation
 enum TrackTrashManager {
     static func moveTrackToTrash(_ track: Track) async {
         guard let coordinator = AppCoordinator.shared else {
-            await notify(.error, String(localized: "Unable to access the library"))
+            await notify(.error, String(appLocalized: "Unable to access the library"))
             return
         }
 
@@ -19,7 +19,7 @@ enum TrackTrashManager {
         }
 
         guard fileManager.fileExists(atPath: audioURL.path) else {
-            await notify(.error, String(localized: "The file no longer exists"))
+            await notify(.error, String(appLocalized: "The file no longer exists"))
             return
         }
 
@@ -31,7 +31,7 @@ enum TrackTrashManager {
         } catch {
             Logger.error("Failed to move track to Trash: \(audioURL.path), error: \(error)")
             await coordinator.playbackManager.restoreCurrentTrackAfterFailedTrashMove(playbackSnapshot)
-            await notify(.error, String(localized: "Failed to move '\(track.title)' to Trash: \(error.localizedDescription)"))
+            await notify(.error, String(appLocalized: "Failed to move '\(track.title)' to Trash: \(error.localizedDescription)"))
             return
         }
 
@@ -50,12 +50,12 @@ enum TrackTrashManager {
         do {
             try await libraryManager.removeTrackFromLibrary(track)
             let message = failedSidecars.isEmpty
-                ? String(localized: "Moved '\(track.title)' to Trash")
-                : String(localized: "Moved '\(track.title)' to Trash, but some related files could not be moved")
+                ? String(appLocalized: "Moved '\(track.title)' to Trash")
+                : String(appLocalized: "Moved '\(track.title)' to Trash, but some related files could not be moved")
             await notify(failedSidecars.isEmpty ? .info : .warning, message)
         } catch {
             Logger.error("Failed to remove trashed track from library: \(error)")
-            await notify(.error, String(localized: "Moved file to Trash, but failed to update the library"))
+            await notify(.error, String(appLocalized: "Moved file to Trash, but failed to update the library"))
             await MainActor.run {
                 libraryManager.refreshLibrary()
             }

@@ -153,6 +153,7 @@ SWIFT
 
 swiftc \
     "$tmpdir/stubs.swift" \
+    Utilities/LocalizationSettings.swift \
     Core/TrackTrashFallback.swift \
     Managers/Playlist/PlaylistFileStore.swift \
     "$tmpdir/main.swift" \

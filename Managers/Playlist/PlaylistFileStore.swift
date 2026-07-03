@@ -212,9 +212,9 @@ enum PlaylistFileStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingBackingFile:
-            return String(localized: "The playlist file could not be found.")
+            return String(appLocalized: "The playlist file could not be found.")
         case .missingDefaultMusicFolder:
-            return String(localized: "Add a music folder before creating playlists.")
+            return String(appLocalized: "Add a music folder before creating playlists.")
         }
     }
 }
