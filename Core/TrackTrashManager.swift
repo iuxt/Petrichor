@@ -24,15 +24,18 @@ enum TrackTrashManager {
         }
 
         let sidecars = TrackTrashSidecars.sidecarURLs(forAudioURL: audioURL)
-        await coordinator.playbackManager.handleTrackMovedToTrash(track)
+        let playbackSnapshot = await coordinator.playbackManager.prepareCurrentTrackForTrashMove(track)
 
         do {
             try moveItemToTrash(audioURL, fileManager: fileManager)
         } catch {
             Logger.error("Failed to move track to Trash: \(audioURL.path), error: \(error)")
+            await coordinator.playbackManager.restoreCurrentTrackAfterFailedTrashMove(playbackSnapshot)
             await notify(.error, String(localized: "Failed to move '\(track.title)' to Trash: \(error.localizedDescription)"))
             return
         }
+
+        await coordinator.playbackManager.handleTrackMovedToTrash(track)
 
         var failedSidecars: [URL] = []
         for url in sidecars {

@@ -1,6 +1,6 @@
 import Foundation
 
-struct LyricLine: Identifiable, Codable, Equatable {
+struct LyricLine: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     let text: String
     let startTime: TimeInterval // seconds

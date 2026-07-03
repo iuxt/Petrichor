@@ -365,7 +365,7 @@ extension DatabaseManager {
     /// Get tracks for an artist entity
     func getTracksForArtistEntity(_ artistName: String) -> [Track] {
         do {
-            var tracks = try dbQueue.read { db in
+            let tracks = try dbQueue.read { db in
                 let normalizedName = ArtistParser.normalizeArtistName(artistName)
                 
                 guard let artistId = try Artist
@@ -400,7 +400,7 @@ extension DatabaseManager {
     /// Get tracks for an album entity
     func getTracksForAlbumEntity(_ albumEntity: AlbumEntity) -> [Track] {
         do {
-            var tracks = try dbQueue.read { db in
+            let tracks = try dbQueue.read { db in
                 if let albumId = albumEntity.albumId {
                     var query = Track.all()
                         .filter(Track.Columns.albumId == albumId)
@@ -510,7 +510,7 @@ extension DatabaseManager {
 
     func getAllTracks() -> [Track] {
         do {
-            var tracks = try dbQueue.read { db in
+            let tracks = try dbQueue.read { db in
                 try Track.lightweightRequest()
                     .order(Track.Columns.title)
                     .fetchAll(db)
@@ -525,7 +525,7 @@ extension DatabaseManager {
 
     func getTracksForFolder(_ folderId: Int64) -> [Track] {
         do {
-            var tracks = try dbQueue.read { db in
+            let tracks = try dbQueue.read { db in
                 try Track.lightweightRequest()
                     .filter(Track.Columns.folderId == folderId)
                     .order(Track.Columns.title)

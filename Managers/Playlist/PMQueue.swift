@@ -7,6 +7,14 @@
 import Foundation
 
 extension PlaylistManager {
+    private func isSameTrack(_ lhs: Track, _ rhs: Track) -> Bool {
+        if let lhsId = lhs.trackId, let rhsId = rhs.trackId {
+            return lhsId == rhsId
+        }
+
+        return lhs.url.standardizedFileURL.path == rhs.url.standardizedFileURL.path
+    }
+
     func createLibraryQueue() {
         guard let library = libraryManager else { return }
         currentQueue = library.tracks
@@ -38,7 +46,7 @@ extension PlaylistManager {
 
         let insertIndex = currentQueueIndex + 1
 
-        if let existingIndex = currentQueue.firstIndex(where: { $0.id == track.id }) {
+        if let existingIndex = currentQueue.firstIndex(where: { isSameTrack($0, track) }) {
             currentQueue.remove(at: existingIndex)
             if existingIndex <= currentQueueIndex {
                 currentQueueIndex -= 1
@@ -57,7 +65,7 @@ extension PlaylistManager {
             return
         }
 
-        if !currentQueue.contains(where: { $0.id == track.id }) {
+        if !currentQueue.contains(where: { isSameTrack($0, track) }) {
             currentQueue.append(track)
             Logger.info("Added track to playback queue")
         }
@@ -108,7 +116,7 @@ extension PlaylistManager {
         guard !currentQueue.isEmpty else { return }
 
         if let currentTrack = audioPlayer?.currentTrack,
-           let currentIndex = currentQueue.firstIndex(where: { $0.id == currentTrack.id }) {
+           let currentIndex = currentQueue.firstIndex(where: { isSameTrack($0, currentTrack) }) {
             var tracksToShuffle = currentQueue
             tracksToShuffle.remove(at: currentIndex)
             tracksToShuffle.shuffle()

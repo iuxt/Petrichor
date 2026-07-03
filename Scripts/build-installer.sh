@@ -10,6 +10,15 @@ SCHEME="Petrichor"
 CONFIGURATION="Release"
 PROJECT="Petrichor.xcodeproj"
 NOTARY_PROFILE="Petrichor"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALLER_BACKGROUND="${PETRICHOR_INSTALLER_BACKGROUND:-$SCRIPT_DIR/assets/install.svg}"
+DMG_WINDOW_WIDTH=660
+DMG_WINDOW_HEIGHT=400
+DMG_ICON_SIZE=128
+DMG_APP_ICON_X=165
+DMG_APP_ICON_Y=180
+DMG_APPLICATIONS_ICON_X=495
+DMG_APPLICATIONS_ICON_Y=180
 
 # Read from environment variables
 TEAM_ID="${PETRICHOR_TEAM_ID:-}"
@@ -26,6 +35,41 @@ log() { echo -e "✅ $1"; }
 error() { echo -e "❌ $1" >&2; }
 warning() { echo -e "⚠️  $1"; }
 info() { echo -e "ℹ️  $1"; }
+
+prepare_dmg_source() {
+    local app_source="$1"
+    local dmg_source="$2"
+
+    rm -rf "$dmg_source"
+    mkdir -p "$dmg_source/.background"
+    ditto "$app_source" "$dmg_source/$APP_NAME.app"
+
+    if [ -f "$INSTALLER_BACKGROUND" ]; then
+        cp "$INSTALLER_BACKGROUND" "$dmg_source/.background/install.svg"
+    else
+        warning "Installer background not found at $INSTALLER_BACKGROUND"
+    fi
+}
+
+create_dmg_with_layout() {
+    local dmg_title="$1"
+    local dmg_path="$2"
+    local dmg_source="$3"
+
+    local args=(
+        --volname "$dmg_title"
+        --window-size "$DMG_WINDOW_WIDTH" "$DMG_WINDOW_HEIGHT"
+        --icon-size "$DMG_ICON_SIZE"
+        --icon "$APP_NAME.app" "$DMG_APP_ICON_X" "$DMG_APP_ICON_Y"
+        --app-drop-link "$DMG_APPLICATIONS_ICON_X" "$DMG_APPLICATIONS_ICON_Y"
+    )
+
+    if [ -f "$dmg_source/.background/install.svg" ]; then
+        args+=(--background "$dmg_source/.background/install.svg")
+    fi
+
+    create-dmg "${args[@]}" "$dmg_path" "$dmg_source"
+}
 
 # Check required tools
 check_requirements() {
@@ -298,9 +342,12 @@ EOF
     if command -v create-dmg >/dev/null 2>&1; then
         local dmg_title="$APP_NAME $VERSION"
         [ "$suffix" != "Universal" ] && dmg_title="$APP_NAME-$suffix"
-        create-dmg --volname "$dmg_title" "$dmg_path" "$export_path" || {
+        local dmg_source="$BUILD_DIR/dmg-source-$suffix"
+        prepare_dmg_source "$export_path/$APP_NAME.app" "$dmg_source"
+        create_dmg_with_layout "$dmg_title" "$dmg_path" "$dmg_source" || {
             error "create-dmg failed"; return 1
         }
+        rm -rf "$dmg_source"
     else
         # Fallback to hdiutil
         DMG_DIR="$BUILD_DIR/dmg-$suffix"
@@ -372,10 +419,13 @@ create_local_installer() {
     if command -v create-dmg >/dev/null 2>&1; then
         local dmg_title="$APP_NAME $VERSION Local"
         [ "$suffix" != "Universal" ] && dmg_title="$APP_NAME-$suffix Local"
-        create-dmg --volname "$dmg_title" "$dmg_path" "$export_path" || {
+        local dmg_source="$BUILD_DIR/dmg-source-$suffix-local"
+        prepare_dmg_source "$export_path/$APP_NAME.app" "$dmg_source"
+        create_dmg_with_layout "$dmg_title" "$dmg_path" "$dmg_source" || {
             error "create-dmg failed"
             return 1
         }
+        rm -rf "$dmg_source"
     else
         local dmg_dir="$BUILD_DIR/dmg-$suffix"
         rm -rf "$dmg_dir"

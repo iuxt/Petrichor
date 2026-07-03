@@ -118,14 +118,24 @@ trash_manager = Path("Core/TrackTrashManager.swift").read_text()
 playback_manager = Path("Managers/PlaybackManager.swift").read_text()
 queue_manager = Path("Managers/Playlist/PMPlayback.swift").read_text()
 
+prepare_call = "playbackManager.prepareCurrentTrackForTrashMove(track)"
 advance_call = "playbackManager.handleTrackMovedToTrash(track)"
 trash_call = "moveItemToTrash(audioURL"
+restore_call = "playbackManager.restoreCurrentTrackAfterFailedTrashMove"
 
-if advance_call not in trash_manager:
-    raise SystemExit("TrackTrashManager must tell PlaybackManager when the trashed track is currently loaded.")
+for needle, message in [
+    (prepare_call, "TrackTrashManager must ask PlaybackManager to release the current audio file before trashing."),
+    (advance_call, "TrackTrashManager must tell PlaybackManager after the file move succeeds."),
+    (restore_call, "TrackTrashManager must restore playback state if the file move fails."),
+]:
+    if needle not in trash_manager:
+        raise SystemExit(message)
 
-if trash_manager.index(advance_call) > trash_manager.index(trash_call):
-    raise SystemExit("Playback must stop or advance before the current audio file is moved to Trash.")
+if trash_manager.index(prepare_call) > trash_manager.index(trash_call):
+    raise SystemExit("Playback must release the current audio file before it is moved to Trash.")
+
+if trash_manager.index(advance_call) < trash_manager.index(trash_call):
+    raise SystemExit("Playback queue/library changes must happen only after the current audio file moves to Trash.")
 
 if "func handleTrackMovedToTrash(_ track: Track)" not in playback_manager:
     raise SystemExit("PlaybackManager must expose a focused handler for trashed current tracks.")

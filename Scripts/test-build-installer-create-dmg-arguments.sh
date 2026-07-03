@@ -13,8 +13,43 @@ if rg -n -- '--dmg-title' "$script" >/dev/null; then
     exit 1
 fi
 
-if ! rg -n 'create-dmg --volname "\$dmg_title" "\$dmg_path" "\$export_path"' "$script" >/dev/null; then
-    printf 'build-installer must call create-dmg with --volname, output .dmg path, and source folder.\n' >&2
+if ! rg -n 'INSTALLER_BACKGROUND="\$\{PETRICHOR_INSTALLER_BACKGROUND:-\$SCRIPT_DIR/assets/install\.svg\}"' "$script" >/dev/null; then
+    printf 'build-installer must default to the repository installer SVG background and allow an environment override.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'cp "\$INSTALLER_BACKGROUND" "\$dmg_source/\.background/install\.svg"' "$script" >/dev/null; then
+    printf 'build-installer must stage the SVG background inside the DMG source folder.\n' >&2
+    exit 1
+fi
+
+if rg -n 'ln -s /Applications "\$dmg_source/Applications"' "$script" >/dev/null; then
+    printf 'build-installer must let create-dmg --app-drop-link create the Applications link instead of pre-staging it.\n' >&2
+    exit 1
+fi
+
+if ! rg -n -- '--background "\$dmg_source/\.background/install\.svg"' "$script" >/dev/null; then
+    printf 'build-installer must pass the staged SVG background to create-dmg.\n' >&2
+    exit 1
+fi
+
+if ! rg -n -- '--window-size "\$DMG_WINDOW_WIDTH" "\$DMG_WINDOW_HEIGHT"' "$script" >/dev/null; then
+    printf 'build-installer must set the create-dmg window size.\n' >&2
+    exit 1
+fi
+
+if ! rg -n -- '--icon "\$APP_NAME\.app" "\$DMG_APP_ICON_X" "\$DMG_APP_ICON_Y"' "$script" >/dev/null; then
+    printf 'build-installer must set the Petrichor app icon position.\n' >&2
+    exit 1
+fi
+
+if ! rg -n -- '--app-drop-link "\$DMG_APPLICATIONS_ICON_X" "\$DMG_APPLICATIONS_ICON_Y"' "$script" >/dev/null; then
+    printf 'build-installer must add an Applications drop link at the configured position.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'create_dmg_with_layout "\$dmg_title" "\$dmg_path" "\$dmg_source"' "$script" >/dev/null; then
+    printf 'build-installer must call create-dmg through the layout helper with output .dmg path and staged source folder.\n' >&2
     exit 1
 fi
 

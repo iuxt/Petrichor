@@ -61,6 +61,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
     private let sfbPlayer: SFBPlayer
     private var currentEntryId: AudioEntryId?
     private var currentURL: URL?
+    private var playGeneration: UInt64 = 0
     private var delegateBridge: SFBAudioPlayerDelegateBridge?
     private static let maxPreBufferSize: UInt64 = 100 * 1024 * 1024
 
@@ -110,6 +111,8 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
     ///   - url: The URL of the audio file
     ///   - startPaused: If true, loads the file but doesn't start playback
     func play(url: URL, entryId: AudioEntryId, startPaused: Bool = false) {
+        playGeneration &+= 1
+        let generation = playGeneration
         currentURL = url
         currentEntryId = entryId
 
@@ -125,9 +128,20 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
                     let inputSource = try InputSource(for: url, flags: .loadFilesInMemory)
                     let decoder = try AudioDecoder(inputSource: inputSource)
 
-                    try self.sfbPlayer.play(decoder)
-
                     DispatchQueue.main.async {
+                        guard self.playGeneration == generation,
+                              self.currentEntryId == entryId,
+                              self.currentURL == url else {
+                            return
+                        }
+
+                        do {
+                            try self.sfbPlayer.play(decoder)
+                        } catch {
+                            self.handlePlaybackError(error, entryId: entryId)
+                            return
+                        }
+
                         if startPaused {
                             self.sfbPlayer.pause()
                             self.state = .paused
@@ -137,12 +151,17 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
                         Logger.info("Started playing (pre-buffered): \(url.lastPathComponent)")
                     }
                 } catch {
-                    Logger.warning("Pre-buffering failed, falling back to direct playback: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        guard self.playGeneration == generation,
+                              self.currentEntryId == entryId,
+                              self.currentURL == url else {
+                            return
+                        }
 
-                    do {
-                        try self.sfbPlayer.play(url)
+                        Logger.warning("Pre-buffering failed, falling back to direct playback: \(error.localizedDescription)")
 
-                        DispatchQueue.main.async {
+                        do {
+                            try self.sfbPlayer.play(url)
                             if startPaused {
                                 self.sfbPlayer.pause()
                                 self.state = .paused
@@ -150,9 +169,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
                                 self.state = .playing
                             }
                             Logger.info("Started playing (direct fallback): \(url.lastPathComponent)")
-                        }
-                    } catch {
-                        DispatchQueue.main.async {
+                        } catch {
                             self.handlePlaybackError(error, entryId: entryId)
                         }
                     }
@@ -202,6 +219,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
     func stop() {
         guard state != .stopped else { return }
 
+        playGeneration &+= 1
         let wasPlaying = state == .playing
         let currentProgress = currentPlaybackProgress
         let currentDuration = duration

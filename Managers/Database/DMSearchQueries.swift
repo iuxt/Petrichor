@@ -92,21 +92,26 @@ extension DatabaseManager {
         
         let processedTokens = tokens.map { token -> String in
             let tokenStr = String(token)
-            
-            let problematicChars = CharacterSet(charactersIn: "\"*^:()[]{}~-")
-            
-            if tokenStr.rangeOfCharacter(from: problematicChars) != nil {
-                let escaped = tokenStr.replacingOccurrences(of: "\"", with: "\"\"")
-                return "\"\(escaped)\""
-            } else if tokenStr.contains(".") {
-                let escaped = tokenStr.replacingOccurrences(of: "\"", with: "\"\"")
-                return "\"\(escaped)\" OR \"\(escaped)\"*"
-            } else {
+
+            if isPlainFTSToken(tokenStr) {
                 return "\(tokenStr)*"
             }
+
+            return quotedFTSToken(tokenStr)
         }
         
         return processedTokens.joined(separator: " AND ")
+    }
+
+    private func isPlainFTSToken(_ token: String) -> Bool {
+        !token.isEmpty && token.unicodeScalars.allSatisfy { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+        }
+    }
+
+    private func quotedFTSToken(_ token: String) -> String {
+        let escaped = token.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
     }
     
     /// Generate SQL placeholders for IN clause

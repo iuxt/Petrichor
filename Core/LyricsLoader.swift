@@ -15,7 +15,11 @@ struct LyricsLoader {
         var source: LyricsSource = .none
         
         // 1. External LRC/SRT files
-        if let external = try? loadExternalLyrics(for: track) {
+        let audioURL = track.url
+        let external = await Task.detached(priority: .utility) {
+            try? loadExternalLyrics(forAudioURL: audioURL)
+        }.value
+        if let external {
             lines = external.lyrics
             source = external.source
         }
@@ -44,8 +48,8 @@ struct LyricsLoader {
     
     // MARK: - External files
     
-    private static func loadExternalLyrics(for track: Track) throws -> (lyrics: [LyricLine], source: LyricsSource)? {
-        let baseURL = track.url.deletingPathExtension()
+    private static func loadExternalLyrics(forAudioURL audioURL: URL) throws -> (lyrics: [LyricLine], source: LyricsSource)? {
+        let baseURL = audioURL.deletingPathExtension()
         
         // LRC
         let lrcURL = baseURL.appendingPathExtension("lrc")
@@ -143,7 +147,7 @@ struct LyricsLoader {
     }
 }
 
-enum LyricsSource {
+enum LyricsSource: Sendable {
     case lrc
     case srt
     case embedded

@@ -64,6 +64,7 @@ class PlaybackManager: NSObject, ObservableObject {
     private var restoredPosition: Double = 0
     private var artworkLoadTask: Task<Void, Never>?
     private var currentArtworkIdentity: String?
+    private var playbackRequestGeneration: UInt64 = 0
 
     /// Position to seek to and resume from once a restored track settles in
     /// `.paused` (see `audioPlayerStateChanged`). Deferring to that transition
@@ -91,6 +92,14 @@ class PlaybackManager: NSObject, ObservableObject {
         let track: Track
         let index: Int
         var fullTrack: FullTrack?
+    }
+
+    struct TrashMoveSnapshot {
+        let track: Track
+        let fullTrack: FullTrack?
+        let position: Double
+        let wasPlaying: Bool
+        let restoredPosition: Double
     }
     
     // MARK: - Dependencies
@@ -150,17 +159,21 @@ class PlaybackManager: NSObject, ObservableObject {
     
     func prepareTrackForRestoration(_ track: Track, at position: Double) {
         restoredUITrack = nil
+        let requestGeneration = beginPlaybackRequest()
         
-        Task {
+        Task { [weak self, track, requestGeneration] in
+            guard let self else { return }
             do {
-                guard let fullTrack = try await track.fullTrack(using: libraryManager.databaseManager.dbQueue) else {
+                guard let fullTrack = try await track.fullTrack(using: self.libraryManager.databaseManager.dbQueue) else {
                     await MainActor.run {
+                        guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                         Logger.error("Failed to fetch track data for restoration")
                     }
                     return
                 }
                 
                 await MainActor.run {
+                    guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                     self.currentTrack = track
                     self.currentFullTrack = fullTrack
                     self.restoredPosition = position
@@ -177,6 +190,7 @@ class PlaybackManager: NSObject, ObservableObject {
                 }
             } catch {
                 await MainActor.run {
+                    guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                     Logger.error("Failed to prepare track for restoration: \(error)")
                 }
             }
@@ -186,6 +200,7 @@ class PlaybackManager: NSObject, ObservableObject {
     // MARK: - Playback Controls
     
     func playTrack(_ track: Track) {
+        let requestGeneration = beginPlaybackRequest()
         restoredUITrack = nil
         restoredPosition = 0
         
@@ -201,10 +216,12 @@ class PlaybackManager: NSObject, ObservableObject {
             return
         }
                 
-        Task {
+        Task { [weak self, track, requestGeneration] in
+            guard let self else { return }
             do {
-                guard let fullTrack = try await track.fullTrack(using: libraryManager.databaseManager.dbQueue) else {
+                guard let fullTrack = try await track.fullTrack(using: self.libraryManager.databaseManager.dbQueue) else {
                     await MainActor.run {
+                        guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                         Logger.error("Failed to fetch full track data for: \(track.title)")
                         NotificationManager.shared.addMessage(.error, String(localized: "Cannot play track - missing data"))
                     }
@@ -212,10 +229,12 @@ class PlaybackManager: NSObject, ObservableObject {
                 }
                 
                 await MainActor.run {
+                    guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                     self.startPlayback(of: fullTrack, lightweightTrack: track)
                 }
             } catch {
                 await MainActor.run {
+                    guard self.isCurrentPlaybackRequest(requestGeneration) else { return }
                     Logger.error("Failed to fetch track data: \(error)")
                     NotificationManager.shared.addMessage(.error, String(localized: "Failed to load track for playback"))
                 }
@@ -249,6 +268,7 @@ class PlaybackManager: NSObject, ObservableObject {
     }
     
     func stop() {
+        invalidatePlaybackRequests()
         audioPlayer.stop()
         currentTrack = nil
         currentFullTrack = nil
@@ -263,6 +283,7 @@ class PlaybackManager: NSObject, ObservableObject {
     }
 
     func stopGracefully() {
+        invalidatePlaybackRequests()
         audioPlayer.stop()
         currentTrack = nil
         currentFullTrack = nil
@@ -276,9 +297,62 @@ class PlaybackManager: NSObject, ObservableObject {
     }
 
     @MainActor
+    func prepareCurrentTrackForTrashMove(_ track: Track) -> TrashMoveSnapshot? {
+        guard isCurrentTrack(track), let currentTrack else { return nil }
+
+        let snapshot = TrashMoveSnapshot(
+            track: currentTrack,
+            fullTrack: currentFullTrack,
+            position: currentTime,
+            wasPlaying: isPlaying,
+            restoredPosition: restoredPosition
+        )
+
+        invalidatePlaybackRequests()
+        pendingRestoreResume = nil
+        audioPlayer.clearNextTrack()
+        currentEntryId = nil
+        trackForEntry.removeAll()
+        pendingNext = nil
+        pendingNextWasSkipped = false
+        audioPlayer.stop()
+        currentTime = snapshot.position
+        isPlaying = false
+        restoredPosition = snapshot.restoredPosition
+        stopStateSaveTimer()
+        updateNowPlayingInfo()
+
+        return snapshot
+    }
+
+    @MainActor
+    func restoreCurrentTrackAfterFailedTrashMove(_ snapshot: TrashMoveSnapshot?) {
+        guard let snapshot else { return }
+
+        pendingRestoreResume = nil
+        pendingNext = nil
+        pendingNextWasSkipped = false
+        trackForEntry.removeAll()
+        currentEntryId = nil
+        currentTrack = snapshot.track
+        currentFullTrack = snapshot.fullTrack
+        currentTime = snapshot.position
+        restoredPosition = snapshot.position
+        isPlaying = false
+        stopStateSaveTimer()
+
+        if snapshot.wasPlaying, let fullTrack = snapshot.fullTrack {
+            startPlayback(of: fullTrack, lightweightTrack: snapshot.track)
+        } else {
+            updateNowPlayingInfo()
+        }
+    }
+
+    @MainActor
     func handleTrackMovedToTrash(_ track: Track) {
         guard isCurrentTrack(track) else { return }
 
+        invalidatePlaybackRequests()
         pendingRestoreResume = nil
         audioPlayer.clearNextTrack()
         audioPlayer.stop()
@@ -350,6 +424,19 @@ class PlaybackManager: NSObject, ObservableObject {
         return currentTrack.url == track.url
     }
 
+    private func beginPlaybackRequest() -> UInt64 {
+        playbackRequestGeneration &+= 1
+        return playbackRequestGeneration
+    }
+
+    private func invalidatePlaybackRequests() {
+        playbackRequestGeneration &+= 1
+    }
+
+    private func isCurrentPlaybackRequest(_ generation: UInt64) -> Bool {
+        playbackRequestGeneration == generation
+    }
+
     private func artworkIdentity(for track: Track) -> String {
         if let trackId = track.trackId {
             return "id:\(trackId)"
@@ -374,7 +461,7 @@ class PlaybackManager: NSObject, ObservableObject {
             let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url)
             let data = await ArtworkResolver.shared.artworkData(for: request)
 
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 guard let self,
                       !Task.isCancelled,
                       let current = self.currentTrack,
@@ -394,6 +481,7 @@ class PlaybackManager: NSObject, ObservableObject {
     /// track, queue, and position are kept so the progress bar stays put and the
     /// user can resume from the same spot on the new engine by pressing play.
     func reloadPlaybackEngine() {
+        invalidatePlaybackRequests()
         let resumePosition = currentTime
 
         audioPlayer.reload()
