@@ -150,12 +150,8 @@ enum DatabaseMigrator {
             Logger.info("v7_create_background_migrations_table migration completed")
         }
         
-        migrator.registerMigration("v8_convert_artwork_to_heic") { db in
-            try db.execute(
-                sql: "INSERT INTO background_migrations (identifier, resumable) VALUES (?, ?)",
-                arguments: ["v8_background_convert_artwork_to_heic", true]
-            )
-            Logger.info("v8_convert_artwork_to_heic: flagged for background artwork conversion")
+        migrator.registerMigration("v8_convert_artwork_to_heic") { _ in
+            Logger.info("v8_convert_artwork_to_heic skipped; artwork is resolved from files")
         }
         
         migrator.registerMigration("v9_rebuild_artist_associations") { db in
@@ -294,8 +290,27 @@ enum DatabaseMigrator {
             Logger.info("v15_remove_track_favorites migration completed")
         }
 
+        migrator.registerMigration("v16_clear_artwork_blobs") { db in
+            try db.execute(sql: "UPDATE albums SET artwork_data = NULL WHERE artwork_data IS NOT NULL")
+            try db.execute(sql: "UPDATE artists SET artwork_data = NULL WHERE artwork_data IS NOT NULL")
+            try db.execute(sql: "UPDATE tracks SET track_artwork_data = NULL WHERE track_artwork_data IS NOT NULL")
+
+            if try db.tableExists("background_migrations") {
+                try db.execute(
+                    sql: """
+                        UPDATE background_migrations
+                        SET completed_at = CURRENT_TIMESTAMP
+                        WHERE identifier = ? AND completed_at IS NULL
+                        """,
+                    arguments: ["v8_background_convert_artwork_to_heic"]
+                )
+            }
+
+            Logger.info("v16_clear_artwork_blobs migration completed")
+        }
+
         // MARK: - Future Migrations
-        // Add new migrations here as: migrator.registerMigration("v16_description") { db in ... }
+        // Add new migrations here as: migrator.registerMigration("v17_description") { db in ... }
 
         return migrator
     }
