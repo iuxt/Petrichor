@@ -11,6 +11,7 @@ struct LibrarySidebarView: View {
     @State private var searchText = ""
     @State private var sortAscending = true
     @State private var sortCache: SortCache?
+    @State private var globalSearchUpdateTask: Task<Void, Never>?
 
     private struct SortCache {
         let input: [LibraryFilterItem]
@@ -66,9 +67,15 @@ struct LibrarySidebarView: View {
             updateFilteredItems()
         }
         .onChange(of: libraryManager.globalSearchText) { oldValue, newValue in
-            Task {
+            globalSearchUpdateTask?.cancel()
+
+            globalSearchUpdateTask = Task {
                 try? await Task.sleep(nanoseconds: TimeConstants.searchDebounceDuration)
+
+                guard !Task.isCancelled else { return }
+
                 await MainActor.run {
+                    guard libraryManager.globalSearchText == newValue else { return }
                     updateFilteredItems()
                     
                     // Handle transition between search and non-search modes
@@ -94,6 +101,9 @@ struct LibrarySidebarView: View {
                     }
                 }
             }
+        }
+        .onDisappear {
+            globalSearchUpdateTask?.cancel()
         }
         .onChange(of: pendingSearchText) { _, newValue in
             if let searchValue = newValue {

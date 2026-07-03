@@ -17,6 +17,7 @@ struct LibraryView: View {
     @State private var isViewReady = false
     @State private var trackTableSortOrder = [KeyPathComparator(\Track.title)]
     @State private var filterUpdateTask: Task<Void, Never>?
+    @State private var globalSearchUpdateTask: Task<Void, Never>?
     @State private var lastFilterUpdateAt: Date = .distantPast
     @Binding var pendingFilter: LibraryFilterRequest?
 
@@ -32,6 +33,8 @@ struct LibraryView: View {
                     }
                 }
                 .onDisappear {
+                    globalSearchUpdateTask?.cancel()
+                    filterUpdateTask?.cancel()
                     isViewReady = false
                 }
                 .onChange(of: libraryManager.tracks) { _, newTracks in
@@ -71,10 +74,18 @@ struct LibraryView: View {
     }
 
     private func handleGlobalSearch() {
-        isLibrarySearchActive = true
-        Task {
+        globalSearchUpdateTask?.cancel()
+
+        let searchText = libraryManager.globalSearchText
+        isLibrarySearchActive = !searchText.isEmpty
+
+        globalSearchUpdateTask = Task {
             try? await Task.sleep(nanoseconds: TimeConstants.searchDebounceDuration)
+
+            guard !Task.isCancelled else { return }
+
             await MainActor.run {
+                guard libraryManager.globalSearchText == searchText else { return }
                 updateFilteredTracks()
                 isLibrarySearchActive = false
             }
@@ -227,6 +238,13 @@ struct LibraryView: View {
                         guard !Task.isCancelled else { return }
 
                         await MainActor.run {
+                            guard libraryManager.globalSearchText.isEmpty,
+                                  selectedFilterType == filterType,
+                                  selectedFilterItem?.name == filterValue,
+                                  selectedFilterItem?.albumId == albumId else {
+                                return
+                            }
+
                             self.cachedFilteredTracks = tracks
                         }
                     }

@@ -34,10 +34,12 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"build-installer.sh",
+				"test-build-warning-cleanliness.sh",
 				"test-desktop-lyrics-line-selection.sh",
 				"test-external-artwork-priority.sh",
 				"test-search-ranking.sh",
 				"test-track-trash-sidecars.sh",
+				"test-vendored-swiftpm-offline.sh",
 			);
 			target = 550F4A0D2DB45B1A005F794E /* Petrichor */;
 		};

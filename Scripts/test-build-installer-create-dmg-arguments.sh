@@ -53,4 +53,19 @@ if ! rg -n 'create_dmg_with_layout "\$dmg_title" "\$dmg_path" "\$dmg_source"' "$
     exit 1
 fi
 
+if ! rg -n 'create_dmg_bin="\$\(create_dmg_command\)"' "$script" >/dev/null; then
+    printf 'build-installer must resolve create-dmg through the compatibility wrapper.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'diskutil eject "\\\$\{DEV_NAME\}"' "$script" >/dev/null; then
+    printf 'build-installer must patch deprecated create-dmg hdiutil detach calls to diskutil eject.\n' >&2
+    exit 1
+fi
+
+if rg -n '^ +create-dmg ' "$script" >/dev/null; then
+    printf 'build-installer must not call create-dmg directly; use create_dmg_command instead.\n' >&2
+    exit 1
+fi
+
 printf 'build-installer create-dmg argument checks passed\n'

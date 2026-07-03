@@ -55,9 +55,13 @@ create_dmg_with_layout() {
     local dmg_title="$1"
     local dmg_path="$2"
     local dmg_source="$3"
+    local create_dmg_bin
+    create_dmg_bin="$(create_dmg_command)"
 
     local args=(
         --volname "$dmg_title"
+        --hdiutil-quiet
+        --no-internet-enable
         --window-size "$DMG_WINDOW_WIDTH" "$DMG_WINDOW_HEIGHT"
         --icon-size "$DMG_ICON_SIZE"
         --icon "$APP_NAME.app" "$DMG_APP_ICON_X" "$DMG_APP_ICON_Y"
@@ -68,7 +72,43 @@ create_dmg_with_layout() {
         args+=(--background "$dmg_source/.background/install.svg")
     fi
 
-    create-dmg "${args[@]}" "$dmg_path" "$dmg_source"
+    "$create_dmg_bin" "${args[@]}" "$dmg_path" "$dmg_source"
+}
+
+create_dmg_command() {
+    local original
+    original="$(command -v create-dmg)"
+
+    if ! grep -q 'hdiutil_retry detach "${DEV_NAME}"' "$original"; then
+        printf '%s\n' "$original"
+        return 0
+    fi
+
+    local wrapper_dir="${BUILD_DIR:-${TMPDIR:-/tmp}/petrichor-build}/create-dmg-diskutil-eject"
+    local original_dir
+    original_dir="$(cd "$(dirname "$original")" && pwd)"
+    local prefix_dir
+    prefix_dir="$(dirname "$original_dir")"
+
+    rm -rf "$wrapper_dir"
+    mkdir -p "$wrapper_dir"
+    cp "$original" "$wrapper_dir/create-dmg"
+    touch "$wrapper_dir/.this-is-the-create-dmg-repo"
+
+    if [ -d "$original_dir/support" ]; then
+        ln -s "$original_dir/support" "$wrapper_dir/support"
+    elif [ -d "$prefix_dir/share/create-dmg/support" ]; then
+        ln -s "$prefix_dir/share/create-dmg/support" "$wrapper_dir/support"
+    fi
+
+    perl -0pi -e '
+        s/hdiutil resize -limits "\$\{DMG_TEMP_NAME\}"/hdiutil resize -limits "\${DMG_TEMP_NAME}" 2>\/dev\/null/g;
+        s/hdiutil resize \$\{HDIUTIL_VERBOSITY\} -size \$\{DISK_IMAGE_SIZE\}m "\$\{DMG_TEMP_NAME\}"/diskutil image resize --size \${DISK_IMAGE_SIZE}m "\${DMG_TEMP_NAME}"/g;
+        s/DEV_NAME=\$\(hdiutil attach -mountrandom \$\{MOUNT_RANDOM_PATH\} -readwrite -noverify -noautoopen -nobrowse "\$\{DMG_TEMP_NAME\}"/MOUNT_DIR="\${MOUNT_RANDOM_PATH}\/dmg.\${RANDOM}.\$\$"\nDEV_NAME=\$\(diskutil image attach --mountPoint "\${MOUNT_DIR}" --nobrowse "\${DMG_TEMP_NAME}"/g;
+        s/hdiutil_retry detach "\$\{DEV_NAME\}"/diskutil eject "\${DEV_NAME}"/g;
+    ' "$wrapper_dir/create-dmg"
+    chmod +x "$wrapper_dir/create-dmg"
+    printf '%s\n' "$wrapper_dir/create-dmg"
 }
 
 # Check required tools
@@ -92,6 +132,10 @@ check_requirements() {
 
     if ! command -v hdiutil >/dev/null 2>&1; then
         missing_tools+=("hdiutil (Install macOS)")
+    fi
+
+    if ! command -v diskutil >/dev/null 2>&1; then
+        missing_tools+=("diskutil (Install macOS)")
     fi
     
     # Check for notarytool (if not bypassing)
@@ -206,7 +250,7 @@ run_local_build() {
         -project "$PROJECT"
         -scheme "$SCHEME"
         -configuration "$CONFIGURATION"
-        -destination "platform=macOS"
+        -destination "generic/platform=macOS"
         -derivedDataPath "$derived_data"
         "MARKETING_VERSION=$VERSION"
         "CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
@@ -275,7 +319,7 @@ create_installer() {
     info "Archiving for $display_name..."
     run_build archive "$error_log" "$arch" \
         -archivePath "$archive_path" \
-        -destination "platform=macOS" \
+        -destination "generic/platform=macOS" \
         MARKETING_VERSION="$VERSION" \
         CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
     
@@ -349,13 +393,16 @@ EOF
         }
         rm -rf "$dmg_source"
     else
-        # Fallback to hdiutil
+        # Fallback to diskutil
         DMG_DIR="$BUILD_DIR/dmg-$suffix"
         mkdir -p "$DMG_DIR"
         cp -R "$export_path/$APP_NAME.app" "$DMG_DIR/"
         ln -s /Applications "$DMG_DIR/Applications"
-        hdiutil create -volname "$APP_NAME $VERSION" \
-            -srcfolder "$DMG_DIR" -ov -format UDZO "$dmg_path"
+        rm -f "$dmg_path"
+        diskutil image create from \
+            --volumeName "$APP_NAME $VERSION" \
+            --format UDZO \
+            "$DMG_DIR" "$dmg_path"
         rm -rf "$DMG_DIR"
     fi
 
@@ -432,8 +479,11 @@ create_local_installer() {
         mkdir -p "$dmg_dir"
         cp -R "$export_path/$APP_NAME.app" "$dmg_dir/"
         ln -s /Applications "$dmg_dir/Applications"
-        hdiutil create -volname "$APP_NAME $VERSION Local" \
-            -srcfolder "$dmg_dir" -ov -format UDZO "$dmg_path"
+        rm -f "$dmg_path"
+        diskutil image create from \
+            --volumeName "$APP_NAME $VERSION Local" \
+            --format UDZO \
+            "$dmg_dir" "$dmg_path"
         rm -rf "$dmg_dir"
     fi
 
