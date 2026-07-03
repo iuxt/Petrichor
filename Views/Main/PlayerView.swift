@@ -95,6 +95,9 @@ struct PlayerView: View {
             tempProgressValue = 0
             updateGradientColors()
         }
+        .onChange(of: playbackManager.currentTrack?.artworkData?.count) {
+            updateGradientColors()
+        }
         .onChange(of: colorScheme) {
             updateGradientColors()
         }
@@ -725,7 +728,7 @@ struct TrackArtworkInfo: Equatable {
     let artworkData: Data?
 
     static func == (lhs: TrackArtworkInfo, rhs: TrackArtworkInfo) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id && lhs.artworkData?.count == rhs.artworkData?.count
     }
 }
 

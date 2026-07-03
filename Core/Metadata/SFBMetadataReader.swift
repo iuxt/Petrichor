@@ -52,6 +52,23 @@ struct SFBMetadataReader: MetadataReader {
         return metadata
     }
 
+    func extractEmbeddedArtwork(from url: URL) async -> Data? {
+        guard
+            let audioFile = try? AudioFile(
+                readingPropertiesAndMetadataFrom: url
+            ),
+            let firstPicture = audioFile.metadata.attachedPictures.first
+        else {
+            return nil
+        }
+
+        return await MetadataMapping.compressedArtwork(
+            from: firstPicture.imageData,
+            source: url.lastPathComponent,
+            cache: nil
+        )
+    }
+
     // MARK: - Private Extraction Methods
 
     private static func extractAudioProperties(

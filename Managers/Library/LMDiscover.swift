@@ -38,8 +38,6 @@ extension LibraryManager {
             // Load from saved IDs
             if let savedIds = userDefaults.array(forKey: Self.discoverTrackIdsKey) as? [Int64] {
                 tracks = databaseManager.getTracks(byIds: savedIds)
-                // Populate album artwork for loaded tracks
-                databaseManager.populateAlbumArtworkForTracks(&tracks)
             } else {
                 // No saved tracks, generate new
                 tracks = databaseManager.getDiscoverTracks(limit: discoverTrackCount)

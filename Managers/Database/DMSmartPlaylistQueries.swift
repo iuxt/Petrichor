@@ -84,9 +84,7 @@ extension DatabaseManager {
             query = query.limit(limit)
         }
 
-        var tracks = try query.fetchAll(db)
-        try populateAlbumArtworkForTracks(&tracks, db: db)
-        return tracks
+        return try query.fetchAll(db)
     }
 
     /// Build and execute a database query for a smart playlist

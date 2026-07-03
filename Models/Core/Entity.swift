@@ -81,17 +81,15 @@ struct ArtistEntity: Entity {
         self.name = name
         self.tracks = tracks
         self.trackCount = tracks.count
-
-        let trackWithArt = tracks.first { $0.albumArtworkData != nil }
-        self.artworkData = trackWithArt?.albumArtworkData
+        self.artworkData = ImageUtils.cachedCategoryArtwork(text: name.artistInitials, seed: "artist-\(name)")
     }
 
-    init(name: String, trackCount: Int, artworkData: Data? = nil) {
+    init(name: String, trackCount: Int) {
         self.id = UUID(name: name.lowercased(), namespace: EntityNamespaces.artist)
         self.name = name
         self.tracks = []
         self.trackCount = trackCount
-        self.artworkData = artworkData
+        self.artworkData = ImageUtils.cachedCategoryArtwork(text: name.artistInitials, seed: "artist-\(name)")
     }
 }
 
@@ -103,6 +101,7 @@ struct AlbumEntity: Entity {
     let trackCount: Int
     let artworkData: Data?
     let albumId: Int64?
+    let representativeTrackURL: URL?
     let year: String?
     let duration: Double?
     let artistName: String?
@@ -114,12 +113,19 @@ struct AlbumEntity: Entity {
         year
     }
 
+    var artworkRequest: ArtworkRequest? {
+        representativeTrackURL.map {
+            ArtworkRequest.album(albumId: albumId, representativeTrackURL: $0)
+        }
+    }
+
     init(name: String, tracks: [Track]) {
         self.id = UUID(name: name.lowercased(), namespace: EntityNamespaces.album)
         self.name = name
         self.tracks = tracks
         self.trackCount = tracks.count
         self.albumId = nil
+        self.representativeTrackURL = tracks.first?.url
         self.year = nil
         self.duration = nil
         self.artistName = nil
@@ -134,6 +140,7 @@ struct AlbumEntity: Entity {
         trackCount: Int,
         artworkData: Data? = nil,
         albumId: Int64? = nil,
+        representativeTrackURL: URL? = nil,
         year: String? = nil,
         duration: Double? = nil,
         artistName: String? = nil,
@@ -150,6 +157,7 @@ struct AlbumEntity: Entity {
         self.trackCount = trackCount
         self.artworkData = artworkData
         self.albumId = albumId
+        self.representativeTrackURL = representativeTrackURL
         self.year = year
         self.duration = duration
         self.artistName = artistName

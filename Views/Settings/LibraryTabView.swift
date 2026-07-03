@@ -19,6 +19,7 @@ struct LibraryTabView: View {
     @State private var initialDiscoverTrackCount: Int = 0
     @State private var showRefreshInfo = false
     @State private var showOptimizeInfo = false
+    @State private var showArtworkCacheInfo = false
     @State private var showResetInfo = false
     @State private var selectedFolderIDs: Set<Int64> = []
     @State private var isSelectMode: Bool = false
@@ -28,6 +29,8 @@ struct LibraryTabView: View {
     @State private var alsoResetPreferences = false
     @State private var isCommandKeyPressed = false
     @State private var modifierMonitor: Any?
+    @State private var artworkCacheSize: Int64 = 0
+    @State private var isClearingArtworkCache = false
 
     private var isLibraryUpdateInProgress: Bool {
         libraryManager.isScanning || stableScanningState
@@ -71,6 +74,7 @@ struct LibraryTabView: View {
             Section("Watched Folders") {
                 refreshRow
                 optimizeRow
+                artworkCacheRow
                 foldersSection
                 resetRow
             }
@@ -83,6 +87,7 @@ struct LibraryTabView: View {
         .onAppear {
             stableScanningState = libraryManager.isScanning
             initialDiscoverTrackCount = discoverTrackCount
+            refreshArtworkCacheSize()
 
             modifierMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
                 isCommandKeyPressed = event.modifierFlags.contains(.command)
@@ -267,6 +272,27 @@ struct LibraryTabView: View {
         }
     }
 
+    private var artworkCacheRow: some View {
+        HStack {
+            Text("Artwork cache")
+            infoButton(
+                isPresented: $showArtworkCacheInfo,
+                text: "Stores generated cover files outside the database. Petrichor trims this cache automatically when it grows past its size limit."
+            )
+
+            Spacer()
+
+            Text(formatByteCount(artworkCacheSize))
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(.secondary)
+
+            Button(action: clearArtworkCache, label: {
+                Label("Clear", systemImage: Icons.trash)
+            })
+            .disabled(isLibraryUpdateInProgress || isClearingArtworkCache || artworkCacheSize == 0)
+        }
+    }
+
     private var resetRow: some View {
         HStack {
             Text("Reset all library data")
@@ -402,6 +428,27 @@ struct LibraryTabView: View {
             guard let id = folder.id else { return false }
             return selectedFolderIDs.contains(id)
         }
+    }
+
+    private func refreshArtworkCacheSize() {
+        artworkCacheSize = ArtworkResolver.shared.cacheSize()
+    }
+
+    private func clearArtworkCache() {
+        isClearingArtworkCache = true
+        Task {
+            ArtworkResolver.shared.clearCache()
+
+            await MainActor.run {
+                refreshArtworkCacheSize()
+                isClearingArtworkCache = false
+                NotificationManager.shared.addMessage(.info, String(localized: "Artwork cache cleared"))
+            }
+        }
+    }
+
+    private func formatByteCount(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private func resetLibraryData() {

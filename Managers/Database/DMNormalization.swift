@@ -125,20 +125,6 @@ extension DatabaseManager {
         }
     }
 
-    /// Update artist artwork
-    func updateArtistArtwork(_ artistId: Int64, artworkData: Data?, in db: Database) throws {
-        guard let artworkData = artworkData, !artworkData.isEmpty else { return }
-
-        // Only update if artist doesn't already have artwork
-        try Artist
-            .filter(Artist.Columns.id == artistId && Artist.Columns.artworkData == nil)
-            .updateAll(
-                db,
-                Artist.Columns.artworkData.set(to: artworkData),
-                Artist.Columns.updatedAt.set(to: Date())
-            )
-    }
-
     // MARK: - Album Management
 
     /// Find or create an album with better duplicate prevention
@@ -337,26 +323,6 @@ extension DatabaseManager {
         if needsUpdate {
             try album.update(db)
         }
-    }
-
-    /// Update album artwork
-    func updateAlbumArtwork(_ albumId: Int64, artworkData: Data?, in db: Database) throws {
-        guard let artworkData = artworkData, !artworkData.isEmpty else { return }
-
-        // Check if album already has artwork, don't overwrite existing artwork
-        if let existingArtwork = try Album
-            .select(Album.Columns.artworkData)
-            .filter(Album.Columns.id == albumId)
-            .fetchOne(db)?[Album.Columns.artworkData] as Data?,
-           !existingArtwork.isEmpty {
-            // Album already has artwork, skip update
-            return
-        }
-
-        try db.execute(
-            sql: "UPDATE albums SET artwork_data = ?, updated_at = ? WHERE id = ? AND artwork_data IS NULL",
-            arguments: [artworkData, Date(), albumId]
-        )
     }
 
     // MARK: - Genre Management

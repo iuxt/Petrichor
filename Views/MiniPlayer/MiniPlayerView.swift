@@ -163,6 +163,10 @@ struct MiniPlayerView: View {
             refreshArtwork()
             updateGradientColors()
         }
+        .onChange(of: playbackManager.currentTrack?.artworkData?.count) {
+            refreshArtwork()
+            updateGradientColors()
+        }
         .onChange(of: colorScheme) {
             updateGradientColors()
         }

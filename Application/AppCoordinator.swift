@@ -225,8 +225,7 @@ class AppCoordinator: ObservableObject {
     private func performStateRestoration(_ state: PlaybackState) {
         // Load only the tracks we need for restoration
         let trackIdsNeeded = Set(state.queueTrackIds + [state.currentTrackId].compactMap { $0 })
-        var relevantTracks = libraryManager.databaseManager.getTracks(byIds: Array(trackIdsNeeded))
-        libraryManager.databaseManager.populateAlbumArtworkForTracks(&relevantTracks)
+        let relevantTracks = libraryManager.databaseManager.getTracks(byIds: Array(trackIdsNeeded))
 
         // Create a track ID to track map for efficient lookup
         let trackIdMap: [Int64: Track] = Dictionary(

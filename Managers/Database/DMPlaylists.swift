@@ -338,8 +338,6 @@ extension DatabaseManager {
                     }
                 }
                 
-                try populateAlbumArtworkForTracks(&sortedTracks, db: db)
-                
                 return sortedTracks
             }
         } catch {

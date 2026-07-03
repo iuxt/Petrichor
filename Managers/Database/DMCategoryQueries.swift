@@ -50,8 +50,7 @@ extension DatabaseManager {
                 return artists.map { artist in
                     return ArtistEntity(
                         name: artist.name,
-                        trackCount: artist.totalTracks,
-                        artworkData: artist.artworkData
+                        trackCount: artist.totalTracks
                     )
                 }
             }
@@ -73,9 +72,9 @@ extension DatabaseManager {
                         albums.id,
                         albums.title,
                         albums.total_tracks,
-                        albums.artwork_data,
                         albums.release_year,
                         COALESCE(SUM(tracks.duration), 0) as totalDuration,
+                        MIN(tracks.path) as representativeTrackPath,
                         COALESCE(
                             (SELECT artists.name
                              FROM album_artists
@@ -99,9 +98,9 @@ extension DatabaseManager {
                     let id: Int64?
                     let title: String
                     let totalTracks: Int
-                    let artworkData: Data?
                     let releaseYear: Int?
                     let totalDuration: Double
+                    let representativeTrackPath: String?
                     let artistName: String?
                     let createdAt: Date?
                     
@@ -109,9 +108,9 @@ extension DatabaseManager {
                         id = row["id"]
                         title = row["title"]
                         totalTracks = row["total_tracks"] ?? 0
-                        artworkData = row["artwork_data"]
                         releaseYear = row["release_year"]
                         totalDuration = row["totalDuration"] ?? 0
+                        representativeTrackPath = row["representativeTrackPath"]
                         artistName = row["artistName"]
                         createdAt = row["created_at"]
                     }
@@ -123,8 +122,8 @@ extension DatabaseManager {
                     AlbumEntity(
                         name: info.title,
                         trackCount: info.totalTracks,
-                        artworkData: info.artworkData,
                         albumId: info.id,
+                        representativeTrackURL: info.representativeTrackPath.map { URL(fileURLWithPath: $0) },
                         year: info.releaseYear.map { String($0) } ?? "",
                         duration: info.totalDuration,
                         artistName: info.artistName,

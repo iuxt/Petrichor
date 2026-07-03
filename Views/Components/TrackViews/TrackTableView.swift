@@ -486,7 +486,12 @@ private final class TrackArtworkCache: @unchecked Sendable {
             return cached
         }
 
-        return await loadQueue.renderArtwork { [self] in
+        let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url)
+        guard let data = await ArtworkResolver.shared.artworkData(for: request) else {
+            return nil
+        }
+
+        return await loadQueue.renderArtwork { [self, data] in
             // Re-check cache — another operation may have loaded it while queued
             if let cached = cache.object(forKey: key) {
                 return cached
@@ -494,8 +499,7 @@ private final class TrackArtworkCache: @unchecked Sendable {
 
             // Decode with NSImage(data:) and resize via CGContext to avoid
             // CGImageSource errors under concurrent load from rapid scrolling
-            guard let data = track.albumArtworkData,
-                  let nsImage = NSImage(data: data),
+            guard let nsImage = NSImage(data: data),
                   let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
                 return nil
             }

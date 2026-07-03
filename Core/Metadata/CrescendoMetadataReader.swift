@@ -44,6 +44,23 @@ struct CrescendoMetadataReader: MetadataReader {
         return metadata
     }
 
+    func extractEmbeddedArtwork(from url: URL) async -> Data? {
+        let source: CrescendoMetadata
+        do {
+            source = try await Crescendo.CrescendoMetadataReader.read(from: url)
+        } catch {
+            Logger.error("Failed to read artwork for \(url.lastPathComponent): \(error.localizedDescription)")
+            return nil
+        }
+
+        guard let firstPicture = source.pictures.first else { return nil }
+        return await MetadataMapping.compressedArtwork(
+            from: firstPicture.data,
+            source: url.lastPathComponent,
+            cache: nil
+        )
+    }
+
     private func map(_ source: CrescendoMetadata, into metadata: inout TrackMetadata) async {
         // Core metadata
         metadata.title = source.title

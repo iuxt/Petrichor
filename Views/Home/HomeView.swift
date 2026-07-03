@@ -433,9 +433,8 @@ struct HomeView: View {
     }
 
     private func buildArtistEntityForPerson(name: String) -> ArtistEntity {
-        let data = libraryManager.databaseManager.getArtistArtworkAndBio(for: name)
         let trackCount = pinnedItemTracks.count
-        return ArtistEntity(name: name, trackCount: trackCount, artworkData: data.artworkData)
+        return ArtistEntity(name: name, trackCount: trackCount)
     }
     
     // MARK: - Helpers

@@ -19,7 +19,11 @@ class PlaybackManager: NSObject, ObservableObject {
 
     // MARK: - Published Properties
 
-    @Published var currentTrack: Track?
+    @Published var currentTrack: Track? {
+        didSet {
+            refreshCurrentTrackArtworkIfNeeded()
+        }
+    }
     @Published var isPlaying: Bool = false {
         didSet {
             NotificationCenter.default.post(
@@ -58,6 +62,8 @@ class PlaybackManager: NSObject, ObservableObject {
     private var lastNowPlayingUpdate: TimeInterval = 0
     private var stateSaveTimer: Timer?
     private var restoredPosition: Double = 0
+    private var artworkLoadTask: Task<Void, Never>?
+    private var currentArtworkIdentity: String?
 
     /// Position to seek to and resume from once a restored track settles in
     /// `.paused` (see `audioPlayerStateChanged`). Deferring to that transition
@@ -128,7 +134,6 @@ class PlaybackManager: NSObject, ObservableObject {
         tempTrack.title = uiState.trackTitle
         tempTrack.artist = uiState.trackArtist
         tempTrack.album = uiState.trackAlbum
-        tempTrack.albumArtworkData = uiState.artworkData
         tempTrack.duration = uiState.trackDuration
         
         restoredUITrack = tempTrack
@@ -343,6 +348,45 @@ class PlaybackManager: NSObject, ObservableObject {
             return currentTrackId == trackId
         }
         return currentTrack.url == track.url
+    }
+
+    private func artworkIdentity(for track: Track) -> String {
+        if let trackId = track.trackId {
+            return "id:\(trackId)"
+        }
+        return "path:\(track.url.standardizedFileURL.path)"
+    }
+
+    private func refreshCurrentTrackArtworkIfNeeded() {
+        guard let track = currentTrack else {
+            artworkLoadTask?.cancel()
+            artworkLoadTask = nil
+            currentArtworkIdentity = nil
+            return
+        }
+
+        let identity = artworkIdentity(for: track)
+        guard identity != currentArtworkIdentity else { return }
+        currentArtworkIdentity = identity
+
+        artworkLoadTask?.cancel()
+        artworkLoadTask = Task { [weak self, track, identity] in
+            let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url)
+            let data = await ArtworkResolver.shared.artworkData(for: request)
+
+            await MainActor.run {
+                guard let self,
+                      !Task.isCancelled,
+                      let current = self.currentTrack,
+                      self.artworkIdentity(for: current) == identity else {
+                    return
+                }
+
+                self.currentTrack?.albumArtworkData = data
+                self.restoredUITrack?.albumArtworkData = data
+                self.updateNowPlayingInfo()
+            }
+        }
     }
 
     /// Rebuilds the playback engine for the currently selected backend (used when
