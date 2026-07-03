@@ -50,8 +50,7 @@ extension DatabaseManager {
                 return artists.map { artist in
                     return ArtistEntity(
                         name: artist.name,
-                        trackCount: artist.totalTracks,
-                        artworkData: artist.artworkData
+                        trackCount: artist.totalTracks
                     )
                 }
             }

@@ -6,7 +6,6 @@ class Artist: Identifiable, ObservableObject, FetchableRecord, PersistableRecord
     let name: String
     let normalizedName: String
     var sortName: String?
-    var artworkData: Data?
 
     // External API metadata
     @Published var bio: String?
@@ -56,7 +55,6 @@ class Artist: Identifiable, ObservableObject, FetchableRecord, PersistableRecord
         static let name = Column("name")
         static let normalizedName = Column("normalized_name")
         static let sortName = Column("sort_name")
-        static let artworkData = Column("artwork_data")
         static let bio = Column("bio")
         static let bioSource = Column("bio_source")
         static let bioUpdatedAt = Column("bio_updated_at")
@@ -86,7 +84,6 @@ class Artist: Identifiable, ObservableObject, FetchableRecord, PersistableRecord
         name = row[Columns.name]
         normalizedName = row[Columns.normalizedName]
         sortName = row[Columns.sortName]
-        artworkData = row[Columns.artworkData]
         bio = row[Columns.bio]
         bioSource = row[Columns.bioSource]
         bioUpdatedAt = row[Columns.bioUpdatedAt]
@@ -130,7 +127,6 @@ class Artist: Identifiable, ObservableObject, FetchableRecord, PersistableRecord
         container[Columns.name] = name
         container[Columns.normalizedName] = normalizedName
         container[Columns.sortName] = sortName
-        container[Columns.artworkData] = artworkData
         container[Columns.bio] = bio
         container[Columns.bioSource] = bioSource
         container[Columns.bioUpdatedAt] = bioUpdatedAt

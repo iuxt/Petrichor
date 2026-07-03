@@ -81,17 +81,15 @@ struct ArtistEntity: Entity {
         self.name = name
         self.tracks = tracks
         self.trackCount = tracks.count
-
-        let trackWithArt = tracks.first { $0.albumArtworkData != nil }
-        self.artworkData = trackWithArt?.albumArtworkData
+        self.artworkData = ImageUtils.cachedCategoryArtwork(text: name.artistInitials, seed: "artist-\(name)")
     }
 
-    init(name: String, trackCount: Int, artworkData: Data? = nil) {
+    init(name: String, trackCount: Int) {
         self.id = UUID(name: name.lowercased(), namespace: EntityNamespaces.artist)
         self.name = name
         self.tracks = []
         self.trackCount = trackCount
-        self.artworkData = artworkData
+        self.artworkData = ImageUtils.cachedCategoryArtwork(text: name.artistInitials, seed: "artist-\(name)")
     }
 }
 

@@ -654,24 +654,6 @@ extension DatabaseManager {
         }
     }
     
-    /// Get artist artwork and bio data by name (for album artists/composers).
-    func getArtistArtworkAndBio(for artistName: String) -> (artworkData: Data?, bio: String?) {
-        do {
-            return try dbQueue.read { db in
-                let normalizedName = ArtistParser.normalizeArtistName(artistName)
-                guard let artist = try Artist
-                    .filter((Artist.Columns.name == artistName) || (Artist.Columns.normalizedName == normalizedName))
-                    .fetchOne(db) else {
-                    return (nil, nil)
-                }
-                return (artist.artworkData, artist.bio)
-            }
-        } catch {
-            Logger.error("Failed to get artist data: \(error)")
-            return (nil, nil)
-        }
-    }
-
     /// Get album by title
     func getAlbumByTitle(_ title: String) -> Album? {
         do {

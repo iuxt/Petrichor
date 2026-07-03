@@ -83,7 +83,7 @@ extension DatabaseManager {
             try db.execute(sql: "UPDATE OR IGNORE album_artists SET artist_id = ? WHERE artist_id IN (\(marks))", arguments: winnerThenLosers)
             try AlbumArtist.filter(loserIds.contains(AlbumArtist.Columns.artistId)).deleteAll(db)
 
-            try carryOverArtistMetadata(winnerId: winnerId, loserIds: loserIds, in: db)
+            try carryOverArtistInfo(winnerId: winnerId, loserIds: loserIds, in: db)
 
             // Redirect aliases that pointed at a loser to keep chains flat.
             try ArtistAlias
@@ -162,11 +162,6 @@ extension DatabaseManager {
             try db.execute(sql: "UPDATE OR IGNORE album_artists SET album_id = ? WHERE album_id IN (\(marks))", arguments: winnerThenLosers)
             try AlbumArtist.filter(loserIds.contains(AlbumArtist.Columns.albumId)).deleteAll(db)
 
-            if winner.artworkData == nil, let donor = losers.first(where: { $0.artworkData != nil }) {
-                winner.artworkData = donor.artworkData
-                try winner.update(db)
-            }
-
             try AlbumAlias
                 .filter(loserIds.contains(AlbumAlias.Columns.canonicalAlbumId))
                 .updateAll(db, AlbumAlias.Columns.canonicalAlbumId.set(to: winnerId))
@@ -229,15 +224,11 @@ extension DatabaseManager {
         return try Row.fetchOne(db, sql: sql, arguments: [albumId])?["n"]
     }
 
-    private func carryOverArtistMetadata(winnerId: Int64, loserIds: [Int64], in db: Database) throws {
+    private func carryOverArtistInfo(winnerId: Int64, loserIds: [Int64], in db: Database) throws {
         guard let winner = try Artist.fetchOne(db, key: winnerId) else { return }
         let losers = try Artist.filter(loserIds.contains(Artist.Columns.id)).fetchAll(db)
 
         var changed = false
-        if winner.artworkData == nil, let donor = losers.first(where: { $0.artworkData != nil }) {
-            winner.artworkData = donor.artworkData
-            changed = true
-        }
         if winner.imageUrl == nil, let donor = losers.first(where: { $0.imageUrl != nil }) {
             winner.imageUrl = donor.imageUrl
             winner.imageSource = donor.imageSource
