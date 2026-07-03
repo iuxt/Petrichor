@@ -95,7 +95,6 @@ enum About {
     static let appSubtitle = "An offline macOS music player"
     static let appWebsite = "https://github.com/iuxt/Petrichor"
     static let appWiki = "https://github.com/iuxt/Petrichor/wiki"
-    static let appAcknowledgements = "https://github.com/iuxt/Petrichor/blob/main/ACKNOWLEDGEMENTS.md"
     static let sponsor = "https://github.com/sponsors/iuxt"
     static let appVersion = "1.5.2"
     static let appBuild = "152"

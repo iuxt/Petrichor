@@ -2,8 +2,6 @@ import SwiftUI
 
 struct AboutTabView: View {
     @EnvironmentObject var libraryManager: LibraryManager
-    
-    @State private var isAcknowledgementsExpanded = false
 
     var body: some View {
         ScrollView {
@@ -17,8 +15,6 @@ struct AboutTabView: View {
                 }
 
                 footerSection
-
-                acknowledgementsSection
 
                 Spacer(minLength: 4)
             }
@@ -123,79 +119,10 @@ struct AboutTabView: View {
         }
     }
 
-    // MARK: - Acknowledgements Section
-
-    private var acknowledgementsSection: some View {
-        VStack(spacing: 8) {
-            FooterLink(
-                icon: "heart.fill",
-                title: "Acknowledgements",
-                action: {
-                    withAnimation(.easeInOut(duration: AnimationDuration.mediumDuration)) {
-                        isAcknowledgementsExpanded.toggle()
-                    }
-                },
-                tooltip: "View data source acknowledgements"
-            )
-
-            if isAcknowledgementsExpanded {
-                HStack(spacing: 18) {
-                    Spacer()
-                    acknowledgementItem("logo-musicbrainz", url: "https://musicbrainz.org/", tooltip: "MusicBrainz")
-                    acknowledgementItem("logo-tmdb", url: "https://www.themoviedb.org/", tooltip: "The Movie Database")
-                    acknowledgementItem("logo-wikidata", url: "https://www.wikidata.org/", tooltip: "Wikimedia")
-                    acknowledgementItem("logo-lastfm", url: "https://www.last.fm/", tooltip: "Last.fm")
-                    Spacer()
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 12)
-                .frame(maxWidth: 350)
-                .background(Color.secondary.opacity(0.08))
-                .cornerRadius(12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-    }
-
-    private func acknowledgementItem(_ imageName: String, url: String, tooltip: String) -> some View {
-        Group {
-            if let url = URL(string: url) {
-                Link(destination: url) {
-                    Image(imageName)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 24)
-                }
-            }
-        }
-        .help(tooltip)
-    }
-
     // MARK: - Footer Section
 
     private var footerSection: some View {
         HStack(spacing: 20) {
-            FooterLink(
-                icon: "globe",
-                title: "Website",
-                url: URL(string: About.appWebsite),
-                tooltip: "Visit project website"
-            )
-            
-            FooterLink(
-                icon: "questionmark.circle",
-                title: "Help",
-                url: URL(string: About.appWiki),
-                tooltip: "Visit Help Wiki"
-            )
-            
-            FooterLink(
-                icon: "doc.text",
-                title: "License",
-                url: URL(string: About.appAcknowledgements),
-                tooltip: "View third-party licenses and acknowledgements"
-            )
-            
             FooterLink(
                 icon: "folder",
                 title: "App Data",
