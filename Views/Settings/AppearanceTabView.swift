@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct AppearanceTabView: View {
+    @EnvironmentObject private var localizationSettings: LocalizationSettings
+
     @AppStorage("colorMode")
     private var colorMode: ColorMode = .auto
 
@@ -45,6 +47,13 @@ struct AppearanceTabView: View {
 
     private var desktopLyricsFontFamilies: [String] {
         [DesktopLyricsSettings.systemFontName] + NSFontManager.shared.availableFontFamilies.sorted()
+    }
+
+    private var languageSelection: Binding<AppLanguage> {
+        Binding(
+            get: { localizationSettings.appLanguage },
+            set: { localizationSettings.select($0) }
+        )
     }
 
     enum ColorMode: String, CaseIterable, TabbedItem {
@@ -122,6 +131,13 @@ struct AppearanceTabView: View {
             }
 
             Section("Customization") {
+                Picker("Language", selection: languageSelection) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.title)
+                            .tag(language)
+                    }
+                }
+
                 HStack {
                     Text("Color mode")
                     Spacer()
@@ -206,4 +222,5 @@ struct AppearanceTabView: View {
 #Preview {
     AppearanceTabView()
         .frame(width: 600, height: 500)
+        .environmentObject(LocalizationSettings())
 }
