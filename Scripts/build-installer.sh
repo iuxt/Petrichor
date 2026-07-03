@@ -220,6 +220,7 @@ run_build() {
         $sign_config \
         MARKETING_VERSION='$VERSION' \
         CURRENT_PROJECT_VERSION='$VERSION' \
+        CLANG_CXX_LANGUAGE_STANDARD='gnu++20' \
         ARCHS='$arch' \
         ONLY_ACTIVE_ARCH=NO \
         $*"
@@ -254,6 +255,7 @@ run_local_build() {
         -derivedDataPath "$derived_data"
         "MARKETING_VERSION=$VERSION"
         "CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
+        "CLANG_CXX_LANGUAGE_STANDARD=gnu++20"
         "ARCHS=$arch"
         ONLY_ACTIVE_ARCH=NO
         CODE_SIGNING_ALLOWED=NO
