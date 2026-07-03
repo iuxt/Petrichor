@@ -299,3 +299,24 @@ to sign without notarizing. To use the script, make sure you have following tool
 - [xcpretty](https://github.com/xcpretty/xcpretty)
 - [create-dmg](https://github.com/sindresorhus/create-dmg)
 
+GitHub Actions also publishes signed and notarized releases automatically when a tag is pushed. The tag name is
+passed to `Scripts/build-installer.sh --version` and is used as the packaged app version.
+
+Configure these repository secrets before pushing a release tag:
+
+- `APPLE_TEAM_ID` - Apple Developer Team ID.
+- `APPLE_DEVELOPER_ID` - full Developer ID Application signing identity, for example
+  `Developer ID Application: Example Name (TEAMID)`.
+- `APPLE_CERTIFICATE_BASE64` - base64-encoded `.p12` export of the Developer ID Application certificate and
+  private key.
+- `APPLE_CERTIFICATE_PASSWORD` - password for the `.p12` certificate export.
+- `APPLE_KEYCHAIN_PASSWORD` - temporary CI keychain password.
+- `APPLE_ID` - Apple ID used for notarization.
+- `APPLE_APP_SPECIFIC_PASSWORD` - app-specific password for notarization.
+
+To publish a release:
+
+```bash
+git tag 1.2.3
+git push origin 1.2.3
+```

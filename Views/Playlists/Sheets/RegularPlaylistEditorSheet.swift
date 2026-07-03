@@ -367,7 +367,7 @@ struct RegularPlaylistEditorSheet: View {
                 .font(.system(size: 32))
                 .foregroundColor(.gray)
 
-            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
+            if !LibrarySearch.isSearchableQuery(searchText) {
                 Text("Type at least 2 characters to search")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
@@ -506,7 +506,7 @@ extension RegularPlaylistEditorSheet {
     private func filterPlaylist() {
         filterTask?.cancel()
         let query = playlistFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query.count >= 2 else {
+        guard LibrarySearch.isSearchableQuery(query) else {
             filterMatchIDs = nil
             return
         }
@@ -627,7 +627,7 @@ extension RegularPlaylistEditorSheet {
             return
         }
 
-        guard trimmedQuery.count >= 2 else {
+        guard LibrarySearch.isSearchableQuery(trimmedQuery) else {
             searchResults = []
             hasSearched = true
             isSearching = false
