@@ -70,6 +70,8 @@ protocol MetadataReader {
         externalArtwork: Data?,
         artworkCache: ArtworkCompressionCache?
     ) async -> TrackMetadata
+
+    func extractEmbeddedArtwork(from url: URL) async -> Data?
 }
 
 // MARK: - Metadata Engine
@@ -91,6 +93,11 @@ enum MetadataEngine {
             externalArtwork: externalArtwork,
             artworkCache: artworkCache
         )
+    }
+
+    /// Extract only embedded artwork from an audio file.
+    static func extractEmbeddedArtwork(from url: URL) async -> Data? {
+        await reader().extractEmbeddedArtwork(from: url)
     }
 
     /// Builds the reader for the selected backend.
