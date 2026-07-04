@@ -52,9 +52,13 @@ struct PetrichorApp: App {
                 }
                 .onReceive(localizationSettings.$appLanguage) { _ in
                     menuUpdateTrigger = UUID()
-                    appCoordinator.menuBarManager.refreshMenu()
+                    DispatchQueue.main.async {
+                        appCoordinator.menuBarManager.refreshMenu()
+                        refreshMainMenuLocalizedTitles()
+                    }
                 }
                 .onAppear {
+                    refreshMainMenuLocalizedTitles()
                     if desktopLyricsEnabled {
                         DesktopLyricsWindowManager.shared.show()
                     }
@@ -100,7 +104,7 @@ struct PetrichorApp: App {
     }
     
     private var equalizerWindow: some Scene {
-        WindowGroup("Equalizer", id: "equalizer") {
+        WindowGroup(String(appLocalized: "Equalizer"), id: "equalizer") {
             EqualizerView()
                 .environmentObject(appCoordinator.playbackManager)
                 .environmentObject(localizationSettings)
@@ -137,9 +141,9 @@ extension PetrichorApp {
             )
         } label: {
             if #available(macOS 26.0, *) {
-                Label("About Petrichor", systemImage: Icons.infoCircle)
+                localizedMenuLabel("About Petrichor", systemImage: Icons.infoCircle)
             } else {
-                Text("About Petrichor")
+                localizedMenuText("About Petrichor")
             }
         }
     }
@@ -152,9 +156,9 @@ extension PetrichorApp {
             )
         } label: {
             if #available(macOS 26.0, *) {
-                Label("Settings", systemImage: Icons.settings)
+                localizedMenuLabel("Settings", systemImage: Icons.settings)
             } else {
-                Text("Settings")
+                localizedMenuText("Settings")
             }
         }
         .keyboardShortcut(",", modifiers: .command)
@@ -173,9 +177,9 @@ extension PetrichorApp {
                 newPlaylistFromSelectionMenuItem()
             } label: {
                 if #available(macOS 26.0, *) {
-                    Label("New", systemImage: "plus.square")
+                    localizedMenuLabel("New", systemImage: "plus.square")
                 } else {
-                    Text("New")
+                    localizedMenuText("New")
                 }
             }
             
@@ -187,9 +191,9 @@ extension PetrichorApp {
                 refreshLibraryMenuItem()
             } label: {
                 if #available(macOS 26.0, *) {
-                    Label("Library", image: "custom.music.note.rectangle.stack")
+                    localizedMenuLabel("Library", image: "custom.music.note.rectangle.stack")
                 } else {
-                    Text("Library")
+                    localizedMenuText("Library")
                 }
             }
             
@@ -204,9 +208,9 @@ extension PetrichorApp {
             closeWindow()
         } label: {
             if #available(macOS 26.0, *) {
-                Label("Close", systemImage: "xmark")
+                localizedMenuLabel("Close", systemImage: "xmark")
             } else {
-                Text("Close")
+                localizedMenuText("Close")
             }
         }
         .keyboardShortcut("w", modifiers: .command)
@@ -235,9 +239,9 @@ extension PetrichorApp {
             appCoordinator.playlistManager.showCreatePlaylistModal()
         } label: {
             if #available(macOS 26.0, *) {
-                Label("Playlist", systemImage: Icons.musicNoteList)
+                localizedMenuLabel("Playlist", systemImage: Icons.musicNoteList)
             } else {
-                Text("Playlist")
+                localizedMenuText("Playlist")
             }
         }
         .keyboardShortcut("n", modifiers: .command)
@@ -251,9 +255,9 @@ extension PetrichorApp {
             )
         } label: {
             if #available(macOS 26.0, *) {
-                Label("Playlist from Selection", systemImage: Icons.musicNoteList)
+                localizedMenuLabel("Playlist from Selection", systemImage: Icons.musicNoteList)
             } else {
-                Text("Playlist from Selection")
+                localizedMenuText("Playlist from Selection")
             }
         }
         .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -266,9 +270,9 @@ extension PetrichorApp {
             appCoordinator.libraryManager.addFolder()
         } label: {
             if #available(macOS 26.0, *) {
-                Label("Add Folder(s) to Library", systemImage: Icons.folderBadgePlus)
+                localizedMenuLabel("Add Folder(s) to Library", systemImage: Icons.folderBadgePlus)
             } else {
-                Text("Add Folder(s) to Library")
+                localizedMenuText("Add Folder(s) to Library")
             }
         }
         .keyboardShortcut("o", modifiers: .command)
@@ -279,9 +283,9 @@ extension PetrichorApp {
             appCoordinator.libraryManager.refreshLibrary()
         } label: {
             if #available(macOS 26.0, *) {
-                Label("Refresh Library Folders", systemImage: Icons.arrowClockwise)
+                localizedMenuLabel("Refresh Library Folders", systemImage: Icons.arrowClockwise)
             } else {
-                Text("Refresh Library Folders")
+                localizedMenuText("Refresh Library Folders")
             }
         }
         .keyboardShortcut("r", modifiers: [.command, .shift])
@@ -291,7 +295,7 @@ extension PetrichorApp {
     
     @CommandsBuilder
     private func playbackMenuCommands() -> some Commands {
-        CommandMenu("Playback") {
+        CommandMenu(String(appLocalized: "Playback")) {
             playPauseMenuItem()
             
             Divider()
@@ -317,11 +321,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Play/Pause",
-                    systemImage: Icons.playPauseFill
+                    title: { localizedMenuText("Play/Pause") },
+                    icon: { Image(systemName: Icons.playPauseFill) }
                 )
             } else {
-                Text("Play/Pause")
+                localizedMenuText("Play/Pause")
             }
         }
         .keyboardShortcut(" ", modifiers: [])
@@ -337,9 +341,9 @@ extension PetrichorApp {
             }
         )) {
             if #available(macOS 26.0, *) {
-                Label("Shuffle", systemImage: Icons.shuffleFill)
+                localizedMenuLabel("Shuffle", systemImage: Icons.shuffleFill)
             } else {
-                Text("Shuffle")
+                localizedMenuText("Shuffle")
             }
         }
         .keyboardShortcut("s", modifiers: .command)
@@ -352,10 +356,7 @@ extension PetrichorApp {
             menuUpdateTrigger = UUID()
         } label: {
             if #available(macOS 26.0, *) {
-                Label(
-                    repeatModeLabel,
-                    systemImage: Icons.repeatFill
-                )
+                menuLabel(repeatModeLabel, systemImage: Icons.repeatFill)
             } else {
                 Text(repeatModeLabel)
             }
@@ -378,11 +379,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Next",
-                    systemImage: Icons.nextFill
+                    title: { localizedMenuText("Next") },
+                    icon: { Image(systemName: Icons.nextFill) }
                 )
             } else {
-                Text("Next")
+                localizedMenuText("Next")
             }
         }
         .keyboardShortcut(.rightArrow, modifiers: .command)
@@ -395,11 +396,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Previous",
-                    systemImage: Icons.previousFIll
+                    title: { localizedMenuText("Previous") },
+                    icon: { Image(systemName: Icons.previousFIll) }
                 )
             } else {
-                Text("Previous")
+                localizedMenuText("Previous")
             }
         }
         .keyboardShortcut(.leftArrow, modifiers: .command)
@@ -418,11 +419,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Seek Forward",
-                    systemImage: Icons.forwardFill
+                    title: { localizedMenuText("Seek Forward") },
+                    icon: { Image(systemName: Icons.forwardFill) }
                 )
             } else {
-                Text("Seek Forward")
+                localizedMenuText("Seek Forward")
             }
         }
         .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
@@ -441,11 +442,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Seek Backward",
-                    systemImage: Icons.backwardFill
+                    title: { localizedMenuText("Seek Backward") },
+                    icon: { Image(systemName: Icons.backwardFill) }
                 )
             } else {
-                Text("Seek Backward")
+                localizedMenuText("Seek Backward")
             }
         }
         .keyboardShortcut(.leftArrow, modifiers: [.command, .shift])
@@ -465,11 +466,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Volume Up",
-                    systemImage: Icons.volumeIncrease
+                    title: { localizedMenuText("Volume Up") },
+                    icon: { Image(systemName: Icons.volumeIncrease) }
                 )
             } else {
-                Text("Volume Up")
+                localizedMenuText("Volume Up")
             }
         }
         .keyboardShortcut(.upArrow, modifiers: .command)
@@ -482,11 +483,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Volume Down",
-                    systemImage: Icons.volumeDecrease
+                    title: { localizedMenuText("Volume Down") },
+                    icon: { Image(systemName: Icons.volumeDecrease) }
                 )
             } else {
-                Text("Volume Down")
+                localizedMenuText("Volume Down")
             }
         }
         .keyboardShortcut(.downArrow, modifiers: .command)
@@ -502,11 +503,11 @@ extension PetrichorApp {
             } label: {
                 if #available(macOS 26.0, *) {
                     Label(
-                        "Equalizer",
-                        systemImage: "slider.vertical.3"
+                        title: { localizedMenuText("Equalizer") },
+                        icon: { Image(systemName: "slider.vertical.3") }
                     )
                 } else {
-                    Text("Equalizer")
+                    localizedMenuText("Equalizer")
                 }
             }
             .keyboardShortcut("e", modifiers: [.command, .option])
@@ -516,11 +517,11 @@ extension PetrichorApp {
             } label: {
                 if #available(macOS 26.0, *) {
                     Label(
-                        "Mini Player",
-                        systemImage: Icons.miniPlayer
+                        title: { localizedMenuText("Mini Player") },
+                        icon: { Image(systemName: Icons.miniPlayer) }
                     )
                 } else {
-                    Text("Mini Player")
+                    localizedMenuText("Mini Player")
                 }
             }
             .keyboardShortcut("m", modifiers: [.command, .option])
@@ -531,11 +532,11 @@ extension PetrichorApp {
             } label: {
                 if #available(macOS 26.0, *) {
                     Label(
-                        "Immersive Mode",
-                        systemImage: Icons.immersive
+                        title: { localizedMenuText("Immersive Mode") },
+                        icon: { Image(systemName: Icons.immersive) }
                     )
                 } else {
-                    Text("Immersive Mode")
+                    localizedMenuText("Immersive Mode")
                 }
             }
             .keyboardShortcut("f", modifiers: [.command, .option])
@@ -559,9 +560,9 @@ extension PetrichorApp {
     private func miniPlayerOnTopToggle() -> some View {
         Toggle(isOn: $miniPlayerAlwaysOnTop) {
             if #available(macOS 26.0, *) {
-                Label("Keep Mini Player always on top", systemImage: Icons.miniPlayer)
+                localizedMenuLabel("Keep Mini Player always on top", systemImage: Icons.miniPlayer)
             } else {
-                Text("Keep Mini Player always on top")
+                localizedMenuText("Keep Mini Player always on top")
             }
         }
     }
@@ -572,11 +573,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Search Library",
-                    systemImage: Icons.magnifyingGlass
+                    title: { localizedMenuText("Search Library") },
+                    icon: { Image(systemName: Icons.magnifyingGlass) }
                 )
             } else {
-                Text("Search Library")
+                localizedMenuText("Search Library")
             }
         }
         .keyboardShortcut("f", modifiers: .command)
@@ -585,9 +586,9 @@ extension PetrichorApp {
     private func foldersTabToggle() -> some View {
         Toggle(isOn: $showFoldersTab) {
             if #available(macOS 26.0, *) {
-                Label("Folders Tab", systemImage: Icons.folderFill)
+                localizedMenuLabel("Folders Tab", systemImage: Icons.folderFill)
             } else {
-                Text("Folders Tab")
+                localizedMenuText("Folders Tab")
             }
         }
         .keyboardShortcut("f", modifiers: [.command, .option, .shift])
@@ -613,11 +614,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Project Homepage",
-                    systemImage: "globe"
+                    title: { localizedMenuText("Project Homepage") },
+                    icon: { Image(systemName: "globe") }
                 )
             } else {
-                Text("Project Homepage")
+                localizedMenuText("Project Homepage")
             }
         }
     }
@@ -630,11 +631,11 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Support Development",
-                    systemImage: "dollarsign.circle"
+                    title: { localizedMenuText("Support Development") },
+                    icon: { Image(systemName: "dollarsign.circle") }
                 )
             } else {
-                Text("Support Development")
+                localizedMenuText("Support Development")
             }
         }
     }
@@ -647,17 +648,165 @@ extension PetrichorApp {
         } label: {
             if #available(macOS 26.0, *) {
                 Label(
-                    "Petrichor User Guide",
-                    systemImage: "book.pages"
+                    title: { localizedMenuText("Petrichor User Guide") },
+                    icon: { Image(systemName: "book.pages") }
                 )
             } else {
-                Text("Petrichor User Guide")
+                localizedMenuText("Petrichor User Guide")
             }
         }
         .keyboardShortcut("?", modifiers: .command)
     }
     
     // MARK: - Helper Properties
+
+    private func localizedMenuString(_ key: String.LocalizationValue) -> String {
+        _ = localizationSettings.appLanguage
+        return String(appLocalized: key)
+    }
+
+    private func localizedMenuText(_ key: String.LocalizationValue) -> Text {
+        Text(localizedMenuString(key))
+    }
+
+    private func localizedMenuLabel(_ key: String.LocalizationValue, systemImage: String) -> some View {
+        Label {
+            localizedMenuText(key)
+        } icon: {
+            Image(systemName: systemImage)
+        }
+    }
+
+    private func localizedMenuLabel(_ key: String.LocalizationValue, image: String) -> some View {
+        Label {
+            localizedMenuText(key)
+        } icon: {
+            Image(image)
+        }
+    }
+
+    private func menuLabel(_ title: String, systemImage: String) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage)
+        }
+    }
+
+    private func refreshMainMenuLocalizedTitles() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        for update in mainMenuTitleUpdates {
+            updateMenuTitles(
+                in: mainMenu,
+                matching: Set(update.candidates),
+                to: update.title
+            )
+        }
+
+        updateAppNamedMenuTitles(in: mainMenu)
+    }
+
+    private var mainMenuTitleUpdates: [(candidates: [String], title: String)] {
+        [
+            (["File", "文件"], localizedMenuString("File")),
+            (["Edit", "编辑"], localizedMenuString("Edit")),
+            (["View", "显示", "视图"], localizedMenuString("View")),
+            (["Playback", "播放"], localizedMenuString("Playback")),
+            (["Window", "窗口"], localizedMenuString("Window")),
+            (["Help", "帮助"], localizedMenuString("Help")),
+            (["About Petrichor", "关于 Petrichor"], localizedMenuString("About Petrichor")),
+            (["Settings", "设置"], localizedMenuString("Settings")),
+            (["Services", "服务"], localizedMenuString("Services")),
+            (["Hide Petrichor", "隐藏 Petrichor"], localizedMenuString("Hide Petrichor")),
+            (["Hide Others", "隐藏其他"], localizedMenuString("Hide Others")),
+            (["Show All", "全部显示"], localizedMenuString("Show All")),
+            (["Quit Petrichor", "退出 Petrichor"], localizedMenuString("Quit Petrichor")),
+            (["Undo", "撤销"], localizedMenuString("Undo")),
+            (["Redo", "重做"], localizedMenuString("Redo")),
+            (["Cut", "剪切"], localizedMenuString("Cut")),
+            (["Copy", "复制"], localizedMenuString("Copy")),
+            (["Paste", "粘贴"], localizedMenuString("Paste")),
+            (["Select All", "全选"], localizedMenuString("Select All")),
+            (["New", "新建"], localizedMenuString("New")),
+            (["Library", "资料库"], localizedMenuString("Library")),
+            (["Close", "关闭"], localizedMenuString("Close")),
+            (["Close Window", "关闭窗口"], localizedMenuString("Close Window")),
+            (["Playlist", "播放列表"], localizedMenuString("Playlist")),
+            (["Playlist from Selection", "从所选内容创建播放列表"], localizedMenuString("Playlist from Selection")),
+            (["Add Folder(s) to Library", "将文件夹添加到资料库"], localizedMenuString("Add Folder(s) to Library")),
+            (["Refresh Library Folders", "刷新资料库文件夹"], localizedMenuString("Refresh Library Folders")),
+            (["Play/Pause", "播放/暂停"], localizedMenuString("Play/Pause")),
+            (["Shuffle", "随机播放"], localizedMenuString("Shuffle")),
+            (["Repeat: Off", "重复：关闭"], localizedMenuString("Repeat: Off")),
+            (["Repeat: Current Track", "重复：当前歌曲"], localizedMenuString("Repeat: Current Track")),
+            (["Repeat: All", "重复：全部"], localizedMenuString("Repeat: All")),
+            (["Next", "下一首"], localizedMenuString("Next")),
+            (["Previous", "上一首"], localizedMenuString("Previous")),
+            (["Seek Forward", "前进"], localizedMenuString("Seek Forward")),
+            (["Seek Backward", "后退"], localizedMenuString("Seek Backward")),
+            (["Volume Up", "提高音量"], localizedMenuString("Volume Up")),
+            (["Volume Down", "降低音量"], localizedMenuString("Volume Down")),
+            (["Equalizer", "均衡器"], localizedMenuString("Equalizer")),
+            (["Mini Player", "迷你播放器"], localizedMenuString("Mini Player")),
+            (["Immersive Mode", "沉浸模式"], localizedMenuString("Immersive Mode")),
+            (["Keep Mini Player always on top", "迷你播放器始终置顶"], localizedMenuString("Keep Mini Player always on top")),
+            (["Search Library", "搜索资料库"], localizedMenuString("Search Library")),
+            (["Folders Tab", "文件夹标签页"], localizedMenuString("Folders Tab")),
+            (["Minimize", "最小化"], localizedMenuString("Minimize")),
+            (["Zoom", "缩放"], localizedMenuString("Zoom")),
+            (["Bring All to Front", "全部前置", "全部置于前台"], localizedMenuString("Bring All to Front")),
+            (["Enter Full Screen", "进入全屏幕", "进入全屏"], localizedMenuString("Enter Full Screen")),
+            (["Exit Full Screen", "退出全屏幕", "退出全屏"], localizedMenuString("Exit Full Screen")),
+            (["Project Homepage", "项目主页"], localizedMenuString("Project Homepage")),
+            (["Support Development", "支持开发"], localizedMenuString("Support Development")),
+            (["Petrichor User Guide", "Petrichor 用户指南"], localizedMenuString("Petrichor User Guide"))
+        ]
+    }
+
+    private func updateMenuTitles(in menu: NSMenu, matching candidates: Set<String>, to title: String) {
+        for item in menu.items {
+            if candidates.contains(item.title) {
+                item.title = title
+                item.submenu?.title = title
+            }
+
+            if let submenu = item.submenu {
+                updateMenuTitles(in: submenu, matching: candidates, to: title)
+            }
+        }
+    }
+
+    private func updateAppNamedMenuTitles(in menu: NSMenu) {
+        for appName in appMenuNameCandidates {
+            updateMenuTitles(
+                in: menu,
+                matching: Set(["Hide \(appName)", "隐藏 \(appName)"]),
+                to: "\(localizedMenuString("Hide")) \(appName)"
+            )
+            updateMenuTitles(
+                in: menu,
+                matching: Set(["Quit \(appName)", "退出 \(appName)"]),
+                to: "\(localizedMenuString("Quit")) \(appName)"
+            )
+        }
+    }
+
+    private var appMenuNameCandidates: [String] {
+        [
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String,
+            ProcessInfo.processInfo.processName,
+            "Petrichor",
+            "Petrichor Dev"
+        ]
+        .compactMap { $0 }
+        .reduce(into: [String]()) { names, name in
+            if !names.contains(name) {
+                names.append(name)
+            }
+        }
+    }
     
     private var repeatModeLabel: String {
         switch appCoordinator.playlistManager.repeatMode {

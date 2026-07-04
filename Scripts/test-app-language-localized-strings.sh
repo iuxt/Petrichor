@@ -18,6 +18,11 @@ if ! rg -n 'localizationSettings\.\$appLanguage' PetrichorApp.swift >/dev/null; 
     exit 1
 fi
 
+if ! rg -n 'refreshMainMenuLocalizedTitles\(\)' PetrichorApp.swift >/dev/null; then
+    printf '%s\n' 'PetrichorApp must refresh the macOS main menu when app language changes.' >&2
+    exit 1
+fi
+
 if ! rg -n 'static let appLanguageDidChange' Utilities/LocalizationSettings.swift >/dev/null; then
     printf '%s\n' 'LocalizationSettings must publish an appLanguageDidChange notification for AppKit surfaces.' >&2
     exit 1
@@ -67,6 +72,24 @@ if ! rg -n '\.id\(localizationSettings\.appLanguage\.id\)' Views/Main/ContentVie
     printf '%s\n' 'ContentView must force its localized content subtree to refresh when appLanguage changes.' >&2
     exit 1
 fi
+
+command_literal_uses="$(
+    rg -n '\bCommandMenu\("[^"]+"\)|\bWindowGroup\("[^"]+"|\bLabel\("[^"]+"|\bText\("[^"]+"|\bButton\("[^"]+"' PetrichorApp.swift \
+        || true
+)"
+
+if [[ -n "$command_literal_uses" ]]; then
+    printf '%s\n' 'PetrichorApp command/menu labels must use String(appLocalized:) so the macOS menu bar follows the in-app language setting:' >&2
+    printf '%s\n' "$command_literal_uses" >&2
+    exit 1
+fi
+
+for key in File View Window Services Hide "Hide Petrichor" "Hide Others" "Show All"; do
+    if ! rg -n "^    \"${key}\":" Resources/Localizable.xcstrings >/dev/null; then
+        printf 'Localizable.xcstrings must include the standard macOS menu key: %s\n' "$key" >&2
+        exit 1
+    fi
+done
 
 bare_uses="$(
     rg -n 'String\(localized:' --glob '*.swift' \

@@ -46,6 +46,16 @@ if [ -f "$speex_mdf" ] && [ -f "$speex_math_approx" ] && rg -n '\bM_PI\b' "$spee
     exit 1
 fi
 
+if find Resources/Assets.xcassets -path '*.symbolset/*.svg' -print0 | xargs -0 rg -n 'Template v\.([7-9]|[1-9][0-9]+)\.' >/dev/null; then
+    printf 'Custom SF Symbol SVG assets must use template format 6.x or older so Xcode 16 actool can compile them on CI.\n' >&2
+    exit 1
+fi
+
+if find Resources/Assets.xcassets -path '*.symbolset/*.svg' -print0 | xargs -0 rg -n 'Requires Xcode ([7-9][0-9]?|1[7-9]|[2-9][0-9]) or greater' >/dev/null; then
+    printf 'Custom SF Symbol SVG assets must not require newer than Xcode 16 because release CI runs Xcode 16.\n' >&2
+    exit 1
+fi
+
 if ! rg -n -- '--hdiutil-quiet' "$build_script" >/dev/null; then
     printf 'build-installer must pass --hdiutil-quiet to create-dmg to suppress deprecated hdiutil create/convert output.\n' >&2
     exit 1
