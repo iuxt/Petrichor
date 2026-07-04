@@ -14,6 +14,7 @@ struct EntityDetailView: View {
     @State private var artistBio: String?
     @State private var gradientColors: [Color] = []
     @State private var resolvedArtworkData: Data?
+    @State private var artistImageData: Data?
 
     init(entity: any Entity, onBack: (() -> Void)? = nil, pinnedItem: PinnedItem? = nil) {
         self.entity = entity
@@ -70,6 +71,8 @@ struct EntityDetailView: View {
         }
         .onChange(of: entity.id) { oldValue, newValue in
             if oldValue != newValue {
+                artistImageData = nil
+                resolvedArtworkData = nil
                 loadTracks()
                 updateGradientColors()
             }
@@ -79,6 +82,9 @@ struct EntityDetailView: View {
         }
         .onChange(of: useArtworkColors) {
             updateGradientColors()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .artistImagesDidChange)) { _ in
+            loadArtistImage(from: tracks)
         }
     }
 
@@ -182,6 +188,14 @@ struct EntityDetailView: View {
                 .frame(width: 120, height: 120)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+            } else if let artistImageData,
+                      let nsImage = NSImage(data: artistImageData) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
             } else if let artworkData = entity.artworkData,
                let nsImage = NSImage(data: artworkData) {
                 Image(nsImage: nsImage)
@@ -447,7 +461,12 @@ extension EntityDetailView {
             return
         }
 
-        if let resolvedArtworkData {
+        if let artistImageData {
+            gradientColors = ImageUtils.backgroundGradientColors(
+                from: ImageUtils.extractDominantColors(from: artistImageData),
+                isDark: colorScheme == .dark
+            )
+        } else if let resolvedArtworkData {
             gradientColors = ImageUtils.cachedBackgroundGradientColors(
                 id: entity.id,
                 imageData: resolvedArtworkData,
@@ -500,7 +519,30 @@ extension EntityDetailView {
             artistBio = nil
         }
 
+        loadArtistImage(from: fetchedTracks)
+
         self.isLoading = false
+    }
+
+    private func loadArtistImage(from fetchedTracks: [Track]) {
+        guard entity is ArtistEntity else {
+            artistImageData = nil
+            return
+        }
+
+        let entity = (id: entity.id, name: entity.name)
+        let folders = libraryManager.folders
+
+        Task {
+            let data = await Task.detached(priority: .utility) {
+                ArtistImageStore.imageData(for: entity.name, tracks: fetchedTracks, folders: folders)
+            }.value
+
+            guard self.entity.id == entity.id else { return }
+            artistImageData = data
+            resolvedArtworkData = data
+            updateGradientColors()
+        }
     }
     
     private func pinEntity() {

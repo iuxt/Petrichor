@@ -205,6 +205,28 @@ enum ArtistImageStore {
             }
         }
 
+        if !roots.isEmpty {
+            return roots
+        }
+
+        return musicRoots(containingTracks: tracks, folders: folders)
+    }
+
+    private static func musicRoots(containingTracks tracks: [Track], folders: [Folder]) -> [URL] {
+        var seen: Set<String> = []
+        var roots: [URL] = []
+
+        for track in tracks {
+            guard let root = musicRoot(containing: track.url, folders: folders) else {
+                continue
+            }
+
+            let key = root.standardizedFileURL.path
+            if seen.insert(key).inserted {
+                roots.append(root)
+            }
+        }
+
         return roots
     }
 }
