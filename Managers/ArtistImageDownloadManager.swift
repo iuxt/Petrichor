@@ -84,6 +84,8 @@ final class ArtistImageDownloadManager {
                         imageData = downloaded
                     }
 
+                    guard !Task.isCancelled, self.isEnabled else { break }
+
                     do {
                         let destination = try ArtistImageStore.writeImage(
                             imageData,
