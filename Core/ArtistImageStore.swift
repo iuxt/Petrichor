@@ -14,10 +14,9 @@ enum ArtistImageStore {
             .appendingPathExtension(preferredImageExtension)
     }
 
-    private static let preferredImageURLSelector: (String, URL) -> URL = preferredImageURL(artistName:musicRoot:)
-
     static func existingImageURL(
-        artistName: String, musicRoot: URL,
+        artistName: String,
+        musicRoot: URL,
         fileManager: FileManager = .default
     ) -> URL? {
         let filename = sanitizedArtistFilename(artistName)
@@ -35,10 +34,8 @@ enum ArtistImageStore {
         return nil
     }
 
-    private static let existingImageURLSelector: (String, URL, FileManager) -> URL? =
-        existingImageURL(artistName:musicRoot:fileManager:)
-
-    static func imageData(for artistName: String,
+    static func imageData(
+        for artistName: String,
         tracks: [Track],
         folders: [Folder],
         fileManager: FileManager = .default
@@ -66,7 +63,8 @@ enum ArtistImageStore {
         return nil
     }
 
-    static func groupedArtistsByMusicRoot(from tracks: [Track],
+    static func groupedArtistsByMusicRoot(
+        from tracks: [Track],
         folders: [Folder]
     ) -> [URL: Set<String>] {
         var result: [URL: Set<String>] = [:]
@@ -101,7 +99,8 @@ enum ArtistImageStore {
     }
 
     @discardableResult
-    static func writeImage(_ data: Data,
+    static func writeImage(
+        _ data: Data,
         artistName: String,
         musicRoot: URL,
         fileManager: FileManager = .default

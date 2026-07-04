@@ -19,13 +19,13 @@ fi
 for pattern in \
   "enum ArtistImageStore" \
   "artistImagesDirectoryName = \"artist images\"" \
-  "imageDirectory\\(forMusicRoot" \
-  "preferredImageURL\\(artistName:musicRoot:" \
-  "existingImageURL\\(artistName:musicRoot:" \
-  "imageData\\(for artistName:" \
-  "groupedArtistsByMusicRoot\\(from tracks:" \
-  "musicRoot\\(containing url:" \
-  "writeImage\\(_ data:" \
+  "static func imageDirectory\\(forMusicRoot" \
+  "static func preferredImageURL\\(" \
+  "static func existingImageURL\\(" \
+  "static func imageData\\(" \
+  "static func groupedArtistsByMusicRoot\\(" \
+  "static func musicRoot\\(containing url:" \
+  "static func writeImage\\(" \
   "AlbumArtFormat\\.supportedExtensions"; do
   if ! rg -n "$pattern" "$store" >/dev/null; then
     echo "ArtistImageStore missing expected pattern: $pattern" >&2
