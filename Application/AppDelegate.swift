@@ -125,7 +125,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Remove unwanted menus
         DispatchQueue.main.async {
             self.removeUnwantedMenus()
+            self.scheduleMainMenuLocalizationRefresh()
         }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppLanguageDidChange),
+            name: .appLanguageDidChange,
+            object: nil
+        )
         
         // Ensure main window is visible
         if let window = NSApp.windows.first {
@@ -148,6 +156,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         
         Logger.info("App finished launching")
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        scheduleMainMenuLocalizationRefresh()
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -183,6 +195,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func trackChanged() {
         // Force dock menu to update by invalidating the dock tile
         NSApp.dockTile.display()
+    }
+
+    @objc
+    private func handleAppLanguageDidChange() {
+        scheduleMainMenuLocalizationRefresh()
     }
     
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
@@ -360,6 +377,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let showAllTabs = viewSubmenu.item(withTitle: "Show All Tabs") {
                 viewSubmenu.removeItem(showAllTabs)
             }
+        }
+    }
+
+    private func scheduleMainMenuLocalizationRefresh() {
+        DispatchQueue.main.async {
+            MainMenuLocalizer.refresh()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            MainMenuLocalizer.refresh()
         }
     }
     

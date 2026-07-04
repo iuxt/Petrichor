@@ -54,11 +54,11 @@ struct PetrichorApp: App {
                     menuUpdateTrigger = UUID()
                     DispatchQueue.main.async {
                         appCoordinator.menuBarManager.refreshMenu()
-                        refreshMainMenuLocalizedTitles()
+                        MainMenuLocalizer.refresh()
                     }
                 }
                 .onAppear {
-                    refreshMainMenuLocalizedTitles()
+                    MainMenuLocalizer.refresh()
                     if desktopLyricsEnabled {
                         DesktopLyricsWindowManager.shared.show()
                     }
@@ -104,7 +104,7 @@ struct PetrichorApp: App {
     }
     
     private var equalizerWindow: some Scene {
-        WindowGroup(String(appLocalized: "Equalizer"), id: "equalizer") {
+        WindowGroup(localizedMenuString("Equalizer"), id: "equalizer") {
             EqualizerView()
                 .environmentObject(appCoordinator.playbackManager)
                 .environmentObject(localizationSettings)
@@ -295,7 +295,7 @@ extension PetrichorApp {
     
     @CommandsBuilder
     private func playbackMenuCommands() -> some Commands {
-        CommandMenu(String(appLocalized: "Playback")) {
+        CommandMenu(localizedMenuString("Playback")) {
             playPauseMenuItem()
             
             Divider()
@@ -690,121 +690,6 @@ extension PetrichorApp {
             Text(title)
         } icon: {
             Image(systemName: systemImage)
-        }
-    }
-
-    private func refreshMainMenuLocalizedTitles() {
-        guard let mainMenu = NSApp.mainMenu else { return }
-
-        for update in mainMenuTitleUpdates {
-            updateMenuTitles(
-                in: mainMenu,
-                matching: Set(update.candidates),
-                to: update.title
-            )
-        }
-
-        updateAppNamedMenuTitles(in: mainMenu)
-    }
-
-    private var mainMenuTitleUpdates: [(candidates: [String], title: String)] {
-        [
-            (["File", "文件"], localizedMenuString("File")),
-            (["Edit", "编辑"], localizedMenuString("Edit")),
-            (["View", "显示", "视图"], localizedMenuString("View")),
-            (["Playback", "播放"], localizedMenuString("Playback")),
-            (["Window", "窗口"], localizedMenuString("Window")),
-            (["Help", "帮助"], localizedMenuString("Help")),
-            (["About Petrichor", "关于 Petrichor"], localizedMenuString("About Petrichor")),
-            (["Settings", "设置"], localizedMenuString("Settings")),
-            (["Services", "服务"], localizedMenuString("Services")),
-            (["Hide Petrichor", "隐藏 Petrichor"], localizedMenuString("Hide Petrichor")),
-            (["Hide Others", "隐藏其他"], localizedMenuString("Hide Others")),
-            (["Show All", "全部显示"], localizedMenuString("Show All")),
-            (["Quit Petrichor", "退出 Petrichor"], localizedMenuString("Quit Petrichor")),
-            (["Undo", "撤销"], localizedMenuString("Undo")),
-            (["Redo", "重做"], localizedMenuString("Redo")),
-            (["Cut", "剪切"], localizedMenuString("Cut")),
-            (["Copy", "复制"], localizedMenuString("Copy")),
-            (["Paste", "粘贴"], localizedMenuString("Paste")),
-            (["Select All", "全选"], localizedMenuString("Select All")),
-            (["New", "新建"], localizedMenuString("New")),
-            (["Library", "资料库"], localizedMenuString("Library")),
-            (["Close", "关闭"], localizedMenuString("Close")),
-            (["Close Window", "关闭窗口"], localizedMenuString("Close Window")),
-            (["Playlist", "播放列表"], localizedMenuString("Playlist")),
-            (["Playlist from Selection", "从所选内容创建播放列表"], localizedMenuString("Playlist from Selection")),
-            (["Add Folder(s) to Library", "将文件夹添加到资料库"], localizedMenuString("Add Folder(s) to Library")),
-            (["Refresh Library Folders", "刷新资料库文件夹"], localizedMenuString("Refresh Library Folders")),
-            (["Play/Pause", "播放/暂停"], localizedMenuString("Play/Pause")),
-            (["Shuffle", "随机播放"], localizedMenuString("Shuffle")),
-            (["Repeat: Off", "重复：关闭"], localizedMenuString("Repeat: Off")),
-            (["Repeat: Current Track", "重复：当前歌曲"], localizedMenuString("Repeat: Current Track")),
-            (["Repeat: All", "重复：全部"], localizedMenuString("Repeat: All")),
-            (["Next", "下一首"], localizedMenuString("Next")),
-            (["Previous", "上一首"], localizedMenuString("Previous")),
-            (["Seek Forward", "前进"], localizedMenuString("Seek Forward")),
-            (["Seek Backward", "后退"], localizedMenuString("Seek Backward")),
-            (["Volume Up", "提高音量"], localizedMenuString("Volume Up")),
-            (["Volume Down", "降低音量"], localizedMenuString("Volume Down")),
-            (["Equalizer", "均衡器"], localizedMenuString("Equalizer")),
-            (["Mini Player", "迷你播放器"], localizedMenuString("Mini Player")),
-            (["Immersive Mode", "沉浸模式"], localizedMenuString("Immersive Mode")),
-            (["Keep Mini Player always on top", "迷你播放器始终置顶"], localizedMenuString("Keep Mini Player always on top")),
-            (["Search Library", "搜索资料库"], localizedMenuString("Search Library")),
-            (["Folders Tab", "文件夹标签页"], localizedMenuString("Folders Tab")),
-            (["Minimize", "最小化"], localizedMenuString("Minimize")),
-            (["Zoom", "缩放"], localizedMenuString("Zoom")),
-            (["Bring All to Front", "全部前置", "全部置于前台"], localizedMenuString("Bring All to Front")),
-            (["Enter Full Screen", "进入全屏幕", "进入全屏"], localizedMenuString("Enter Full Screen")),
-            (["Exit Full Screen", "退出全屏幕", "退出全屏"], localizedMenuString("Exit Full Screen")),
-            (["Project Homepage", "项目主页"], localizedMenuString("Project Homepage")),
-            (["Support Development", "支持开发"], localizedMenuString("Support Development")),
-            (["Petrichor User Guide", "Petrichor 用户指南"], localizedMenuString("Petrichor User Guide"))
-        ]
-    }
-
-    private func updateMenuTitles(in menu: NSMenu, matching candidates: Set<String>, to title: String) {
-        for item in menu.items {
-            if candidates.contains(item.title) {
-                item.title = title
-                item.submenu?.title = title
-            }
-
-            if let submenu = item.submenu {
-                updateMenuTitles(in: submenu, matching: candidates, to: title)
-            }
-        }
-    }
-
-    private func updateAppNamedMenuTitles(in menu: NSMenu) {
-        for appName in appMenuNameCandidates {
-            updateMenuTitles(
-                in: menu,
-                matching: Set(["Hide \(appName)", "隐藏 \(appName)"]),
-                to: "\(localizedMenuString("Hide")) \(appName)"
-            )
-            updateMenuTitles(
-                in: menu,
-                matching: Set(["Quit \(appName)", "退出 \(appName)"]),
-                to: "\(localizedMenuString("Quit")) \(appName)"
-            )
-        }
-    }
-
-    private var appMenuNameCandidates: [String] {
-        [
-            Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
-            Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String,
-            ProcessInfo.processInfo.processName,
-            "Petrichor",
-            "Petrichor Dev"
-        ]
-        .compactMap { $0 }
-        .reduce(into: [String]()) { names, name in
-            if !names.contains(name) {
-                names.append(name)
-            }
         }
     }
     
