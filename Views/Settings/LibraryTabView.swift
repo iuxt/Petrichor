@@ -298,10 +298,7 @@ struct LibraryTabView: View {
             Text("Reset all library data")
             infoButton(
                 isPresented: $showResetInfo,
-                text: """
-                    Removes all folders, tracks, playlists, and pinned items. \
-                    Use the checkbox in the confirmation dialog to optionally reset app preferences.
-                    """
+                text: "Removes all folders, tracks, playlists, and pinned items. Use the checkbox in the confirmation dialog to optionally reset app preferences."
             )
 
             Spacer()
@@ -315,7 +312,7 @@ struct LibraryTabView: View {
         }
     }
 
-    private func infoButton(isPresented: Binding<Bool>, text: String) -> some View {
+    private func infoButton(isPresented: Binding<Bool>, text: LocalizedStringKey) -> some View {
         Button { isPresented.wrappedValue.toggle() } label: {
             Image(systemName: "questionmark.circle")
                 .font(.system(size: 12))
