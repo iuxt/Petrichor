@@ -205,11 +205,18 @@ enum ArtistImageStore {
             }
         }
 
-        if !roots.isEmpty {
-            return roots
+        // Read callers often pass an already scoped track list (for example
+        // album-artist or composer detail). Prefer exact artist-column roots,
+        // then also check the caller's scoped roots without changing downloader
+        // grouping behavior.
+        for root in musicRoots(containingTracks: tracks, folders: folders) {
+            let key = root.standardizedFileURL.path
+            if seen.insert(key).inserted {
+                roots.append(root)
+            }
         }
 
-        return musicRoots(containingTracks: tracks, folders: folders)
+        return roots
     }
 
     private static func musicRoots(containingTracks tracks: [Track], folders: [Folder]) -> [URL] {

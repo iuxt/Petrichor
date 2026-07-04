@@ -1,5 +1,51 @@
 import SwiftUI
 
+private struct ArtistImageGradientColors {
+    let light: [Color]
+    let dark: [Color]
+
+    func colors(isDark: Bool) -> [Color] {
+        isDark ? dark : light
+    }
+}
+
+private struct ArtistImageLoadResult: @unchecked Sendable {
+    let data: Data
+    let image: NSImage
+    let gradientColors: ArtistImageGradientColors
+}
+
+private struct ArtistImageLoadIdentity: Sendable {
+    let id: UUID
+    let name: String
+}
+
+private func loadArtistImageResult(
+    for entity: ArtistImageLoadIdentity,
+    tracks: [Track],
+    folders: [Folder]
+) -> ArtistImageLoadResult? {
+    guard !Task.isCancelled,
+          let data = ArtistImageStore.imageData(for: entity.name, tracks: tracks, folders: folders),
+          let image = NSImage(data: data) else {
+        return nil
+    }
+
+    let dominantColors = ImageUtils.extractDominantColors(from: data)
+    let gradientColors = ArtistImageGradientColors(
+        light: ImageUtils.backgroundGradientColors(from: dominantColors, isDark: false),
+        dark: ImageUtils.backgroundGradientColors(from: dominantColors, isDark: true)
+    )
+
+    guard !Task.isCancelled else { return nil }
+
+    return ArtistImageLoadResult(
+        data: data,
+        image: image,
+        gradientColors: gradientColors
+    )
+}
+
 struct EntityDetailView: View {
     let entity: any Entity
     let onBack: (() -> Void)?
@@ -15,6 +61,10 @@ struct EntityDetailView: View {
     @State private var gradientColors: [Color] = []
     @State private var resolvedArtworkData: Data?
     @State private var artistImageData: Data?
+    @State private var artistImage: NSImage?
+    @State private var artistGradientColors: ArtistImageGradientColors?
+    @State private var artistImageLoadTask: Task<Void, Never>?
+    @State private var artistImageLoadGeneration = 0
 
     init(entity: any Entity, onBack: (() -> Void)? = nil, pinnedItem: PinnedItem? = nil) {
         self.entity = entity
@@ -72,7 +122,10 @@ struct EntityDetailView: View {
         .onChange(of: entity.id) { oldValue, newValue in
             if oldValue != newValue {
                 artistImageData = nil
+                artistImage = nil
+                artistGradientColors = nil
                 resolvedArtworkData = nil
+                cancelArtistImageLoad()
                 loadTracks()
                 updateGradientColors()
             }
@@ -85,6 +138,9 @@ struct EntityDetailView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .artistImagesDidChange)) { _ in
             loadArtistImage(from: tracks)
+        }
+        .onDisappear {
+            cancelArtistImageLoad()
         }
     }
 
@@ -188,9 +244,8 @@ struct EntityDetailView: View {
                 .frame(width: 120, height: 120)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-            } else if let artistImageData,
-                      let nsImage = NSImage(data: artistImageData) {
-                Image(nsImage: nsImage)
+            } else if let artistImage {
+                Image(nsImage: artistImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 120, height: 120)
@@ -461,11 +516,8 @@ extension EntityDetailView {
             return
         }
 
-        if let artistImageData {
-            gradientColors = ImageUtils.backgroundGradientColors(
-                from: ImageUtils.extractDominantColors(from: artistImageData),
-                isDark: colorScheme == .dark
-            )
+        if let artistGradientColors {
+            gradientColors = artistGradientColors.colors(isDark: colorScheme == .dark)
         } else if let resolvedArtworkData {
             gradientColors = ImageUtils.cachedBackgroundGradientColors(
                 id: entity.id,
@@ -526,25 +578,58 @@ extension EntityDetailView {
 
     private func loadArtistImage(from fetchedTracks: [Track]) {
         guard entity is ArtistEntity else {
+            cancelArtistImageLoad()
             artistImageData = nil
+            artistImage = nil
+            artistGradientColors = nil
             return
         }
 
-        let entity = (id: entity.id, name: entity.name)
+        let entity = ArtistImageLoadIdentity(id: entity.id, name: entity.name)
         let folders = libraryManager.folders
+        artistImageLoadTask?.cancel()
+        artistImageLoadGeneration += 1
+        let generation = artistImageLoadGeneration
 
-        Task {
-            let data = await Task.detached(priority: .utility) {
-                ArtistImageStore.imageData(for: entity.name, tracks: fetchedTracks, folders: folders)
+        artistImageLoadTask = Task {
+            let result = await Task.detached(priority: .utility) {
+                loadArtistImageResult(
+                    for: entity,
+                    tracks: fetchedTracks,
+                    folders: folders
+                )
             }.value
 
-            guard self.entity.id == entity.id else { return }
-            artistImageData = data
-            resolvedArtworkData = data
+            guard !Task.isCancelled,
+                  self.entity.id == entity.id,
+                  artistImageLoadGeneration == generation else {
+                return
+            }
+
+            artistImageLoadTask = nil
+
+            if let result {
+                artistImageData = result.data
+                artistImage = result.image
+                artistGradientColors = result.gradientColors
+                resolvedArtworkData = result.data
+            } else {
+                artistImageData = nil
+                artistImage = nil
+                artistGradientColors = nil
+                resolvedArtworkData = nil
+            }
+
             updateGradientColors()
         }
     }
-    
+
+    private func cancelArtistImageLoad() {
+        artistImageLoadTask?.cancel()
+        artistImageLoadTask = nil
+        artistImageLoadGeneration += 1
+    }
+
     private func pinEntity() {
         Task {
             if let folder = entity as? FolderEntity {
