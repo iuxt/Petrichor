@@ -40,46 +40,73 @@ final class ArtistImageDownloadManager {
             guard let self else { return }
 
             let tracks = libraryManager.databaseManager.getAllTracks()
-            let work = self.artistDirectories(from: tracks)
+            let folders = libraryManager.databaseManager.getAllFolders()
+            let work = ArtistImageStore.groupedArtistsByMusicRoot(from: tracks, folders: folders)
             guard !work.isEmpty else { return }
 
-            Logger.info("ArtistImageDownloadManager: checking \(work.count) artists")
+            Logger.info("ArtistImageDownloadManager: checking artist images in \(work.count) music folders")
 
-            for (artistName, directories) in work.sorted(by: { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }) {
+            var imageCache: [String: Data] = [:]
+            var failedArtists: Set<String> = []
+
+            var wroteAnyImage = false
+
+            for (musicRoot, artistNames) in work.sorted(by: {
+                $0.key.path.localizedCaseInsensitiveCompare($1.key.path) == .orderedAscending
+            }) {
                 guard !Task.isCancelled, self.isEnabled else { break }
 
-                let missingDirectories = directories.filter {
-                    !self.artistImageExists(artistName: artistName, in: $0)
-                }
-                guard !missingDirectories.isEmpty else { continue }
+                for artistName in artistNames.sorted(by: {
+                    $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+                }) {
+                    guard !Task.isCancelled, self.isEnabled else { break }
 
-                guard let imageData = await self.fetchArtistImage(name: artistName) else {
-                    continue
-                }
+                    guard ArtistImageStore.existingImageURL(
+                        artistName: artistName,
+                        musicRoot: musicRoot,
+                        fileManager: self.fileManager
+                    ) == nil else {
+                        continue
+                    }
 
-                for directory in missingDirectories {
-                    self.writeArtistImage(imageData, artistName: artistName, directory: directory)
+                    let normalizedArtistName = ArtistParser.normalizeArtistName(artistName)
+                    let imageData: Data
+
+                    if let cached = imageCache[normalizedArtistName] {
+                        imageData = cached
+                    } else {
+                        guard !failedArtists.contains(normalizedArtistName),
+                              let downloaded = await self.fetchArtistImage(name: artistName) else {
+                            failedArtists.insert(normalizedArtistName)
+                            continue
+                        }
+                        imageCache[normalizedArtistName] = downloaded
+                        imageData = downloaded
+                    }
+
+                    do {
+                        let destination = try ArtistImageStore.writeImage(
+                            imageData,
+                            artistName: artistName,
+                            musicRoot: musicRoot,
+                            fileManager: self.fileManager
+                        )
+                        wroteAnyImage = true
+                        Logger.info("ArtistImageDownloadManager: wrote \(destination.lastPathComponent)")
+                    } catch {
+                        Logger.error("ArtistImageDownloadManager: failed to write artist image for '\(artistName)' in \(musicRoot.path): \(error.localizedDescription)")
+                    }
                 }
             }
 
-            Logger.info("ArtistImageDownloadManager: finished artist image sidecar pass")
-        }
-    }
-
-    private func artistDirectories(from tracks: [Track]) -> [String: Set<URL>] {
-        var result: [String: Set<URL>] = [:]
-        let unknownArtist = LibraryFilterType.artists.unknownPlaceholder
-
-        for track in tracks {
-            let directory = track.url.deletingLastPathComponent()
-            for artist in ArtistParser.parse(track.artist, unknownPlaceholder: unknownArtist) {
-                let trimmed = artist.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty, trimmed != unknownArtist else { continue }
-                result[trimmed, default: []].insert(directory)
+            if wroteAnyImage {
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .artistImagesDidChange, object: nil)
+                }
             }
-        }
 
-        return result
+            Logger.info("ArtistImageDownloadManager: finished artist image folder pass")
+        }
     }
 
     private func fetchArtistImage(name: String) async -> Data? {
@@ -253,37 +280,6 @@ final class ArtistImageDownloadManager {
             return nil
         }
         return ImageUtils.encodeJPEG(cgImage)
-    }
-
-    private func artistImageExists(artistName: String, in directory: URL) -> Bool {
-        let filename = sanitizedArtistFilename(artistName)
-        return AlbumArtFormat.supportedExtensions.contains { ext in
-            fileManager.fileExists(atPath: directory.appendingPathComponent(filename).appendingPathExtension(ext).path)
-        }
-    }
-
-    private func writeArtistImage(_ data: Data, artistName: String, directory: URL) {
-        let filename = sanitizedArtistFilename(artistName)
-        let destination = directory.appendingPathComponent(filename).appendingPathExtension("jpg")
-        guard !fileManager.fileExists(atPath: destination.path) else { return }
-
-        do {
-            try data.write(to: destination, options: [.atomic])
-            Logger.info("ArtistImageDownloadManager: wrote \(destination.lastPathComponent)")
-        } catch {
-            Logger.error("ArtistImageDownloadManager: failed to write \(destination.path): \(error.localizedDescription)")
-        }
-    }
-
-    private func sanitizedArtistFilename(_ artistName: String) -> String {
-        let invalidCharacters = CharacterSet(charactersIn: "/\\:?%*|\"<>")
-            .union(.newlines)
-            .union(.controlCharacters)
-        let parts = artistName.components(separatedBy: invalidCharacters)
-        let sanitized = parts.joined(separator: " ")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? "Unknown Artist" : sanitized
     }
 
     private func isNameMatch(query: String, result: String) -> Bool {
