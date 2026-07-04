@@ -10,6 +10,9 @@ struct IntegrationsTabView: View {
     @AppStorage("onlineLyricsEnabled")
     private var onlineLyricsEnabled: Bool = false
 
+    @AppStorage("artistImageDownloadEnabled")
+    private var artistImageDownloadEnabled: Bool = false
+
     @State private var isAuthenticating = false
     @State private var showDisconnectConfirmation = false
 
@@ -148,6 +151,14 @@ struct IntegrationsTabView: View {
         Group {
             Toggle("Fetch lyrics from internet when unavailable", isOn: $onlineLyricsEnabled)
                 .help("Automatically search for lyrics online when no local lyrics are found")
+
+            Toggle("Download artist images to song folders", isOn: $artistImageDownloadEnabled)
+                .help("Automatically save downloaded artist images next to songs using the artist name")
+                .onChange(of: artistImageDownloadEnabled) { _, enabled in
+                    if enabled, let coordinator = AppCoordinator.shared {
+                        ArtistImageDownloadManager.shared.downloadMissingArtistImages(using: coordinator.libraryManager)
+                    }
+                }
         }
     }
 
