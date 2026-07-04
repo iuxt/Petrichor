@@ -6,9 +6,12 @@ struct EntityView<T: Entity>: View {
     let onSelectEntity: (T) -> Void
     let contextMenuItems: (T) -> [ContextMenuItem]
 
+    @EnvironmentObject private var libraryManager: LibraryManager
+
     var body: some View {
         EntityGridView(
             entities: entities,
+            libraryManager: libraryManager,
             onSelectEntity: onSelectEntity,
             contextMenuItems: contextMenuItems
         )

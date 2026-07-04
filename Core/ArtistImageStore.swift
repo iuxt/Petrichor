@@ -1,6 +1,11 @@
 import Foundation
 
 enum ArtistImageStore {
+    struct VersionedImageData: Sendable {
+        let data: Data
+        let cacheKey: String
+    }
+
     static let artistImagesDirectoryName = "artist images"
     private static let preferredImageExtension = "jpg"
 
@@ -40,6 +45,35 @@ enum ArtistImageStore {
         folders: [Folder],
         fileManager: FileManager = .default
     ) -> Data? {
+        versionedImageData(
+            for: artistName,
+            tracks: tracks,
+            folders: folders,
+            fileManager: fileManager
+        )?.data
+    }
+
+    static func imageData(
+        for artistName: String,
+        tracks: [Track],
+        folders: [Folder],
+        withFileVersion _: Bool,
+        fileManager: FileManager = .default
+    ) -> VersionedImageData? {
+        versionedImageData(
+            for: artistName,
+            tracks: tracks,
+            folders: folders,
+            fileManager: fileManager
+        )
+    }
+
+    static func versionedImageData(
+        for artistName: String,
+        tracks: [Track],
+        folders: [Folder],
+        fileManager: FileManager = .default
+    ) -> VersionedImageData? {
         for root in musicRoots(for: artistName, tracks: tracks, folders: folders) {
             guard let imageURL = existingImageURL(
                 artistName: artistName,
@@ -57,7 +91,14 @@ enum ArtistImageStore {
                 continue
             }
 
-            return data
+            return VersionedImageData(
+                data: data,
+                cacheKey: imageCacheKey(
+                    imageURL: imageURL,
+                    fileSize: fileSize.intValue,
+                    modificationDate: attributes[.modificationDate] as? Date
+                )
+            )
         }
 
         return nil
@@ -126,6 +167,16 @@ enum ArtistImageStore {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return sanitized.isEmpty ? "Unknown Artist" : sanitized
+    }
+
+    private static func imageCacheKey(
+        imageURL: URL,
+        fileSize: Int,
+        modificationDate: Date?
+    ) -> String {
+        let path = imageURL.standardizedFileURL.path
+        let version = modificationDate.map { String(format: "%.6f", $0.timeIntervalSince1970) } ?? "unknown"
+        return "\(path)-\(fileSize)-\(version)"
     }
 
     private static func musicRoots(

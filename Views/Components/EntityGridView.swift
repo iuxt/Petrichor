@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EntityGridView<T: Entity>: View {
     let entities: [T]
+    let libraryManager: LibraryManager?
     let onSelectEntity: (T) -> Void
     let contextMenuItems: (T) -> [ContextMenuItem]
 
@@ -12,6 +13,18 @@ struct EntityGridView<T: Entity>: View {
         GridItem(.adaptive(minimum: ViewDefaults.gridArtworkSize, maximum: ViewDefaults.gridArtworkSize + 40), spacing: 16)
     ]
 
+    init(
+        entities: [T],
+        libraryManager: LibraryManager? = nil,
+        onSelectEntity: @escaping (T) -> Void,
+        contextMenuItems: @escaping (T) -> [ContextMenuItem]
+    ) {
+        self.entities = entities
+        self.libraryManager = libraryManager
+        self.onSelectEntity = onSelectEntity
+        self.contextMenuItems = contextMenuItems
+    }
+
     var body: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
@@ -19,6 +32,7 @@ struct EntityGridView<T: Entity>: View {
                     EntityGridItem(
                         entity: entity,
                         isHovered: hoveredEntityID == entity.id,
+                        libraryManager: libraryManager,
                         artistImageRefreshID: artistImageRefreshID,
                         onSelect: {
                             onSelectEntity(entity)
@@ -178,11 +192,11 @@ private final class EntityArtworkCache: @unchecked Sendable {
 private struct EntityGridItem<T: Entity>: View {
     let entity: T
     let isHovered: Bool
+    let libraryManager: LibraryManager?
     let artistImageRefreshID: Int
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
 
-    @EnvironmentObject private var libraryManager: LibraryManager
     @State private var renderedImage: NSImage?
 
     var body: some View {
@@ -309,18 +323,21 @@ private struct EntityGridItem<T: Entity>: View {
     }
 
     private func loadArtistArtwork(for artist: ArtistEntity) async -> NSImage? {
+        guard let libraryManager else {
+            return await EntityArtworkCache.shared.loadImage(for: artist)
+        }
+
         let artistName = artist.name
         let folders = libraryManager.folders
         let databaseManager = libraryManager.databaseManager
-        let refreshID = artistImageRefreshID
 
-        if let imageData = await Task.detached(priority: .utility, operation: {
+        if let image = await Task.detached(priority: .utility, operation: {
             let tracks = databaseManager.getTracksForArtistEntity(artistName)
-            return ArtistImageStore.imageData(for: artistName, tracks: tracks, folders: folders)
+            return ArtistImageStore.imageData(for: artistName, tracks: tracks, folders: folders, withFileVersion: true)
         }).value {
             return await EntityArtworkCache.shared.loadRenderedImage(
-                from: imageData,
-                cacheKey: "artist-\(artist.id.uuidString)-file-\(imageData.count)-\(refreshID)"
+                from: image.data,
+                cacheKey: "artist-file-\(image.cacheKey)"
             )
         }
 
