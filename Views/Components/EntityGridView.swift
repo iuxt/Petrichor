@@ -2,14 +2,28 @@ import SwiftUI
 
 struct EntityGridView<T: Entity>: View {
     let entities: [T]
+    let libraryManager: LibraryManager?
     let onSelectEntity: (T) -> Void
     let contextMenuItems: (T) -> [ContextMenuItem]
 
     @State private var hoveredEntityID: UUID?
+    @State private var artistImageRefreshID = 0
 
     private let columns = [
         GridItem(.adaptive(minimum: ViewDefaults.gridArtworkSize, maximum: ViewDefaults.gridArtworkSize + 40), spacing: 16)
     ]
+
+    init(
+        entities: [T],
+        libraryManager: LibraryManager? = nil,
+        onSelectEntity: @escaping (T) -> Void,
+        contextMenuItems: @escaping (T) -> [ContextMenuItem]
+    ) {
+        self.entities = entities
+        self.libraryManager = libraryManager
+        self.onSelectEntity = onSelectEntity
+        self.contextMenuItems = contextMenuItems
+    }
 
     var body: some View {
         ScrollView {
@@ -18,6 +32,8 @@ struct EntityGridView<T: Entity>: View {
                     EntityGridItem(
                         entity: entity,
                         isHovered: hoveredEntityID == entity.id,
+                        libraryManager: libraryManager,
+                        artistImageRefreshID: artistImageRefreshID,
                         onSelect: {
                             onSelectEntity(entity)
                         },
@@ -34,6 +50,9 @@ struct EntityGridView<T: Entity>: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .artistImagesDidChange)) { _ in
+            artistImageRefreshID += 1
         }
     }
 
@@ -88,6 +107,28 @@ private final class EntityArtworkCache: @unchecked Sendable {
             }
 
             let renderedImage = createRenderedImage(from: artworkData)
+
+            if let image = renderedImage {
+                cache.setObject(image, forKey: key, cost: Self.bytesPerImage)
+            }
+
+            return renderedImage
+        }
+    }
+
+    func loadRenderedImage(from data: Data, cacheKey: String) async -> NSImage? {
+        let key = cacheKey as NSString
+
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        return await loadQueue.renderArtwork { [self] in
+            if let cached = cache.object(forKey: key) {
+                return cached
+            }
+
+            let renderedImage = createRenderedImage(from: data)
 
             if let image = renderedImage {
                 cache.setObject(image, forKey: key, cost: Self.bytesPerImage)
@@ -151,6 +192,8 @@ private final class EntityArtworkCache: @unchecked Sendable {
 private struct EntityGridItem<T: Entity>: View {
     let entity: T
     let isHovered: Bool
+    let libraryManager: LibraryManager?
+    let artistImageRefreshID: Int
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
 
@@ -234,7 +277,7 @@ private struct EntityGridItem<T: Entity>: View {
     }
     
     private var artworkTaskID: String {
-        "\(entity.id.uuidString)-\(entity.artworkData?.count ?? 0)"
+        "\(entity.id.uuidString)-\(entity.artworkData?.count ?? 0)-\(artistImageRefreshID)"
     }
 
     private var placeholderArtwork: some View {
@@ -259,6 +302,14 @@ private struct EntityGridItem<T: Entity>: View {
     }
 
     private func loadArtwork() async {
+        if let artist = entity as? ArtistEntity {
+            let image = await loadArtistArtwork(for: artist)
+
+            guard !Task.isCancelled else { return }
+            renderedImage = image
+            return
+        }
+
         // Serve cache hits synchronously to avoid placeholder flicker on scroll recycle
         if let cached = EntityArtworkCache.shared.getCachedImage(for: entity) {
             renderedImage = cached
@@ -269,5 +320,31 @@ private struct EntityGridItem<T: Entity>: View {
 
         guard !Task.isCancelled else { return }
         renderedImage = image
+    }
+
+    private func loadArtistArtwork(for artist: ArtistEntity) async -> NSImage? {
+        guard let libraryManager else {
+            return await EntityArtworkCache.shared.loadImage(for: artist)
+        }
+
+        let artistName = artist.name
+        let folders = libraryManager.folders
+        let databaseManager = libraryManager.databaseManager
+
+        if let image = await Task.detached(priority: .utility, operation: {
+            let tracks = databaseManager.getTracksForArtistEntity(artistName)
+            return ArtistImageStore.imageData(for: artistName, tracks: tracks, folders: folders, withFileVersion: true)
+        }).value {
+            return await EntityArtworkCache.shared.loadRenderedImage(
+                from: image.data,
+                cacheKey: "artist-file-\(image.cacheKey)"
+            )
+        }
+
+        if let cached = EntityArtworkCache.shared.getCachedImage(for: artist) {
+            return cached
+        }
+
+        return await EntityArtworkCache.shared.loadImage(for: artist)
     }
 }

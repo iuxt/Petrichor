@@ -255,6 +255,7 @@ extension Notification.Name {
     static let foldersAddedToDatabase = Notification.Name("foldersAddedToDatabase")
 
     static let libraryDataDidChange = Notification.Name("LibraryDataDidChange")
+    static let artistImagesDidChange = Notification.Name("ArtistImagesDidChange")
     static let goToLibraryFilter = Notification.Name("GoToLibraryFilter")
 
     static let selectPlaylist = Notification.Name("SelectPlaylist")

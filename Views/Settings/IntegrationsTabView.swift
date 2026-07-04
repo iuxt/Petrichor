@@ -152,8 +152,8 @@ struct IntegrationsTabView: View {
             Toggle("Fetch lyrics from internet when unavailable", isOn: $onlineLyricsEnabled)
                 .help("Automatically search for lyrics online when no local lyrics are found")
 
-            Toggle("Download artist images to song folders", isOn: $artistImageDownloadEnabled)
-                .help("Automatically save downloaded artist images next to songs using the artist name")
+            Toggle("Download artist images to music folders", isOn: $artistImageDownloadEnabled)
+                .help("Automatically save downloaded artist images in each music folder's artist images folder")
                 .onChange(of: artistImageDownloadEnabled) { _, enabled in
                     if enabled, let coordinator = AppCoordinator.shared {
                         ArtistImageDownloadManager.shared.downloadMissingArtistImages(using: coordinator.libraryManager)
