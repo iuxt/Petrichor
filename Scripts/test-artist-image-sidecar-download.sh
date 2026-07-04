@@ -72,8 +72,13 @@ if ! rg -n "@AppStorage\\(\"artistImageDownloadEnabled\"\\)" "$settings" >/dev/n
   exit 1
 fi
 
-if ! rg -n "Download artist images to music folders|ArtistImageDownloadManager\\.shared\\.downloadMissingArtistImages" "$settings" >/dev/null; then
-  echo "Settings UI does not expose or trigger artist image downloads." >&2
+if ! rg -n "Download artist images to music folders" "$settings" >/dev/null; then
+  echo "Settings UI does not expose music-folder artist image storage." >&2
+  exit 1
+fi
+
+if ! rg -n "ArtistImageDownloadManager\\.shared\\.downloadMissingArtistImages" "$settings" >/dev/null; then
+  echo "Settings UI does not trigger artist image downloads." >&2
   exit 1
 fi
 
@@ -87,12 +92,22 @@ if ! rg -n "ArtistImageStore\\.imageData\\(for: artist(Name|\\.name)" "$grid" >/
   exit 1
 fi
 
-if ! rg -n "artistImageRefreshID|publisher\\(for: \\.artistImagesDidChange\\)" "$grid" >/dev/null; then
-  echo "Artist grid does not refresh after artist image downloads change files." >&2
+if ! rg -n "artistImageRefreshID" "$grid" >/dev/null; then
+  echo "Artist grid is missing an artist image refresh token." >&2
   exit 1
 fi
 
-if ! rg -n "artistImageData|loadArtistImage|ArtistImageStore\\.imageData\\(for: entity\\.name" "$detail" >/dev/null; then
+if ! rg -n "publisher\\(for: \\.artistImagesDidChange\\)" "$grid" >/dev/null; then
+  echo "Artist grid does not subscribe to artist image change notifications." >&2
+  exit 1
+fi
+
+if ! rg -n "artistImageData|loadArtistImage" "$detail" >/dev/null; then
+  echo "Artist detail is missing artist image state or loading helper." >&2
+  exit 1
+fi
+
+if ! rg -n "ArtistImageStore\\.imageData\\(for: entity\\.name" "$detail" >/dev/null; then
   echo "Artist detail does not read file-backed artist images." >&2
   exit 1
 fi
