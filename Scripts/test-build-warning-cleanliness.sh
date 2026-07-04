@@ -71,6 +71,11 @@ if ! rg -n 'CLANG_CXX_LANGUAGE_STANDARD=gnu\+\+20' "$build_script" >/dev/null; t
     exit 1
 fi
 
+if ! rg -n -- '-D_LIBCPP_ENABLE_EXPERIMENTAL' "$build_script" >/dev/null; then
+    printf 'build-installer must define _LIBCPP_ENABLE_EXPERIMENTAL so Xcode 16 exposes std::jthread and std::stop_token for SwiftPM C++ dependencies.\n' >&2
+    exit 1
+fi
+
 if ! rg -n 'diskutil image resize --size' "$build_script" >/dev/null; then
     printf 'build-installer must patch create-dmg hdiutil resize calls to diskutil image resize.\n' >&2
     exit 1
