@@ -30,6 +30,7 @@ enum AlbumArtFormat {
 let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 let audioURL = root.appendingPathComponent("Artist - Song.flac")
 let jpgURL = root.appendingPathComponent("Artist - Song.jpg")
+let jpegURL = root.appendingPathComponent("Artist - Song.jpeg")
 let pngURL = root.appendingPathComponent("Artist - Song.png")
 let genericURL = root.appendingPathComponent("cover.jpg")
 
@@ -59,6 +60,7 @@ guard (try Data(contentsOf: jpgURL)) == Data([1, 2, 3]) else {
 }
 
 try FileManager.default.removeItem(at: jpgURL)
+FileManager.default.createFile(atPath: jpegURL.path, contents: Data([6]), attributes: nil)
 FileManager.default.createFile(atPath: pngURL.path, contents: Data([7]), attributes: nil)
 try TrackArtworkSidecarWriter.write(Data([8]), forAudioURL: audioURL)
 guard !FileManager.default.fileExists(atPath: jpgURL.path) else {
@@ -66,7 +68,7 @@ guard !FileManager.default.fileExists(atPath: jpgURL.path) else {
     exit(1)
 }
 
-guard TrackArtworkSidecarWriter.existingSameStemArtworkURL(forAudioURL: audioURL) == pngURL else {
+guard TrackArtworkSidecarWriter.existingSameStemArtworkURL(forAudioURL: audioURL) == jpegURL else {
     fputs("Existing same-stem artwork detection should respect supported extension priority\n", stderr)
     exit(1)
 }
