@@ -73,6 +73,10 @@ create_dmg_with_layout() {
         args+=(--background "$dmg_source/.background/install.svg")
     fi
 
+    if [ "${CI:-false}" = true ]; then
+        args+=(--skip-jenkins)
+    fi
+
     "$create_dmg_bin" "${args[@]}" "$dmg_path" "$dmg_source"
 }
 
@@ -110,7 +114,7 @@ create_dmg_command() {
     perl -0pi -e '
         s/hdiutil resize -limits "\$\{DMG_TEMP_NAME\}"/hdiutil resize -limits "\${DMG_TEMP_NAME}" 2>\/dev\/null/g;
         s/hdiutil resize \$\{HDIUTIL_VERBOSITY\} -size \$\{DISK_IMAGE_SIZE\}m "\$\{DMG_TEMP_NAME\}"/diskutil image resize --size \${DISK_IMAGE_SIZE}m "\${DMG_TEMP_NAME}"/g;
-        s/DEV_NAME=\$\(hdiutil attach -mountrandom \$\{MOUNT_RANDOM_PATH\} -readwrite -noverify -noautoopen -nobrowse "\$\{DMG_TEMP_NAME\}"/MOUNT_DIR="\${MOUNT_RANDOM_PATH}\/dmg.\${RANDOM}.\$\$"\nDEV_NAME=\$\(diskutil image attach --mountPoint "\${MOUNT_DIR}" --nobrowse "\${DMG_TEMP_NAME}"/g;
+        s/DEV_NAME=\$\(hdiutil attach -mountrandom \$\{MOUNT_RANDOM_PATH\} -readwrite -noverify -noautoopen -nobrowse "\$\{DMG_TEMP_NAME\}"/MOUNT_DIR="\${TMPDIR:-\/tmp}\/dmg.\${RANDOM}.\$\$"\nmkdir -p "\${MOUNT_DIR}"\nDEV_NAME=\$\(diskutil image attach --mountPoint "\${MOUNT_DIR}" --nobrowse "\${DMG_TEMP_NAME}"/g;
         s/hdiutil_retry detach "\$\{DEV_NAME\}"/diskutil eject "\${DEV_NAME}"/g;
     ' "$wrapper_dir/create-dmg"
     chmod +x "$wrapper_dir/create-dmg"

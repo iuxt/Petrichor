@@ -59,6 +59,11 @@ if ! rg -n -- '--app-drop-link "\$DMG_APPLICATIONS_ICON_X" "\$DMG_APPLICATIONS_I
     exit 1
 fi
 
+if ! rg -n -- '--skip-jenkins' "$script" >/dev/null; then
+    printf 'build-installer must pass --skip-jenkins to create-dmg on CI to avoid Finder AppleScript hangs.\n' >&2
+    exit 1
+fi
+
 if ! rg -n 'create_dmg_with_layout "\$dmg_title" "\$dmg_path" "\$dmg_source"' "$script" >/dev/null; then
     printf 'build-installer must call create-dmg through the layout helper with output .dmg path and staged source folder.\n' >&2
     exit 1

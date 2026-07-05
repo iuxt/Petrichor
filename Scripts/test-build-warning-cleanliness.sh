@@ -107,6 +107,16 @@ if ! rg -n 'diskutil image attach --mountPoint "\\\$\{MOUNT_DIR\}" --nobrowse' "
     exit 1
 fi
 
+if ! rg -n 'mkdir -p "\\\$\{MOUNT_DIR\}"' "$build_script" >/dev/null; then
+    printf 'build-installer must create the random diskutil mount point before attaching the DMG.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'MOUNT_DIR="\\\$\{TMPDIR:-\\?/tmp\}\\?/dmg' "$build_script" >/dev/null; then
+    printf 'build-installer diskutil mount points must live under TMPDIR instead of /Volumes, which is not user-writable on CI.\n' >&2
+    exit 1
+fi
+
 if ! rg -n 'diskutil eject "\\\$\{DEV_NAME\}"' "$build_script" >/dev/null; then
     printf 'build-installer must patch create-dmg hdiutil detach calls to diskutil eject.\n' >&2
     exit 1
