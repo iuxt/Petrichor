@@ -101,6 +101,7 @@ actor TrackArtworkDownloadManager {
         guard let downloaded,
               let jpegData = jpegData(from: downloaded) else {
             guard !Task.isCancelled else { return nil }
+            guard isEnabled else { return nil }
             recordOnlineMiss(for: fullTrack.url)
             return nil
         }
@@ -149,6 +150,7 @@ actor TrackArtworkDownloadManager {
 
     private func fetchArtwork(for fullTrack: FullTrack) async -> Data? {
         guard !Task.isCancelled else { return nil }
+        guard isEnabled else { return nil }
 
         if let releaseID = fullTrack.extendedMetadata?.musicBrainzAlbumId?.nilIfEmpty,
            let data = await downloadCoverArt(path: "/release/\(releaseID)/front-500") {
@@ -156,6 +158,7 @@ actor TrackArtworkDownloadManager {
         }
 
         guard !Task.isCancelled else { return nil }
+        guard isEnabled else { return nil }
 
         if let releaseGroupID = fullTrack.extendedMetadata?.musicBrainzReleaseGroupId?.nilIfEmpty,
            let data = await downloadCoverArt(path: "/release-group/\(releaseGroupID)/front-500") {
@@ -163,20 +166,24 @@ actor TrackArtworkDownloadManager {
         }
 
         guard !Task.isCancelled else { return nil }
+        guard isEnabled else { return nil }
 
         guard let release = await searchMusicBrainzRelease(for: fullTrack) else {
             return nil
         }
 
         guard !Task.isCancelled else { return nil }
+        guard isEnabled else { return nil }
 
         if let data = await downloadCoverArt(path: "/release/\(release.id)/front-500") {
             return data
         }
 
         guard !Task.isCancelled else { return nil }
+        guard isEnabled else { return nil }
 
         if let releaseGroupID = release.releaseGroupID {
+            guard isEnabled else { return nil }
             return await downloadCoverArt(path: "/release-group/\(releaseGroupID)/front-500")
         }
 

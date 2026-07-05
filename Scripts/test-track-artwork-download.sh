@@ -109,6 +109,8 @@ miss_idx = require_in(perform, "recordOnlineMiss(for: fullTrack.url)", "Missing 
 miss_window = perform[max(0, miss_idx - 160):miss_idx]
 if "Task.isCancelled" not in miss_window:
     raise SystemExit("Cancellation must be checked immediately before recording an online artwork miss.")
+if "guard isEnabled else { return nil }" not in miss_window:
+    raise SystemExit("Opt-in must be checked immediately before recording an online artwork miss.")
 
 enabled_idx = require("guard isEnabled else { return nil }", "Downloads must remain opt-in.")
 cache_idx = require("cachedOnlineDisplayResult(for:", "Missing successful online display cache lookup.")
@@ -142,6 +144,20 @@ for side_effect in [
     window = perform[max(0, idx - 180):idx]
     if "guard isEnabled else { return nil }" not in window:
         raise SystemExit(f"Opt-in must be rechecked immediately before side effect: {side_effect}")
+
+fetch_body = function_body("fetchArtwork")
+network_markers = [
+    'await downloadCoverArt(path: "/release/\\(releaseID)/front-500")',
+    'await downloadCoverArt(path: "/release-group/\\(releaseGroupID)/front-500")',
+    "await searchMusicBrainzRelease(for: fullTrack)",
+    'await downloadCoverArt(path: "/release/\\(release.id)/front-500")',
+    'return await downloadCoverArt(path: "/release-group/\\(releaseGroupID)/front-500")'
+]
+for marker in network_markers:
+    idx = require_in(fetch_body, marker, f"Missing network marker in fetchArtwork: {marker}")
+    window = fetch_body[max(0, idx - 220):idx]
+    if "guard isEnabled else { return nil }" not in window:
+        raise SystemExit(f"fetchArtwork must recheck opt-in before network step: {marker}")
 
 width_idx = require("kCGImagePropertyPixelWidth", "Missing downloaded artwork pixel width guard.")
 height_idx = require("kCGImagePropertyPixelHeight", "Missing downloaded artwork pixel height guard.")
