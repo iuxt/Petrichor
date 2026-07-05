@@ -47,6 +47,26 @@ func touch(_ url: URL) {
 
 let candidates = [folder, unrelated, songPNG, cover, songJPG]
 
+guard ExternalArtworkResolver.sameStemArtworkURL(forAudioURL: song, candidates: candidates) == songJPG else {
+    fputs("Same-stem artwork helper should use extension priority\n", stderr)
+    exit(1)
+}
+
+guard ExternalArtworkResolver.sameStemArtworkURL(forAudioURL: neighbor, candidates: candidates) == nil else {
+    fputs("Same-stem artwork helper should ignore generic artwork\n", stderr)
+    exit(1)
+}
+
+guard ExternalArtworkResolver.genericArtworkURL(forAudioURL: neighbor, candidates: candidates) == cover else {
+    fputs("Generic artwork helper should choose cover artwork first\n", stderr)
+    exit(1)
+}
+
+guard ExternalArtworkResolver.genericArtworkURL(forAudioURL: song, candidates: candidates) == cover else {
+    fputs("Generic artwork helper should be available separately even when same-stem artwork exists\n", stderr)
+    exit(1)
+}
+
 guard ExternalArtworkResolver.artworkURL(forAudioURL: song, candidates: candidates) == songJPG else {
     fputs("Same-name artwork should beat generic artwork and use extension priority\n", stderr)
     exit(1)

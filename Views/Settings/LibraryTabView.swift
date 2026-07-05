@@ -312,7 +312,7 @@ struct LibraryTabView: View {
         }
     }
 
-    private func infoButton(isPresented: Binding<Bool>, text: LocalizedStringKey) -> some View {
+    private func infoButton(isPresented: Binding<Bool>, text: String.LocalizationValue) -> some View {
         Button { isPresented.wrappedValue.toggle() } label: {
             Image(systemName: "questionmark.circle")
                 .font(.system(size: 12))
@@ -320,7 +320,7 @@ struct LibraryTabView: View {
         }
         .buttonStyle(.plain)
         .popover(isPresented: isPresented, arrowEdge: .trailing) {
-            Text(text)
+            Text(verbatim: String(appLocalized: text))
                 .font(.system(size: 12))
                 .padding(10)
                 .frame(width: 240)

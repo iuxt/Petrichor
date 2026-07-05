@@ -36,23 +36,3 @@ struct PanelToolbarButton<Label: View>: View {
         .help(isActive ? activeHelp : inactiveHelp)
     }
 }
-
-extension View {
-    /// Backdrop behind a floating control cluster (e.g. the mini player's window
-    /// buttons / queue-lyrics toolbar, or the immersive toolbar) so its glyphs stay
-    /// legible over any artwork. Uses Liquid Glass on macOS 26+, falling back to a
-    /// blurred, slightly-tinted material capsule on earlier releases.
-    @ViewBuilder
-    func floatingControlClusterBackground() -> some View {
-        if #available(macOS 26.0, *) {
-            glassEffect(.regular, in: Capsule())
-        } else {
-            background(
-                Capsule()
-                    .fill(.regularMaterial)
-                    .overlay(Capsule().fill(.black.opacity(0.12)))
-                    .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 0.5))
-            )
-        }
-    }
-}

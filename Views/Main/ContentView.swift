@@ -396,7 +396,7 @@ struct ContentView: View {
             NotificationTray()
                 .frame(width: 34, height: 30)
         }
-        .sharedBackgroundVisibility(.hidden)
+        .adaptiveSharedBackgroundHidden()
 
         ToolbarItem(placement: .confirmationAction) {
             SearchInputField(

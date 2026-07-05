@@ -200,7 +200,7 @@ struct AppearanceTabView: View {
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showTrackInfoHelp, arrowEdge: .trailing) {
-            Text("Shows small badges under the playing track for its audio details like codec (FLAC, MP3, etc.), bitrate, sample rate, and channels.")
+            Text(verbatim: String(appLocalized: "Shows small badges under the playing track for its audio details like codec (FLAC, MP3, etc.), bitrate, sample rate, and channels."))
                 .font(.system(size: 12))
                 .padding(10)
                 .frame(width: 240)

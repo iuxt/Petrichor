@@ -88,8 +88,30 @@ if ! rg -n '\.id\(localizationSettings\.appLanguage\.id\)' Views/Main/ContentVie
     exit 1
 fi
 
-if ! rg -n 'private func infoButton\(isPresented: Binding<Bool>, text: LocalizedStringKey\)' Views/Settings/LibraryTabView.swift >/dev/null; then
-    printf '%s\n' 'Library settings help popovers must take LocalizedStringKey text so question-mark descriptions follow the in-app language setting.' >&2
+if ! rg -n 'private func infoButton\(isPresented: Binding<Bool>, text: String\.LocalizationValue\)' Views/Settings/LibraryTabView.swift >/dev/null; then
+    printf '%s\n' 'Library settings help popovers must take String.LocalizationValue text so question-mark descriptions are resolved against the in-app language setting.' >&2
+    exit 1
+fi
+
+settings_popover_required_uses=(
+    'Views/Settings/AppearanceTabView.swift|String(appLocalized: "Shows small badges under the playing track for its audio details like codec (FLAC, MP3, etc.), bitrate, sample rate, and channels.")'
+    'Views/Settings/GeneralTabView.swift|String(appLocalized: "Our newer engine for playing your music. With it on, you may notice:")'
+    'Views/Settings/GeneralTabView.swift|String(appLocalized: "Turn it off to switch back to the classic engine. Your music and library stay exactly the same either way.")'
+    'Views/Settings/GeneralTabView.swift|private func engineInfoPoint(_ text: String.LocalizationValue)'
+    'Views/Settings/LibraryTabView.swift|String(appLocalized: text)'
+)
+
+for requirement in "${settings_popover_required_uses[@]}"; do
+    file="${requirement%%|*}"
+    pattern="${requirement#*|}"
+    if ! rg -n -F "$pattern" "$file" >/dev/null; then
+        printf 'Settings question-mark popover text must be resolved with String(appLocalized:) for app-language changes: %s\n' "$requirement" >&2
+        exit 1
+    fi
+done
+
+if rg -n 'Text\("(Our newer engine|Turn it off to switch back|Shows small badges)' Views/Settings/GeneralTabView.swift Views/Settings/AppearanceTabView.swift >/dev/null; then
+    printf '%s\n' 'Settings question-mark popover text must not rely on Text string-literal localization inside popover presentation boundaries.' >&2
     exit 1
 fi
 

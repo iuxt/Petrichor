@@ -56,6 +56,17 @@ if find Resources/Assets.xcassets -path '*.symbolset/*.svg' -print0 | xargs -0 r
     exit 1
 fi
 
+if rg -n '\.buttonStyle\(\.glass\)|glassEffect|sharedBackgroundVisibility' Views PetrichorApp.swift Managers Core Utilities --glob '!Views/Components/ViewExtensions.swift' >/dev/null; then
+    printf 'SwiftUI APIs newer than Xcode 16 must be isolated behind compatibility helpers in ViewExtensions.swift.\n' >&2
+    exit 1
+fi
+
+if rg -n '\.buttonStyle\(\.glass\)|glassEffect|sharedBackgroundVisibility' Views/Components/ViewExtensions.swift >/dev/null &&
+    ! rg -n '#if compiler\(>=6\.2\)' Views/Components/ViewExtensions.swift >/dev/null; then
+    printf 'ViewExtensions SwiftUI compatibility helpers must guard new SDK APIs with #if compiler(>=6.2).\n' >&2
+    exit 1
+fi
+
 if ! rg -n -- '--hdiutil-quiet' "$build_script" >/dev/null; then
     printf 'build-installer must pass --hdiutil-quiet to create-dmg to suppress deprecated hdiutil create/convert output.\n' >&2
     exit 1

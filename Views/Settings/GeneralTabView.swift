@@ -79,17 +79,15 @@ struct GeneralTabView: View {
         .buttonStyle(.plain)
         .popover(isPresented: $showEngineInfo, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Our newer engine for playing your music. With it on, you may notice:")
+                Text(verbatim: String(appLocalized: "Our newer engine for playing your music. With it on, you may notice:"))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    engineInfoPoint(
-                        String(appLocalized: "Gapless playback, so albums and live recordings flow from one track to the next with no silent pause.")
-                    )
-                    engineInfoPoint(String(appLocalized: "Wider, more spacious stereo sound."))
-                    engineInfoPoint(String(appLocalized: "Spatial Audio on supported headphones."))
+                    engineInfoPoint("Gapless playback, so albums and live recordings flow from one track to the next with no silent pause.")
+                    engineInfoPoint("Wider, more spacious stereo sound.")
+                    engineInfoPoint("Spatial Audio on supported headphones.")
                 }
 
-                Text("Turn it off to switch back to the classic engine. Your music and library stay exactly the same either way.")
+                Text(verbatim: String(appLocalized: "Turn it off to switch back to the classic engine. Your music and library stay exactly the same either way."))
                     .foregroundColor(.secondary)
             }
             .font(.system(size: 12))
@@ -98,10 +96,10 @@ struct GeneralTabView: View {
         }
     }
 
-    private func engineInfoPoint(_ text: String) -> some View {
+    private func engineInfoPoint(_ text: String.LocalizationValue) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("•")
-            Text(text)
+            Text(verbatim: "•")
+            Text(verbatim: String(appLocalized: text))
         }
     }
 

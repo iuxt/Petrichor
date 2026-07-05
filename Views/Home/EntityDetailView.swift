@@ -56,7 +56,6 @@ struct EntityDetailView: View {
     @State private var tracks: [Track] = []
     @State private var selectedTrackID: UUID?
     @State private var isLoading = true
-    @State private var isBackButtonHovered = false
     @State private var artistBio: String?
     @State private var gradientColors: [Color] = []
     @State private var resolvedArtworkData: Data?
@@ -151,41 +150,14 @@ struct EntityDetailView: View {
             HStack(alignment: .top, spacing: 20) {
                 // Back button
                 if let onBack = onBack {
-                    if #available(macOS 26.0, *) {
-                        Button(action: onBack) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 28, height: 28)
-                        }
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
-                        .controlSize(.small)
-                        .help("Back")
-                    } else {
-                        Button(action: onBack) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .frame(width: 28, height: 28)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(isBackButtonHovered ? Color(NSColor.controlAccentColor).opacity(0.15) : Color.clear)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .strokeBorder(
-                                            isBackButtonHovered ? Color(NSColor.controlAccentColor).opacity(0.3) : Color.clear,
-                                            lineWidth: 1
-                                        )
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { hovering in
-                            isBackButtonHovered = hovering
-                        }
-                        .help("Back")
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
                     }
+                    .adaptiveCircularButtonStyle()
+                    .help("Back")
                 }
 
                 // Artwork
