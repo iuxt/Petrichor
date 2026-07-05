@@ -32,7 +32,7 @@ enum TrackArtworkSidecarWriter {
         }
 
         let sidecarURL = preferredSidecarURL(forAudioURL: audioURL)
-        try artwork.write(to: sidecarURL, options: [.atomic])
+        try artwork.write(to: sidecarURL, options: [.withoutOverwriting])
         return sidecarURL
     }
 }

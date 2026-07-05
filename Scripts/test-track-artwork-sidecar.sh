@@ -8,6 +8,11 @@ if [[ ! -f "$helper" ]]; then
     exit 1
 fi
 
+if ! grep -Eq 'artwork\.write\(to: sidecarURL, options: \[[^]]*\.withoutOverwriting' "$helper"; then
+    printf 'Sidecar writer must use a no-overwrite write option\n' >&2
+    exit 1
+fi
+
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
