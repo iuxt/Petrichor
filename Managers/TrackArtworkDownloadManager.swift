@@ -29,7 +29,7 @@ actor TrackArtworkDownloadManager {
         self.fileManager = fileManager
     }
 
-    func downloadArtwork(for fullTrack: FullTrack) async -> URL? {
+    func downloadArtwork(for fullTrack: FullTrack) async -> TrackArtworkDownloadResult? {
         guard !Task.isCancelled else { return nil }
         guard isEnabled else { return nil }
         guard isValidForArtworkFetch(fullTrack) else { return nil }
@@ -46,7 +46,7 @@ actor TrackArtworkDownloadManager {
             inFlight[key] = existing
             flight = existing
         } else {
-            let task = Task { [weak self] () -> URL? in
+            let task = Task { [weak self] () -> TrackArtworkDownloadResult? in
                 guard !Task.isCancelled else { return nil }
                 guard let self else { return nil }
                 return await self.performDownload(for: fullTrack)
@@ -70,16 +70,18 @@ actor TrackArtworkDownloadManager {
         return result
     }
 
-    private func performDownload(for fullTrack: FullTrack) async -> URL? {
+    private func performDownload(for fullTrack: FullTrack) async -> TrackArtworkDownloadResult? {
         guard !Task.isCancelled else { return nil }
+        var hasInvalidExistingSidecar = false
 
         if let existing = TrackArtworkSidecarWriter.existingSameStemArtworkURL(
             forAudioURL: fullTrack.url,
             fileManager: fileManager
         ) {
             if isDisplayableArtworkFile(existing) {
-                return existing
+                return TrackArtworkDownloadResult(sidecarURL: existing)
             }
+            hasInvalidExistingSidecar = true
             Logger.info("TrackArtworkDownloadManager: ignoring invalid existing artwork sidecar \(existing.lastPathComponent)")
         }
 
@@ -91,6 +93,10 @@ actor TrackArtworkDownloadManager {
 
         guard !Task.isCancelled else { return nil }
 
+        if hasInvalidExistingSidecar {
+            return TrackArtworkDownloadResult(displayData: jpegData)
+        }
+
         do {
             let destination = try TrackArtworkSidecarWriter.write(
                 jpegData,
@@ -98,16 +104,14 @@ actor TrackArtworkDownloadManager {
                 fileManager: fileManager
             )
             guard isDisplayableArtworkFile(destination) else {
-                recordOnlineMiss(for: fullTrack.url)
                 Logger.info("TrackArtworkDownloadManager: downloaded artwork could not replace invalid sidecar \(destination.lastPathComponent)")
-                return nil
+                return TrackArtworkDownloadResult(displayData: jpegData)
             }
             Logger.info("TrackArtworkDownloadManager: wrote \(destination.lastPathComponent)")
-            return destination
+            return TrackArtworkDownloadResult(sidecarURL: destination, didWriteSidecar: true)
         } catch {
-            recordOnlineMiss(for: fullTrack.url)
             Logger.error("TrackArtworkDownloadManager: failed to write artwork sidecar for '\(fullTrack.title)': \(error.localizedDescription)")
-            return nil
+            return TrackArtworkDownloadResult(displayData: jpegData)
         }
     }
 
@@ -329,11 +333,11 @@ actor TrackArtworkDownloadManager {
     }
 
     private func valueForWaiter(
-        task: Task<URL?, Never>,
+        task: Task<TrackArtworkDownloadResult?, Never>,
         key: String,
         flightID: UUID,
         waiterID: UUID
-    ) async -> URL? {
+    ) async -> TrackArtworkDownloadResult? {
         let continuation = WaiterContinuation()
         let completionTask = Task {
             continuation.resume(await task.value)
@@ -422,17 +426,17 @@ actor TrackArtworkDownloadManager {
 
     private struct InFlightArtworkDownload {
         let id: UUID
-        let task: Task<URL?, Never>
+        let task: Task<TrackArtworkDownloadResult?, Never>
         var waiters: Set<UUID>
     }
 
     private final class WaiterContinuation: @unchecked Sendable {
         private let lock = NSLock()
-        private var continuation: CheckedContinuation<URL?, Never>?
-        private var result: URL?
+        private var continuation: CheckedContinuation<TrackArtworkDownloadResult?, Never>?
+        private var result: TrackArtworkDownloadResult?
         private var didResume = false
 
-        func set(_ continuation: CheckedContinuation<URL?, Never>) {
+        func set(_ continuation: CheckedContinuation<TrackArtworkDownloadResult?, Never>) {
             lock.lock()
             if didResume {
                 let result = result
@@ -444,7 +448,7 @@ actor TrackArtworkDownloadManager {
             }
         }
 
-        func resume(_ result: URL?) {
+        func resume(_ result: TrackArtworkDownloadResult?) {
             lock.lock()
             guard !didResume else {
                 lock.unlock()
@@ -464,5 +468,17 @@ actor TrackArtworkDownloadManager {
     private struct ReleaseMatch {
         let id: String
         let releaseGroupID: String?
+    }
+}
+
+struct TrackArtworkDownloadResult: Sendable {
+    let sidecarURL: URL?
+    let displayData: Data?
+    let didWriteSidecar: Bool
+
+    init(sidecarURL: URL? = nil, displayData: Data? = nil, didWriteSidecar: Bool = false) {
+        self.sidecarURL = sidecarURL
+        self.displayData = displayData
+        self.didWriteSidecar = didWriteSidecar
     }
 }

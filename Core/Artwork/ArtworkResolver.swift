@@ -103,18 +103,25 @@ final class ArtworkResolver {
             return nil
         }
 
-        guard let sidecarURL = await TrackArtworkDownloadManager.shared.downloadArtwork(for: fullTrack) else {
+        guard let result = await TrackArtworkDownloadManager.shared.downloadArtwork(for: fullTrack) else {
             return nil
         }
 
-        guard let data = cachedOrFileArtwork(for: request, fileURL: sidecarURL) else {
-            return nil
+        if let sidecarURL = result.sidecarURL,
+           let data = cachedOrFileArtwork(for: request, fileURL: sidecarURL) {
+            if result.didWriteSidecar {
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .trackArtworkSidecarDidChange, object: request.audioURL)
+                }
+            }
+            return data
         }
 
-        await MainActor.run {
-            NotificationCenter.default.post(name: .trackArtworkSidecarDidChange, object: request.audioURL)
+        if let displayData = result.displayData {
+            return displayData
         }
-        return data
+
+        return nil
     }
 
     private func cacheKey(for request: ArtworkRequest, sourceURL: URL) -> ArtworkCacheKey? {
