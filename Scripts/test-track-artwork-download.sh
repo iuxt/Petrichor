@@ -83,10 +83,32 @@ def require(pattern, message):
         raise SystemExit(message)
     return manager.index(pattern)
 
-cancel_idx = require("guard !Task.isCancelled else { return nil }", "Missing cancellation guard before recording online miss.")
-miss_idx = require("recordOnlineMiss(for: fullTrack.url)", "Missing online miss recording.")
-if cancel_idx > miss_idx:
-    raise SystemExit("Cancellation must be checked before recording an online artwork miss.")
+def function_body(name):
+    marker = f"private func {name}"
+    start = manager.index(marker)
+    brace = manager.index("{", start)
+    depth = 0
+    for idx in range(brace, len(manager)):
+        char = manager[idx]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return manager[brace + 1:idx]
+    raise SystemExit(f"Could not parse {name} body")
+
+def require_in(source, pattern, message):
+    if pattern not in source:
+        raise SystemExit(message)
+    return source.index(pattern)
+
+perform = function_body("performDownload")
+
+miss_idx = require_in(perform, "recordOnlineMiss(for: fullTrack.url)", "Missing online miss recording.")
+miss_window = perform[max(0, miss_idx - 160):miss_idx]
+if "Task.isCancelled" not in miss_window:
+    raise SystemExit("Cancellation must be checked immediately before recording an online artwork miss.")
 
 enabled_idx = require("guard isEnabled else { return nil }", "Downloads must remain opt-in.")
 cache_idx = require("cachedOnlineDisplayResult(for:", "Missing successful online display cache lookup.")
@@ -94,12 +116,32 @@ fetch_idx = require("fetchArtwork(for: fullTrack)", "Missing online artwork fetc
 if not (enabled_idx < cache_idx < fetch_idx):
     raise SystemExit("Successful display cache must be checked after opt-in and before network fetch.")
 
-write_idx = require("TrackArtworkSidecarWriter.writeResult", "Manager must use race-safe sidecar write result.")
-notify_idx = require("NotificationCenter.default.post(name: .trackArtworkSidecarDidChange", "Manager must post sidecar refresh notifications.")
-main_actor_idx = manager.rfind("MainActor.run", 0, notify_idx)
-did_write_idx = manager.rfind("didWriteSidecar", 0, notify_idx)
-if main_actor_idx < 0 or did_write_idx < 0 or not (write_idx < did_write_idx < main_actor_idx < notify_idx):
-    raise SystemExit("Manager must post notification from MainActor.run only after an actual sidecar write.")
+write_idx = require_in(perform, "TrackArtworkSidecarWriter.writeResult", "Manager must use race-safe sidecar write result.")
+did_write_idx = require_in(perform, "if writeResult.didWriteSidecar", "Manager must gate notifications on actual sidecar writes.")
+did_write_block = perform[did_write_idx:perform.index("return TrackArtworkDownloadResult(sidecarURL:", did_write_idx)]
+if "await postTrackArtworkSidecarDidChange" not in did_write_block:
+    raise SystemExit("Manager must post sidecar refresh only inside the actual-write branch.")
+
+notify_helper = function_body("postTrackArtworkSidecarDidChange")
+if "await MainActor.run" not in notify_helper or "NotificationCenter.default.post(name: .trackArtworkSidecarDidChange" not in notify_helper:
+    raise SystemExit("Manager must post sidecar refresh notifications from MainActor.run.")
+
+conversion_idx = require_in(perform, "let jpegData = jpegData(from: downloaded)", "Missing downloaded artwork conversion.")
+post_conversion = perform[conversion_idx:]
+if "guard isEnabled else { return nil }" not in post_conversion[:350]:
+    raise SystemExit("Opt-in must be rechecked after network fetch/conversion.")
+
+for side_effect in [
+    "storeOnlineDisplayResult(jpegData, for: key)",
+    "let writeResult = try TrackArtworkSidecarWriter.writeResult",
+    "await postTrackArtworkSidecarDidChange(for: fullTrack.url)",
+    "return TrackArtworkDownloadResult(displayData: jpegData)",
+    "return TrackArtworkDownloadResult(sidecarURL: destination, didWriteSidecar: writeResult.didWriteSidecar)"
+]:
+    idx = require_in(perform, side_effect, f"Missing side effect marker: {side_effect}")
+    window = perform[max(0, idx - 180):idx]
+    if "guard isEnabled else { return nil }" not in window:
+        raise SystemExit(f"Opt-in must be rechecked immediately before side effect: {side_effect}")
 
 width_idx = require("kCGImagePropertyPixelWidth", "Missing downloaded artwork pixel width guard.")
 height_idx = require("kCGImagePropertyPixelHeight", "Missing downloaded artwork pixel height guard.")

@@ -73,6 +73,7 @@ actor TrackArtworkDownloadManager {
 
     private func performDownload(for fullTrack: FullTrack) async -> TrackArtworkDownloadResult? {
         guard !Task.isCancelled else { return nil }
+        guard isEnabled else { return nil }
         let key = fullTrack.url.standardizedFileURL.path
         var hasInvalidExistingSidecar = false
 
@@ -81,6 +82,7 @@ actor TrackArtworkDownloadManager {
             fileManager: fileManager
         ) {
             if isDisplayableArtworkFile(existing) {
+                guard isEnabled else { return nil }
                 return TrackArtworkDownloadResult(sidecarURL: existing)
             }
             hasInvalidExistingSidecar = true
@@ -104,13 +106,17 @@ actor TrackArtworkDownloadManager {
         }
 
         guard !Task.isCancelled else { return nil }
+        guard isEnabled else { return nil }
 
         if hasInvalidExistingSidecar {
+            guard isEnabled else { return nil }
             storeOnlineDisplayResult(jpegData, for: key)
+            guard isEnabled else { return nil }
             return TrackArtworkDownloadResult(displayData: jpegData)
         }
 
         do {
+            guard isEnabled else { return nil }
             let writeResult = try TrackArtworkSidecarWriter.writeResult(
                 jpegData,
                 forAudioURL: fullTrack.url,
@@ -119,18 +125,24 @@ actor TrackArtworkDownloadManager {
             let destination = writeResult.url
             guard isDisplayableArtworkFile(destination) else {
                 Logger.info("TrackArtworkDownloadManager: downloaded artwork could not replace invalid sidecar \(destination.lastPathComponent)")
+                guard isEnabled else { return nil }
                 storeOnlineDisplayResult(jpegData, for: key)
+                guard isEnabled else { return nil }
                 return TrackArtworkDownloadResult(displayData: jpegData)
             }
 
             if writeResult.didWriteSidecar {
+                guard isEnabled else { return nil }
                 await postTrackArtworkSidecarDidChange(for: fullTrack.url)
                 Logger.info("TrackArtworkDownloadManager: wrote \(destination.lastPathComponent)")
             }
+            guard isEnabled else { return nil }
             return TrackArtworkDownloadResult(sidecarURL: destination, didWriteSidecar: writeResult.didWriteSidecar)
         } catch {
             Logger.error("TrackArtworkDownloadManager: failed to write artwork sidecar for '\(fullTrack.title)': \(error.localizedDescription)")
+            guard isEnabled else { return nil }
             storeOnlineDisplayResult(jpegData, for: key)
+            guard isEnabled else { return nil }
             return TrackArtworkDownloadResult(displayData: jpegData)
         }
     }
