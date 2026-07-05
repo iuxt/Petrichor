@@ -13,6 +13,11 @@ if ! grep -Eq 'artwork\.write\(to: sidecarURL, options: \[[^]]*\.withoutOverwrit
     exit 1
 fi
 
+if ! rg -n "struct WriteResult|didWriteSidecar|writeResult\\(" "$helper" >/dev/null; then
+    printf 'Sidecar writer must expose a race-safe write result API.\n' >&2
+    exit 1
+fi
+
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
@@ -53,6 +58,12 @@ guard (try Data(contentsOf: jpgURL)) == Data([1, 2, 3]) else {
     exit(1)
 }
 
+let newWrite = try TrackArtworkSidecarWriter.writeResult(Data([3, 2, 1]), forAudioURL: audioURL)
+guard newWrite.url == jpgURL, newWrite.didWriteSidecar == false else {
+    fputs("Race-safe result should report existing artwork without claiming a new write\n", stderr)
+    exit(1)
+}
+
 try TrackArtworkSidecarWriter.write(Data([4, 5, 6]), forAudioURL: audioURL)
 guard (try Data(contentsOf: jpgURL)) == Data([1, 2, 3]) else {
     fputs("Sidecar writer must not overwrite existing same-stem artwork\n", stderr)
@@ -65,6 +76,12 @@ FileManager.default.createFile(atPath: pngURL.path, contents: Data([7]), attribu
 try TrackArtworkSidecarWriter.write(Data([8]), forAudioURL: audioURL)
 guard !FileManager.default.fileExists(atPath: jpgURL.path) else {
     fputs("Sidecar writer must not create .jpg when another same-stem artwork file exists\n", stderr)
+    exit(1)
+}
+
+let existingWrite = try TrackArtworkSidecarWriter.writeResult(Data([9]), forAudioURL: audioURL)
+guard existingWrite.url == jpegURL, existingWrite.didWriteSidecar == false else {
+    fputs("Race-safe result should report an existing non-jpg same-stem file without claiming a new write\n", stderr)
     exit(1)
 }
 

@@ -1,6 +1,11 @@
 import Foundation
 
 enum TrackArtworkSidecarWriter {
+    struct WriteResult {
+        let url: URL
+        let didWriteSidecar: Bool
+    }
+
     static func preferredSidecarURL(forAudioURL audioURL: URL) -> URL {
         audioURL.deletingPathExtension().appendingPathExtension("jpg")
     }
@@ -27,12 +32,27 @@ enum TrackArtworkSidecarWriter {
         forAudioURL audioURL: URL,
         fileManager: FileManager = .default
     ) throws -> URL {
+        try writeResult(artwork, forAudioURL: audioURL, fileManager: fileManager).url
+    }
+
+    static func writeResult(
+        _ artwork: Data,
+        forAudioURL audioURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> WriteResult {
         if let existing = existingSameStemArtworkURL(forAudioURL: audioURL, fileManager: fileManager) {
-            return existing
+            return WriteResult(url: existing, didWriteSidecar: false)
         }
 
         let sidecarURL = preferredSidecarURL(forAudioURL: audioURL)
-        try artwork.write(to: sidecarURL, options: [.withoutOverwriting])
-        return sidecarURL
+        do {
+            try artwork.write(to: sidecarURL, options: [.withoutOverwriting])
+            return WriteResult(url: sidecarURL, didWriteSidecar: true)
+        } catch {
+            if let existing = existingSameStemArtworkURL(forAudioURL: audioURL, fileManager: fileManager) {
+                return WriteResult(url: existing, didWriteSidecar: false)
+            }
+            throw error
+        }
     }
 }

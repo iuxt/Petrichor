@@ -109,11 +109,6 @@ final class ArtworkResolver {
 
         if let sidecarURL = result.sidecarURL,
            let data = cachedOrFileArtwork(for: request, fileURL: sidecarURL) {
-            if result.didWriteSidecar {
-                await MainActor.run {
-                    NotificationCenter.default.post(name: .trackArtworkSidecarDidChange, object: request.audioURL)
-                }
-            }
             return data
         }
 

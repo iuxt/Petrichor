@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 
 actor TrackArtworkDownloadManager {
     static let shared = TrackArtworkDownloadManager()
@@ -18,6 +19,7 @@ actor TrackArtworkDownloadManager {
     private let fileManager: FileManager
     private var inFlight: [String: InFlightArtworkDownload] = [:]
     private var onlineMisses: [String: Date] = [:]
+    private var successfulDisplayCache: [String: SuccessfulDisplayCacheEntry] = [:]
     private var lastMusicBrainzRequest: Date?
     private var lastCoverArtRequest: Date?
 
@@ -36,7 +38,6 @@ actor TrackArtworkDownloadManager {
 
         let audioURL = fullTrack.url
         let key = audioURL.standardizedFileURL.path
-        guard !hasRecentOnlineMiss(for: key) else { return nil }
 
         let waiterID = UUID()
         let flight: InFlightArtworkDownload
@@ -72,6 +73,7 @@ actor TrackArtworkDownloadManager {
 
     private func performDownload(for fullTrack: FullTrack) async -> TrackArtworkDownloadResult? {
         guard !Task.isCancelled else { return nil }
+        let key = fullTrack.url.standardizedFileURL.path
         var hasInvalidExistingSidecar = false
 
         if let existing = TrackArtworkSidecarWriter.existingSameStemArtworkURL(
@@ -85,8 +87,18 @@ actor TrackArtworkDownloadManager {
             Logger.info("TrackArtworkDownloadManager: ignoring invalid existing artwork sidecar \(existing.lastPathComponent)")
         }
 
-        guard let downloaded = await fetchArtwork(for: fullTrack),
+        if let cached = cachedOnlineDisplayResult(for: key) {
+            return cached
+        }
+
+        guard !hasRecentOnlineMiss(for: key) else { return nil }
+
+        let downloaded = await fetchArtwork(for: fullTrack)
+        guard !Task.isCancelled else { return nil }
+
+        guard let downloaded,
               let jpegData = jpegData(from: downloaded) else {
+            guard !Task.isCancelled else { return nil }
             recordOnlineMiss(for: fullTrack.url)
             return nil
         }
@@ -94,23 +106,31 @@ actor TrackArtworkDownloadManager {
         guard !Task.isCancelled else { return nil }
 
         if hasInvalidExistingSidecar {
+            storeOnlineDisplayResult(jpegData, for: key)
             return TrackArtworkDownloadResult(displayData: jpegData)
         }
 
         do {
-            let destination = try TrackArtworkSidecarWriter.write(
+            let writeResult = try TrackArtworkSidecarWriter.writeResult(
                 jpegData,
                 forAudioURL: fullTrack.url,
                 fileManager: fileManager
             )
+            let destination = writeResult.url
             guard isDisplayableArtworkFile(destination) else {
                 Logger.info("TrackArtworkDownloadManager: downloaded artwork could not replace invalid sidecar \(destination.lastPathComponent)")
+                storeOnlineDisplayResult(jpegData, for: key)
                 return TrackArtworkDownloadResult(displayData: jpegData)
             }
-            Logger.info("TrackArtworkDownloadManager: wrote \(destination.lastPathComponent)")
-            return TrackArtworkDownloadResult(sidecarURL: destination, didWriteSidecar: true)
+
+            if writeResult.didWriteSidecar {
+                await postTrackArtworkSidecarDidChange(for: fullTrack.url)
+                Logger.info("TrackArtworkDownloadManager: wrote \(destination.lastPathComponent)")
+            }
+            return TrackArtworkDownloadResult(sidecarURL: destination, didWriteSidecar: writeResult.didWriteSidecar)
         } catch {
             Logger.error("TrackArtworkDownloadManager: failed to write artwork sidecar for '\(fullTrack.title)': \(error.localizedDescription)")
+            storeOnlineDisplayResult(jpegData, for: key)
             return TrackArtworkDownloadResult(displayData: jpegData)
         }
     }
@@ -275,8 +295,20 @@ actor TrackArtworkDownloadManager {
             return nil
         }
 
-        guard let image = NSImage(data: data),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
+            return nil
+        }
+
+        let pixelLimit = CGFloat(AlbumArtFormat.maxArtworkPixelDimension)
+        guard width <= pixelLimit, height <= pixelLimit else {
+            Logger.warning("Skipping oversized downloaded artwork \(Int(width))x\(Int(height))")
+            return nil
+        }
+
+        guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             return nil
         }
 
@@ -291,6 +323,30 @@ actor TrackArtworkDownloadManager {
             return false
         }
         return true
+    }
+
+    private func cachedOnlineDisplayResult(for key: String) -> TrackArtworkDownloadResult? {
+        guard isEnabled else { return nil }
+        pruneExpiredSuccessfulDisplayCache()
+        guard let entry = successfulDisplayCache[key] else { return nil }
+        return TrackArtworkDownloadResult(displayData: entry.data)
+    }
+
+    private func storeOnlineDisplayResult(_ data: Data, for key: String) {
+        pruneExpiredSuccessfulDisplayCache()
+        successfulDisplayCache[key] = SuccessfulDisplayCacheEntry(data: data, storedAt: Date())
+
+        if successfulDisplayCache.count > SuccessfulDisplayCache.maxEntries {
+            let overflow = successfulDisplayCache.count - SuccessfulDisplayCache.maxEntries
+            for key in successfulDisplayCache.sorted(by: { $0.value.storedAt < $1.value.storedAt }).prefix(overflow).map(\.key) {
+                successfulDisplayCache[key] = nil
+            }
+        }
+    }
+
+    private func pruneExpiredSuccessfulDisplayCache() {
+        let cutoff = Date().addingTimeInterval(-SuccessfulDisplayCache.cooldown)
+        successfulDisplayCache = successfulDisplayCache.filter { $0.value.storedAt >= cutoff }
     }
 
     private func hasRecentOnlineMiss(for key: String) -> Bool {
@@ -330,6 +386,17 @@ actor TrackArtworkDownloadManager {
     private enum OnlineMissCache {
         static let cooldown: TimeInterval = 6 * 60 * 60
         static let maxEntries = 1_000
+    }
+
+    private enum SuccessfulDisplayCache {
+        static let cooldown: TimeInterval = 6 * 60 * 60
+        static let maxEntries = 200
+    }
+
+    private func postTrackArtworkSidecarDidChange(for audioURL: URL) async {
+        await MainActor.run {
+            NotificationCenter.default.post(name: .trackArtworkSidecarDidChange, object: audioURL)
+        }
     }
 
     private func valueForWaiter(
@@ -428,6 +495,11 @@ actor TrackArtworkDownloadManager {
         let id: UUID
         let task: Task<TrackArtworkDownloadResult?, Never>
         var waiters: Set<UUID>
+    }
+
+    private struct SuccessfulDisplayCacheEntry {
+        let data: Data
+        let storedAt: Date
     }
 
     private final class WaiterContinuation: @unchecked Sendable {
