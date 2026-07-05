@@ -34,6 +34,17 @@ struct AsyncArtworkImage<Placeholder: View>: View {
         .task(id: taskID) {
             await loadArtwork()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .trackArtworkSidecarDidChange)) { notification in
+            guard let changedURL = notification.object as? URL,
+                  let request,
+                  changedURL.standardizedFileURL.path == request.audioURL.standardizedFileURL.path else {
+                return
+            }
+
+            Task {
+                await loadArtwork()
+            }
+        }
     }
 
     private var taskID: String {
