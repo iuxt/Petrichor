@@ -312,7 +312,12 @@ actor TrackArtworkDownloadManager {
             return nil
         }
 
-        return ImageUtils.encodeJPEG(cgImage)
+        guard let encoded = ImageUtils.encodeJPEG(cgImage),
+              encoded.count > 0, encoded.count <= AlbumArtFormat.maxArtworkSize else {
+            return nil
+        }
+
+        return encoded
     }
 
     private func isDisplayableArtworkFile(_ url: URL) -> Bool {

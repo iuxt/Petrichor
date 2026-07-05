@@ -106,6 +106,16 @@ height_idx = require("kCGImagePropertyPixelHeight", "Missing downloaded artwork 
 encode_idx = require("ImageUtils.encodeJPEG", "Missing downloaded artwork JPEG encoding.")
 if not (width_idx < encode_idx and height_idx < encode_idx):
     raise SystemExit("Downloaded artwork pixel dimensions must be checked before JPEG encoding.")
+
+encoded_bind_idx = require("let encoded = ImageUtils.encodeJPEG", "Downloaded JPEG encoding must bind an encoded result.")
+encoded_size_idx = require("encoded.count > 0, encoded.count <= AlbumArtFormat.maxArtworkSize", "Encoded JPEG byte size must be checked before writing.")
+return_encoded_idx = require("return encoded", "Downloaded JPEG encoding must return the guarded encoded result.")
+jpeg_data_idx = require("let jpegData = jpegData(from: downloaded)", "Write path must use guarded downloaded JPEG data.")
+write_result_idx = require("let writeResult = try TrackArtworkSidecarWriter.writeResult", "Manager must use race-safe sidecar write result.")
+if not (encoded_bind_idx <= encode_idx < encoded_size_idx < return_encoded_idx):
+    raise SystemExit("Encoded JPEG byte size must be checked after encoding before returning data to the write path.")
+if not (jpeg_data_idx < write_result_idx):
+    raise SystemExit("Sidecar write path must use guarded downloaded JPEG data before writing.")
 PY
 
 if ! rg -n "@AppStorage\\(\"trackArtworkDownloadEnabled\"\\)" "$settings" >/dev/null; then
