@@ -103,6 +103,27 @@ def require_in(source, pattern, message):
         raise SystemExit(message)
     return source.index(pattern)
 
+def all_indices(source, pattern):
+    indices = []
+    start = 0
+    while True:
+        idx = source.find(pattern, start)
+        if idx < 0:
+            return indices
+        indices.append(idx)
+        start = idx + len(pattern)
+
+def require_all_in(source, pattern, message):
+    indices = all_indices(source, pattern)
+    if not indices:
+        raise SystemExit(message)
+    return indices
+
+def require_guard_before(source, idx, guard, message, window_size=180):
+    window = source[max(0, idx - window_size):idx]
+    if guard not in window:
+        raise SystemExit(message)
+
 perform = function_body("performDownload")
 
 miss_idx = require_in(perform, "recordOnlineMiss(for: fullTrack.url)", "Missing online miss recording.")
@@ -137,13 +158,34 @@ for side_effect in [
     "storeOnlineDisplayResult(jpegData, for: key)",
     "let writeResult = try TrackArtworkSidecarWriter.writeResult",
     "await postTrackArtworkSidecarDidChange(for: fullTrack.url)",
+    "return TrackArtworkDownloadResult(sidecarURL: existing)",
     "return TrackArtworkDownloadResult(displayData: jpegData)",
     "return TrackArtworkDownloadResult(sidecarURL: destination, didWriteSidecar: writeResult.didWriteSidecar)"
 ]:
-    idx = require_in(perform, side_effect, f"Missing side effect marker: {side_effect}")
-    window = perform[max(0, idx - 180):idx]
-    if "guard isEnabled else { return nil }" not in window:
-        raise SystemExit(f"Opt-in must be rechecked immediately before side effect: {side_effect}")
+    for idx in require_all_in(perform, side_effect, f"Missing side effect marker: {side_effect}"):
+        require_guard_before(
+            perform,
+            idx,
+            "guard isEnabled else { return nil }",
+            f"Opt-in must be rechecked immediately before side effect: {side_effect}"
+        )
+
+if "return cached" not in perform:
+    raise SystemExit("performDownload must return cached successful display data through the helper.")
+
+cache_helper = function_body("cachedOnlineDisplayResult")
+cached_return_idx = require_in(
+    cache_helper,
+    "return TrackArtworkDownloadResult(displayData: entry.data)",
+    "Successful display cache helper must return cached display data."
+)
+require_guard_before(
+    cache_helper,
+    cached_return_idx,
+    "guard isEnabled else { return nil }",
+    "Successful display cache helper must recheck opt-in before returning cached online display data.",
+    window_size=260
+)
 
 fetch_body = function_body("fetchArtwork")
 network_markers = [
