@@ -9,23 +9,29 @@ enum ExternalArtworkResolver {
     )
 
     static func artworkURL(forAudioURL audioURL: URL, candidates: [URL]) -> URL? {
+        sameStemArtworkURL(forAudioURL: audioURL, candidates: candidates)
+            ?? genericArtworkURL(forAudioURL: audioURL, candidates: candidates)
+    }
+
+    static func sameStemArtworkURL(forAudioURL audioURL: URL, candidates: [URL]) -> URL? {
+        let audioStem = normalizedStem(audioURL)
+        let sameNameCandidates = supportedCandidates(forAudioURL: audioURL, candidates: candidates)
+            .filter { normalizedStem($0) == audioStem }
+        return preferredArtworkURL(from: sameNameCandidates)
+    }
+
+    static func genericArtworkURL(forAudioURL audioURL: URL, candidates: [URL]) -> URL? {
+        let genericCandidates = supportedCandidates(forAudioURL: audioURL, candidates: candidates)
+            .filter { genericArtworkNames.contains(normalizedStem($0)) }
+        return preferredArtworkURL(from: genericCandidates)
+    }
+
+    private static func supportedCandidates(forAudioURL audioURL: URL, candidates: [URL]) -> [URL] {
         let directoryPath = audioURL.deletingLastPathComponent().standardizedFileURL.path
-        let supportedCandidates = candidates.filter { candidate in
+        return candidates.filter { candidate in
             AlbumArtFormat.isSupported(candidate.pathExtension)
                 && candidate.deletingLastPathComponent().standardizedFileURL.path == directoryPath
         }
-        guard !supportedCandidates.isEmpty else { return nil }
-
-        let audioStem = normalizedStem(audioURL)
-        let sameNameCandidates = supportedCandidates.filter { normalizedStem($0) == audioStem }
-        if let sameNameArtwork = preferredArtworkURL(from: sameNameCandidates) {
-            return sameNameArtwork
-        }
-
-        let genericCandidates = supportedCandidates.filter {
-            genericArtworkNames.contains(normalizedStem($0))
-        }
-        return preferredArtworkURL(from: genericCandidates)
     }
 
     private static func preferredArtworkURL(from candidates: [URL]) -> URL? {
