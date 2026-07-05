@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build-and-release:
     name: Build and publish unsigned release
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Check out repository
@@ -23,8 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Show build environment
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
 
       - name: Install packaging tools
         run: npm install --global create-dmg
