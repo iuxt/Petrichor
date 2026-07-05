@@ -16,7 +16,7 @@ actor TrackArtworkDownloadManager {
     }
 
     private let fileManager: FileManager
-    private var inFlight: [String: Task<URL?, Never>] = [:]
+    private var inFlight: [String: InFlightArtworkDownload] = [:]
     private var lastMusicBrainzRequest: Date?
     private var lastCoverArtRequest: Date?
 
@@ -35,19 +35,35 @@ actor TrackArtworkDownloadManager {
 
         let audioURL = fullTrack.url
         let key = audioURL.standardizedFileURL.path
+        let waiterID = UUID()
+        let flight: InFlightArtworkDownload
 
-        if let task = inFlight[key] {
-            return await valueCancellingOnCallerCancellation(task)
+        if var existing = inFlight[key] {
+            existing.waiters.insert(waiterID)
+            inFlight[key] = existing
+            flight = existing
+        } else {
+            let task = Task { [weak self] () -> URL? in
+                guard !Task.isCancelled else { return nil }
+                guard let self else { return nil }
+                return await self.performDownload(for: fullTrack)
+            }
+            flight = InFlightArtworkDownload(id: UUID(), task: task, waiters: [waiterID])
+            inFlight[key] = flight
         }
 
-        let task = Task { [weak self] () -> URL? in
-            guard !Task.isCancelled else { return nil }
-            guard let self else { return nil }
-            return await self.performDownload(for: fullTrack)
-        }
-        inFlight[key] = task
-        let result = await valueCancellingOnCallerCancellation(task)
-        inFlight[key] = nil
+        let result = await valueForWaiter(
+            task: flight.task,
+            key: key,
+            flightID: flight.id,
+            waiterID: waiterID
+        )
+        removeWaiter(
+            key: key,
+            flightID: flight.id,
+            waiterID: waiterID,
+            cancelIfLast: Task.isCancelled
+        )
         return result
     }
 
@@ -261,49 +277,137 @@ actor TrackArtworkDownloadManager {
         case coverArt
     }
 
-    private func valueCancellingOnCallerCancellation(_ task: Task<URL?, Never>) async -> URL? {
-        await withTaskCancellationHandler {
-            await task.value
+    private func valueForWaiter(
+        task: Task<URL?, Never>,
+        key: String,
+        flightID: UUID,
+        waiterID: UUID
+    ) async -> URL? {
+        let continuation = WaiterContinuation()
+        let completionTask = Task {
+            continuation.resume(await task.value)
+        }
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { checkedContinuation in
+                continuation.set(checkedContinuation)
+                if Task.isCancelled {
+                    Task {
+                        await self.removeWaiter(
+                            key: key,
+                            flightID: flightID,
+                            waiterID: waiterID,
+                            cancelIfLast: true
+                        )
+                    }
+                    completionTask.cancel()
+                    continuation.resume(nil)
+                }
+            }
         } onCancel: {
-            task.cancel()
+            Task {
+                await self.removeWaiter(
+                    key: key,
+                    flightID: flightID,
+                    waiterID: waiterID,
+                    cancelIfLast: true
+                )
+            }
+            completionTask.cancel()
+            continuation.resume(nil)
+        }
+    }
+
+    private func removeWaiter(
+        key: String,
+        flightID: UUID,
+        waiterID: UUID,
+        cancelIfLast: Bool
+    ) {
+        guard var flight = inFlight[key], flight.id == flightID else { return }
+        flight.waiters.remove(waiterID)
+
+        if flight.waiters.isEmpty {
+            if cancelIfLast {
+                flight.task.cancel()
+            }
+            inFlight[key] = nil
+        } else {
+            inFlight[key] = flight
         }
     }
 
     private func waitForRateLimit(_ bucket: RateLimitBucket) async -> Bool {
         let delay: TimeInterval
-        let lastRequest: Date?
+        let scheduledRequest: Date
 
+        let now = Date()
         switch bucket {
         case .musicBrainz:
             delay = MusicBrainz.rateLimitDelay
-            lastRequest = lastMusicBrainzRequest
+            let earliest = lastMusicBrainzRequest?.addingTimeInterval(delay) ?? now
+            scheduledRequest = earliest > now ? earliest : now
+            lastMusicBrainzRequest = scheduledRequest
         case .coverArt:
             delay = CoverArtArchive.rateLimitDelay
-            lastRequest = lastCoverArtRequest
+            let earliest = lastCoverArtRequest?.addingTimeInterval(delay) ?? now
+            scheduledRequest = earliest > now ? earliest : now
+            lastCoverArtRequest = scheduledRequest
         }
 
-        if let lastRequest {
-            let elapsed = Date().timeIntervalSince(lastRequest)
-            let waitTime = delay - elapsed
-            if waitTime > 0 {
-                do {
-                    try await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
-                } catch {
-                    return false
-                }
+        let waitTime = scheduledRequest.timeIntervalSince(now)
+        if waitTime > 0 {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+            } catch {
+                return false
             }
         }
 
         guard !Task.isCancelled else { return false }
 
-        switch bucket {
-        case .musicBrainz:
-            lastMusicBrainzRequest = Date()
-        case .coverArt:
-            lastCoverArtRequest = Date()
+        return true
+    }
+
+    private struct InFlightArtworkDownload {
+        let id: UUID
+        let task: Task<URL?, Never>
+        var waiters: Set<UUID>
+    }
+
+    private final class WaiterContinuation: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<URL?, Never>?
+        private var result: URL?
+        private var didResume = false
+
+        func set(_ continuation: CheckedContinuation<URL?, Never>) {
+            lock.lock()
+            if didResume {
+                let result = result
+                lock.unlock()
+                continuation.resume(returning: result)
+            } else {
+                self.continuation = continuation
+                lock.unlock()
+            }
         }
 
-        return true
+        func resume(_ result: URL?) {
+            lock.lock()
+            guard !didResume else {
+                lock.unlock()
+                return
+            }
+
+            didResume = true
+            self.result = result
+            let continuation = continuation
+            self.continuation = nil
+            lock.unlock()
+
+            continuation?.resume(returning: result)
+        }
     }
 
     private struct ReleaseMatch {
