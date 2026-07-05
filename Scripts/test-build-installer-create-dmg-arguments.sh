@@ -2,6 +2,17 @@
 set -euo pipefail
 
 script="Scripts/build-installer.sh"
+workflow=".github/workflows/release.yml"
+
+if rg -n 'npm install --global create-dmg' "$workflow" >/dev/null; then
+    printf 'release workflow must not install the incompatible npm create-dmg package; build-installer uses the Homebrew/create-dmg CLI syntax.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'brew install create-dmg' "$workflow" >/dev/null; then
+    printf 'release workflow must install the Homebrew create-dmg formula.\n' >&2
+    exit 1
+fi
 
 if rg -n 'create-dmg "\$APP_NAME\.app"' "$script" >/dev/null; then
     printf 'build-installer must pass create-dmg an output .dmg path and source folder, not the app bundle as the output.\n' >&2
@@ -58,12 +69,17 @@ if ! rg -n 'create_dmg_bin="\$\(create_dmg_command\)"' "$script" >/dev/null; the
     exit 1
 fi
 
+if ! rg -n 'compatible_create_dmg_available' "$script" >/dev/null; then
+    printf 'build-installer must verify the installed create-dmg command supports the Homebrew/create-dmg CLI before using layout arguments.\n' >&2
+    exit 1
+fi
+
 if ! rg -n 'diskutil eject "\\\$\{DEV_NAME\}"' "$script" >/dev/null; then
     printf 'build-installer must patch deprecated create-dmg hdiutil detach calls to diskutil eject.\n' >&2
     exit 1
 fi
 
-if rg -n '^ +create-dmg ' "$script" >/dev/null; then
+if rg -n '^[[:space:]]+create-dmg ' "$script" | rg -v 'create-dmg --help' >/dev/null; then
     printf 'build-installer must not call create-dmg directly; use create_dmg_command instead.\n' >&2
     exit 1
 fi

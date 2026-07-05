@@ -30,7 +30,7 @@ jobs:
           xcrun --sdk macosx --show-sdk-path
 
       - name: Install packaging tools
-        run: npm install --global create-dmg
+        run: brew install create-dmg
 
       - name: Build unsigned DMG
         id: build

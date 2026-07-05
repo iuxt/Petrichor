@@ -76,6 +76,11 @@ create_dmg_with_layout() {
     "$create_dmg_bin" "${args[@]}" "$dmg_path" "$dmg_source"
 }
 
+compatible_create_dmg_available() {
+    command -v create-dmg >/dev/null 2>&1 || return 1
+    create-dmg --help 2>&1 | grep -q -- '--window-size <width> <height>'
+}
+
 create_dmg_command() {
     local original
     original="$(command -v create-dmg)"
@@ -151,7 +156,10 @@ check_requirements() {
     fi
     
     if ! command -v create-dmg >/dev/null 2>&1; then
-        warning "create-dmg not found - install with: npm install --global create-dmg"
+        warning "create-dmg not found - install with: brew install create-dmg"
+        warning "Using fallback DMG creation method"
+    elif ! compatible_create_dmg_available; then
+        warning "Installed create-dmg command does not support the Homebrew/create-dmg layout arguments"
         warning "Using fallback DMG creation method"
     fi
     
@@ -388,7 +396,7 @@ EOF
     # Step 4: Create DMG
     info "Creating DMG for $display_name..."
 
-    if command -v create-dmg >/dev/null 2>&1; then
+    if compatible_create_dmg_available; then
         local dmg_title="$APP_NAME $VERSION"
         [ "$suffix" != "Universal" ] && dmg_title="$APP_NAME-$suffix"
         local dmg_source="$BUILD_DIR/dmg-source-$suffix"
@@ -468,7 +476,7 @@ create_local_installer() {
     ditto "$built_app" "$export_path/$APP_NAME.app"
 
     info "Creating unsigned local DMG for $display_name..."
-    if command -v create-dmg >/dev/null 2>&1; then
+    if compatible_create_dmg_available; then
         local dmg_title="$APP_NAME $VERSION Local"
         [ "$suffix" != "Universal" ] && dmg_title="$APP_NAME-$suffix Local"
         local dmg_source="$BUILD_DIR/dmg-source-$suffix-local"

@@ -297,7 +297,7 @@ notarization. Release notarization requires a paid Apple Developer account; use 
 to sign without notarizing. To use the script, make sure you have following tools installed along with Xcode;
 
 - [xcpretty](https://github.com/xcpretty/xcpretty)
-- [create-dmg](https://github.com/sindresorhus/create-dmg)
+- [create-dmg](https://github.com/create-dmg/create-dmg)
 
 GitHub Actions also publishes an unsigned release automatically when a tag is pushed. The tag name is passed to
 `Scripts/build-installer.sh --version` and is used as the packaged app version. This CI release path does not
