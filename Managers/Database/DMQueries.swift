@@ -87,6 +87,20 @@ extension DatabaseManager {
             return []
         }
     }
+
+    /// Fetch the complete FullTrack record for a source audio URL.
+    func fullTrack(forAudioURL url: URL) async -> FullTrack? {
+        do {
+            return try await dbQueue.read { db in
+                try FullTrack
+                    .filter(FullTrack.Columns.path == url.path)
+                    .fetchOne(db)
+            }
+        } catch {
+            Logger.error("Failed to fetch full track for artwork lookup: \(error)")
+            return nil
+        }
+    }
     
     /// Get total track count without loading tracks
     func getTotalTrackCount() -> Int {

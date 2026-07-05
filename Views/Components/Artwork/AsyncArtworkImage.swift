@@ -8,6 +8,7 @@ struct AsyncArtworkImage<Placeholder: View>: View {
     @ViewBuilder let placeholder: () -> Placeholder
 
     @State private var image: NSImage?
+    @State private var reloadToken = 0
 
     init(
         request: ArtworkRequest?,
@@ -31,17 +32,29 @@ struct AsyncArtworkImage<Placeholder: View>: View {
                 placeholder()
             }
         }
-        .task(id: taskID) {
-            await loadArtwork()
+        .task(id: taskID) { [expectedTaskID = taskID] in
+            await loadArtwork(expectedTaskID: expectedTaskID)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .trackArtworkSidecarDidChange)) { notification in
+            guard let changedURL = notification.object as? URL,
+                  let request,
+                  changedURL.standardizedFileURL.path == request.audioURL.standardizedFileURL.path else {
+                return
+            }
+
+            reloadToken &+= 1
         }
     }
 
     private var taskID: String {
         guard let request else { return "nil" }
-        return "\(request.kind.rawValue)-\(request.identity)-\(request.audioURL.path)"
+        return "\(request.kind.rawValue)-\(request.identity)-\(request.audioURL.path)-\(reloadToken)"
     }
 
-    private func loadArtwork() async {
+    @MainActor
+    private func loadArtwork(expectedTaskID: String) async {
+        guard !Task.isCancelled, expectedTaskID == taskID else { return }
+
         guard let request else {
             image = nil
             onDataLoaded?(nil)
@@ -50,7 +63,7 @@ struct AsyncArtworkImage<Placeholder: View>: View {
 
         image = nil
         let data = await ArtworkResolver.shared.artworkData(for: request)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, expectedTaskID == taskID else { return }
 
         image = data.flatMap(NSImage.init(data:))
         onDataLoaded?(data)

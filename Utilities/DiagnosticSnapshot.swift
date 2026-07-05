@@ -96,6 +96,7 @@ enum DiagnosticSnapshot {
                 "lastfmUsername": defaults.string(forKey: "lastfmUsername") != nil ? "<set>" : "<unset>",
                 "scrobblingEnabled": defaults.boolOrNull("scrobblingEnabled"),
                 "onlineLyricsEnabled": defaults.boolOrNull("onlineLyricsEnabled"),
+                "trackArtworkDownloadEnabled": defaults.boolOrNull("trackArtworkDownloadEnabled"),
                 "artistImageDownloadEnabled": defaults.boolOrNull("artistImageDownloadEnabled")
             ]
         ]

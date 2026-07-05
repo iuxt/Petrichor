@@ -10,6 +10,9 @@ struct IntegrationsTabView: View {
     @AppStorage("onlineLyricsEnabled")
     private var onlineLyricsEnabled: Bool = false
 
+    @AppStorage("trackArtworkDownloadEnabled")
+    private var trackArtworkDownloadEnabled: Bool = false
+
     @AppStorage("artistImageDownloadEnabled")
     private var artistImageDownloadEnabled: Bool = false
 
@@ -151,6 +154,9 @@ struct IntegrationsTabView: View {
         Group {
             Toggle("Fetch lyrics from internet when unavailable", isOn: $onlineLyricsEnabled)
                 .help("Automatically search for lyrics online when no local lyrics are found")
+
+            Toggle("Fetch artwork from internet when unavailable", isOn: $trackArtworkDownloadEnabled)
+                .help("Automatically search for cover artwork online when no local artwork is found")
 
             Toggle("Download artist images to music folders", isOn: $artistImageDownloadEnabled)
                 .help("Automatically save downloaded artist images in each music folder's artist images folder")
