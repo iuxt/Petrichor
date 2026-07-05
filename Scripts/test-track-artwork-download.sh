@@ -74,6 +74,7 @@ if rg -n "NotificationCenter\\.default\\.post\\(name: \\.trackArtworkSidecarDidC
 fi
 
 python3 - <<'PY'
+import re
 from pathlib import Path
 
 manager = Path("Managers/TrackArtworkDownloadManager.swift").read_text()
@@ -123,6 +124,10 @@ def require_guard_before(source, idx, guard, message, window_size=180):
     window = source[max(0, idx - window_size):idx]
     if guard not in window:
         raise SystemExit(message)
+
+value_for_waiter = function_body("valueForWaiter")
+if re.search(r"if\s+Task\.isCancelled\s*\{\s*Task\s*\{\s*await\s+self\.removeWaiter\(", value_for_waiter, re.S):
+    raise SystemExit("Immediate waiter cancellation cleanup must not await an actor-local removeWaiter call.")
 
 perform = function_body("performDownload")
 

@@ -439,7 +439,7 @@ actor TrackArtworkDownloadManager {
                 continuation.set(checkedContinuation)
                 if Task.isCancelled {
                     Task {
-                        await self.removeWaiter(
+                        self.removeWaiter(
                             key: key,
                             flightID: flightID,
                             waiterID: waiterID,
