@@ -29,6 +29,7 @@ actor TrackArtworkDownloadManager {
     }
 
     func downloadArtwork(for fullTrack: FullTrack) async -> URL? {
+        guard !Task.isCancelled else { return nil }
         guard isEnabled else { return nil }
         guard isValidForArtworkFetch(fullTrack) else { return nil }
 
@@ -36,20 +37,23 @@ actor TrackArtworkDownloadManager {
         let key = audioURL.standardizedFileURL.path
 
         if let task = inFlight[key] {
-            return await task.value
+            return await valueCancellingOnCallerCancellation(task)
         }
 
         let task = Task { [weak self] () -> URL? in
+            guard !Task.isCancelled else { return nil }
             guard let self else { return nil }
             return await self.performDownload(for: fullTrack)
         }
         inFlight[key] = task
-        let result = await task.value
+        let result = await valueCancellingOnCallerCancellation(task)
         inFlight[key] = nil
         return result
     }
 
     private func performDownload(for fullTrack: FullTrack) async -> URL? {
+        guard !Task.isCancelled else { return nil }
+
         if let existing = TrackArtworkSidecarWriter.existingSameStemArtworkURL(
             forAudioURL: fullTrack.url,
             fileManager: fileManager
@@ -61,6 +65,8 @@ actor TrackArtworkDownloadManager {
               let jpegData = jpegData(from: downloaded) else {
             return nil
         }
+
+        guard !Task.isCancelled else { return nil }
 
         do {
             let destination = try TrackArtworkSidecarWriter.write(
@@ -77,23 +83,33 @@ actor TrackArtworkDownloadManager {
     }
 
     private func fetchArtwork(for fullTrack: FullTrack) async -> Data? {
+        guard !Task.isCancelled else { return nil }
+
         if let releaseID = fullTrack.extendedMetadata?.musicBrainzAlbumId?.nilIfEmpty,
            let data = await downloadCoverArt(path: "/release/\(releaseID)/front-500") {
             return data
         }
+
+        guard !Task.isCancelled else { return nil }
 
         if let releaseGroupID = fullTrack.extendedMetadata?.musicBrainzReleaseGroupId?.nilIfEmpty,
            let data = await downloadCoverArt(path: "/release-group/\(releaseGroupID)/front-500") {
             return data
         }
 
+        guard !Task.isCancelled else { return nil }
+
         guard let release = await searchMusicBrainzRelease(for: fullTrack) else {
             return nil
         }
 
+        guard !Task.isCancelled else { return nil }
+
         if let data = await downloadCoverArt(path: "/release/\(release.id)/front-500") {
             return data
         }
+
+        guard !Task.isCancelled else { return nil }
 
         if let releaseGroupID = release.releaseGroupID {
             return await downloadCoverArt(path: "/release-group/\(releaseGroupID)/front-500")
@@ -103,7 +119,8 @@ actor TrackArtworkDownloadManager {
     }
 
     private func searchMusicBrainzRelease(for fullTrack: FullTrack) async -> ReleaseMatch? {
-        await waitForRateLimit(.musicBrainz)
+        guard !Task.isCancelled else { return nil }
+        guard await waitForRateLimit(.musicBrainz) else { return nil }
 
         guard var components = URLComponents(string: MusicBrainz.releaseSearchURL) else {
             return nil
@@ -155,7 +172,8 @@ actor TrackArtworkDownloadManager {
     }
 
     private func downloadCoverArt(path: String) async -> Data? {
-        await waitForRateLimit(.coverArt)
+        guard !Task.isCancelled else { return nil }
+        guard await waitForRateLimit(.coverArt) else { return nil }
 
         guard let url = URL(string: CoverArtArchive.baseURL + path) else {
             return nil
@@ -210,6 +228,7 @@ actor TrackArtworkDownloadManager {
         guard !title.isEmpty,
               !artist.isEmpty,
               !album.isEmpty,
+              title != "Unknown Title",
               artist != "Unknown Artist",
               album != "Unknown Album" else {
             return false
@@ -242,7 +261,15 @@ actor TrackArtworkDownloadManager {
         case coverArt
     }
 
-    private func waitForRateLimit(_ bucket: RateLimitBucket) async {
+    private func valueCancellingOnCallerCancellation(_ task: Task<URL?, Never>) async -> URL? {
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private func waitForRateLimit(_ bucket: RateLimitBucket) async -> Bool {
         let delay: TimeInterval
         let lastRequest: Date?
 
@@ -259,9 +286,15 @@ actor TrackArtworkDownloadManager {
             let elapsed = Date().timeIntervalSince(lastRequest)
             let waitTime = delay - elapsed
             if waitTime > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+                } catch {
+                    return false
+                }
             }
         }
+
+        guard !Task.isCancelled else { return false }
 
         switch bucket {
         case .musicBrainz:
@@ -269,6 +302,8 @@ actor TrackArtworkDownloadManager {
         case .coverArt:
             lastCoverArtRequest = Date()
         }
+
+        return true
     }
 
     private struct ReleaseMatch {
