@@ -107,7 +107,10 @@ final class ArtworkResolver {
             return nil
         }
 
-        let data = cachedOrFileArtwork(for: request, fileURL: sidecarURL)
+        guard let data = cachedOrFileArtwork(for: request, fileURL: sidecarURL) else {
+            return nil
+        }
+
         await MainActor.run {
             NotificationCenter.default.post(name: .trackArtworkSidecarDidChange, object: request.audioURL)
         }

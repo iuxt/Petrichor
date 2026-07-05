@@ -17,6 +17,7 @@ actor TrackArtworkDownloadManager {
 
     private let fileManager: FileManager
     private var inFlight: [String: InFlightArtworkDownload] = [:]
+    private var onlineMisses: [String: Date] = [:]
     private var lastMusicBrainzRequest: Date?
     private var lastCoverArtRequest: Date?
 
@@ -35,6 +36,8 @@ actor TrackArtworkDownloadManager {
 
         let audioURL = fullTrack.url
         let key = audioURL.standardizedFileURL.path
+        guard !hasRecentOnlineMiss(for: key) else { return nil }
+
         let waiterID = UUID()
         let flight: InFlightArtworkDownload
 
@@ -74,11 +77,15 @@ actor TrackArtworkDownloadManager {
             forAudioURL: fullTrack.url,
             fileManager: fileManager
         ) {
-            return existing
+            if isDisplayableArtworkFile(existing) {
+                return existing
+            }
+            Logger.info("TrackArtworkDownloadManager: ignoring invalid existing artwork sidecar \(existing.lastPathComponent)")
         }
 
         guard let downloaded = await fetchArtwork(for: fullTrack),
               let jpegData = jpegData(from: downloaded) else {
+            recordOnlineMiss(for: fullTrack.url)
             return nil
         }
 
@@ -90,9 +97,15 @@ actor TrackArtworkDownloadManager {
                 forAudioURL: fullTrack.url,
                 fileManager: fileManager
             )
+            guard isDisplayableArtworkFile(destination) else {
+                recordOnlineMiss(for: fullTrack.url)
+                Logger.info("TrackArtworkDownloadManager: downloaded artwork could not replace invalid sidecar \(destination.lastPathComponent)")
+                return nil
+            }
             Logger.info("TrackArtworkDownloadManager: wrote \(destination.lastPathComponent)")
             return destination
         } catch {
+            recordOnlineMiss(for: fullTrack.url)
             Logger.error("TrackArtworkDownloadManager: failed to write artwork sidecar for '\(fullTrack.title)': \(error.localizedDescription)")
             return nil
         }
@@ -266,6 +279,39 @@ actor TrackArtworkDownloadManager {
         return ImageUtils.encodeJPEG(cgImage)
     }
 
+    private func isDisplayableArtworkFile(_ url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url),
+              data.count > 0,
+              data.count <= AlbumArtFormat.maxArtworkSize,
+              ImageUtils.compressImage(from: data, source: url.lastPathComponent) != nil else {
+            return false
+        }
+        return true
+    }
+
+    private func hasRecentOnlineMiss(for key: String) -> Bool {
+        pruneExpiredOnlineMisses()
+        guard let missedAt = onlineMisses[key] else { return false }
+        return Date().timeIntervalSince(missedAt) < OnlineMissCache.cooldown
+    }
+
+    private func recordOnlineMiss(for audioURL: URL) {
+        pruneExpiredOnlineMisses()
+        onlineMisses[audioURL.standardizedFileURL.path] = Date()
+
+        if onlineMisses.count > OnlineMissCache.maxEntries {
+            let overflow = onlineMisses.count - OnlineMissCache.maxEntries
+            for key in onlineMisses.sorted(by: { $0.value < $1.value }).prefix(overflow).map(\.key) {
+                onlineMisses[key] = nil
+            }
+        }
+    }
+
+    private func pruneExpiredOnlineMisses() {
+        let cutoff = Date().addingTimeInterval(-OnlineMissCache.cooldown)
+        onlineMisses = onlineMisses.filter { $0.value >= cutoff }
+    }
+
     private func isCancellation(_ error: Error) -> Bool {
         if error is CancellationError { return true }
         if let urlError = error as? URLError, urlError.code == .cancelled { return true }
@@ -275,6 +321,11 @@ actor TrackArtworkDownloadManager {
     private enum RateLimitBucket {
         case musicBrainz
         case coverArt
+    }
+
+    private enum OnlineMissCache {
+        static let cooldown: TimeInterval = 6 * 60 * 60
+        static let maxEntries = 1_000
     }
 
     private func valueForWaiter(
