@@ -55,6 +55,7 @@ class PlaybackManager: NSObject, ObservableObject {
     private let audioPlayer: PlaybackEngine
     private var currentFullTrack: FullTrack?
     private var progressUpdateTimer: DispatchSourceTimer?
+    private var lastObservedEngineProgress: Double?
     private var fineProgressSampling = false
     // Reference count of views requesting fine sampling (e.g. main-window and
     // mini-player lyrics can be visible at once); sampling stays fine while > 0.
@@ -389,6 +390,7 @@ class PlaybackManager: NSObject, ObservableObject {
         let clampedTime = engineDuration > 0 ? min(time, engineDuration) : time
         audioPlayer.seek(to: clampedTime)
         currentTime = clampedTime
+        lastObservedEngineProgress = clampedTime
         restoredPosition = clampedTime
         
         NotificationCenter.default.post(
@@ -606,6 +608,7 @@ class PlaybackManager: NSObject, ObservableObject {
 
         let seekToPosition = restoredPosition
         restoredPosition = 0
+        lastObservedEngineProgress = seekToPosition > 0 ? seekToPosition : 0
 
         if seekToPosition > 0 {
             // Load paused and defer the seek+resume to the `.paused` transition
@@ -705,6 +708,7 @@ class PlaybackManager: NSObject, ObservableObject {
         trackForEntry[pending.entryId.id] = pending.track
         playlistManager.advanceQueueIndex(to: pending.index)
         currentTime = 0
+        lastObservedEngineProgress = 0
         isPlaying = true
         pendingNext = nil
         pendingNextWasSkipped = false
@@ -739,10 +743,27 @@ class PlaybackManager: NSObject, ObservableObject {
         timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(50))
 
         timer.setEventHandler { [weak self] in
-            // Gate on the engine's live state, not the cached isPlaying flag, which
-            // can be briefly stale and freeze the bar at 0.
-            guard let self = self, self.audioPlayer.state == .playing else { return }
-            self.currentTime = self.audioPlayer.currentPlaybackProgress
+            guard let self else { return }
+
+            let engineState = self.audioPlayer.state
+            let engineProgress = self.audioPlayer.currentPlaybackProgress
+            let previousEngineProgress = self.lastObservedEngineProgress
+            self.lastObservedEngineProgress = engineProgress
+
+            guard self.shouldPublishProgressSample(
+                engineState: engineState,
+                engineProgress: engineProgress,
+                previousEngineProgress: previousEngineProgress
+            ) else { return }
+
+            if engineState != .playing && !self.isPlaying {
+                Logger.warning(
+                    "Playback progress advanced while engine state was \(engineState); resyncing playback UI"
+                )
+                self.isPlaying = true
+            }
+
+            self.currentTime = engineProgress
             // Refresh the system Now Playing tile at ~1s regardless of sampling
             // rate - it extrapolates elapsed between updates from the rate anchor,
             // so a higher rate is wasted work (and an artwork re-decode on SFB).
@@ -773,6 +794,26 @@ class PlaybackManager: NSObject, ObservableObject {
         guard shouldSampleFine != fineProgressSampling else { return }
         fineProgressSampling = shouldSampleFine
         startProgressUpdateTimer()
+    }
+
+    private func shouldPublishProgressSample(
+        engineState: AudioPlayerState,
+        engineProgress: Double,
+        previousEngineProgress: Double?
+    ) -> Bool {
+        guard currentTrack != nil, engineProgress.isFinite, engineProgress >= 0 else { return false }
+
+        if engineState == .playing || isPlaying {
+            return true
+        }
+
+        guard let previousEngineProgress else { return false }
+
+        let tolerance = fineProgressSampling ? 0.05 : 0.2
+        let progressAdvanced = engineProgress > previousEngineProgress + tolerance
+        let uiTimeIsStale = abs(engineProgress - currentTime) > tolerance
+
+        return progressAdvanced && uiTimeIsStale
     }
 
     private func stopProgressUpdateTimer() {
