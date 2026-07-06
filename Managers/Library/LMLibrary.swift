@@ -115,7 +115,6 @@ extension LibraryManager {
         refreshEntities()
         // Post notification that library is loaded
         NotificationCenter.default.post(name: NSNotification.Name("LibraryDidLoad"), object: nil)
-        ArtistImageDownloadManager.shared.downloadMissingArtistImages(using: self)
     }
     
     /// Load all tracks into memory

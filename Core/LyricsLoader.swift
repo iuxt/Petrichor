@@ -34,14 +34,6 @@ struct LyricsLoader {
             source = .embedded
         }
         
-        // 3. Online lyrics
-        if lines == nil,
-           let fullTrack = fullTrack,
-           let onlineText = await LyricsManager.shared.fetchLyrics(for: fullTrack) {
-            lines = parseAnyLyrics(onlineText)
-            source = .online
-        }
-        
         // Fallback to empty array
         return (lines ?? [], source)
     }
@@ -80,7 +72,7 @@ struct LyricsLoader {
     
     /// Try to parse as LRC first, then fallback to plain text lines
     private static func parseAnyLyrics(_ raw: String) -> [LyricLine] {
-        // Attempt LRC parsing (covers embedded/online that already have timestamps)
+        // Attempt LRC parsing first, covering external and embedded timestamped lyrics.
         let lrcResult = LyricLine.parseLRC(from: raw)
         if !lrcResult.isEmpty {
             return lrcResult
@@ -151,6 +143,5 @@ enum LyricsSource: Sendable {
     case lrc
     case srt
     case embedded
-    case online
     case none
 }

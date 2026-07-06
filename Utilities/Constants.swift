@@ -256,7 +256,6 @@ extension Notification.Name {
 
     static let libraryDataDidChange = Notification.Name("LibraryDataDidChange")
     static let artistImagesDidChange = Notification.Name("ArtistImagesDidChange")
-    static let trackArtworkSidecarDidChange = Notification.Name("TrackArtworkSidecarDidChange")
     static let goToLibraryFilter = Notification.Name("GoToLibraryFilter")
 
     static let selectPlaylist = Notification.Name("SelectPlaylist")

@@ -26,7 +26,7 @@ final class ArtworkResolver {
             return generic
         }
 
-        return await downloadedArtworkData(for: request)
+        return nil
     }
 
     func clearCache() {
@@ -96,27 +96,6 @@ final class ArtworkResolver {
         case .generic:
             return ExternalArtworkResolver.genericArtworkURL(forAudioURL: audioURL, candidates: candidates)
         }
-    }
-
-    private func downloadedArtworkData(for request: ArtworkRequest) async -> Data? {
-        guard let fullTrack = await AppCoordinator.shared?.libraryManager.databaseManager.fullTrack(forAudioURL: request.audioURL) else {
-            return nil
-        }
-
-        guard let result = await TrackArtworkDownloadManager.shared.downloadArtwork(for: fullTrack) else {
-            return nil
-        }
-
-        if let sidecarURL = result.sidecarURL,
-           let data = cachedOrFileArtwork(for: request, fileURL: sidecarURL) {
-            return data
-        }
-
-        if let displayData = result.displayData {
-            return displayData
-        }
-
-        return nil
     }
 
     private func cacheKey(for request: ArtworkRequest, sourceURL: URL) -> ArtworkCacheKey? {

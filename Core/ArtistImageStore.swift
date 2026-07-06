@@ -7,16 +7,9 @@ enum ArtistImageStore {
     }
 
     static let artistImagesDirectoryName = "artist images"
-    private static let preferredImageExtension = "jpg"
 
     static func imageDirectory(forMusicRoot musicRoot: URL) -> URL {
         musicRoot.appendingPathComponent(artistImagesDirectoryName, isDirectory: true)
-    }
-
-    static func preferredImageURL(artistName: String, musicRoot: URL) -> URL {
-        imageDirectory(forMusicRoot: musicRoot)
-            .appendingPathComponent(sanitizedArtistFilename(artistName))
-            .appendingPathExtension(preferredImageExtension)
     }
 
     static func existingImageURL(
@@ -104,28 +97,6 @@ enum ArtistImageStore {
         return nil
     }
 
-    static func groupedArtistsByMusicRoot(
-        from tracks: [Track],
-        folders: [Folder]
-    ) -> [URL: Set<String>] {
-        var result: [URL: Set<String>] = [:]
-        let unknownArtist = LibraryFilterType.artists.unknownPlaceholder
-
-        for track in tracks {
-            guard let root = musicRoot(containing: track.url, folders: folders) else {
-                continue
-            }
-
-            for artist in ArtistParser.parse(track.artist, unknownPlaceholder: unknownArtist) {
-                let trimmed = artist.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty, trimmed != unknownArtist else { continue }
-                result[root, default: []].insert(trimmed)
-            }
-        }
-
-        return result
-    }
-
     static func musicRoot(containing url: URL, folders: [Folder]) -> URL? {
         let filePath = url.standardizedFileURL.path
         return folders
@@ -137,25 +108,6 @@ enum ArtistImageStore {
                 let rootPath = root.standardizedFileURL.path
                 return filePath == rootPath || filePath.hasPrefix(rootPath + "/")
             }
-    }
-
-    @discardableResult
-    static func writeImage(
-        _ data: Data,
-        artistName: String,
-        musicRoot: URL,
-        fileManager: FileManager = .default
-    ) throws -> URL {
-        let directory = imageDirectory(forMusicRoot: musicRoot)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let destination = preferredImageURL(artistName: artistName, musicRoot: musicRoot)
-        guard !fileManager.fileExists(atPath: destination.path) else {
-            return destination
-        }
-
-        try data.write(to: destination, options: [.atomic])
-        return destination
     }
 
     static func sanitizedArtistFilename(_ artistName: String) -> String {
@@ -207,8 +159,7 @@ enum ArtistImageStore {
 
         // Read callers often pass an already scoped track list (for example
         // album-artist or composer detail). Prefer exact artist-column roots,
-        // then also check the caller's scoped roots without changing downloader
-        // grouping behavior.
+        // then also check the caller's scoped roots.
         for root in musicRoots(containingTracks: tracks, folders: folders) {
             let key = root.standardizedFileURL.path
             if seen.insert(key).inserted {

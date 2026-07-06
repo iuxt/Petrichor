@@ -1,8 +1,6 @@
 import Foundation
 
 enum AppInfo {
-    static let userAgent = "\(About.appTitle)/\(AppInfo.version) (\(About.appWebsite))"
-
     // MARK: - Version Information
 
     static var version: String {
@@ -31,15 +29,6 @@ enum AppInfo {
         Bundle.main.bundleIdentifier ?? About.bundleIdentifier
     }
     
-    // MARK: - Networking
-
-    static let urlSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
-        return URLSession(configuration: config)
-    }()
-
     // MARK: - Build Information
     
     static var isDebugBuild: Bool {
