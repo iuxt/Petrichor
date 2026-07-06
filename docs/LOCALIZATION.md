@@ -19,8 +19,8 @@ otherwise. Adding a new language requires **no Swift code changes**.
 4. **Plurals:** some strings (e.g. `%lld songs`) have per-plural rows (`one`,
    `other`, and more depending on the language). Fill in each plural form your
    language needs — Xcode shows the categories that apply.
-5. **Don't translate** brand names and proper nouns (e.g. `Last.fm`,
-   `MusicBrainz`, `Petrichor`). Right-click such a string and choose
+5. **Don't translate** brand names and proper nouns (e.g. `Petrichor`).
+   Right-click such a string and choose
    _Mark as "Don't Translate"_ if it isn't already.
 6. Build and run with your language selected (see below) to sanity-check layout
    and truncation, then open a pull request.
