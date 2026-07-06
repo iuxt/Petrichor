@@ -12,7 +12,6 @@ struct SettingsView: View {
         case general = "General"
         case appearance = "Appearance"
         case library = "Library"
-        case integrations = "Integrations"
         case about = "About"
 
         var icon: String {
@@ -20,7 +19,6 @@ struct SettingsView: View {
             case .general: return Icons.settings
             case .appearance: return Icons.paintpalette
             case .library: return Icons.customMusicNoteRectangleStack
-            case .integrations: return Icons.globe
             case .about: return Icons.infoCircle
             }
         }
@@ -30,7 +28,6 @@ struct SettingsView: View {
             case .general: return Icons.settings
             case .appearance: return Icons.paintpalette
             case .library: return Icons.customMusicNoteRectangleStack
-            case .integrations: return Icons.globe
             case .about: return Icons.infoCircleFill
             }
         }
@@ -72,8 +69,6 @@ struct SettingsView: View {
                     AppearanceTabView()
                 case .library:
                     LibraryTabView()
-                case .integrations:
-                    IntegrationsTabView()
                 case .about:
                     AboutTabView()
                 }

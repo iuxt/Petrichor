@@ -91,13 +91,6 @@ enum DiagnosticSnapshot {
                 "autoScanInterval": defaults.stringOrNull("autoScanInterval"),
                 "discoverUpdateInterval": defaults.stringOrNull("discoverUpdateInterval"),
                 "discoverTrackCount": defaults.intOrNull("discoverTrackCount")
-            ],
-            "integrations": [
-                "lastfmUsername": defaults.string(forKey: "lastfmUsername") != nil ? "<set>" : "<unset>",
-                "scrobblingEnabled": defaults.boolOrNull("scrobblingEnabled"),
-                "onlineLyricsEnabled": defaults.boolOrNull("onlineLyricsEnabled"),
-                "trackArtworkDownloadEnabled": defaults.boolOrNull("trackArtworkDownloadEnabled"),
-                "artistImageDownloadEnabled": defaults.boolOrNull("artistImageDownloadEnabled")
             ]
         ]
 

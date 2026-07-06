@@ -13,7 +13,6 @@ class AppCoordinator: ObservableObject {
     let playlistManager: PlaylistManager
     let playbackManager: PlaybackManager
     let menuBarManager: MenuBarManager
-    let scrobbleManager: ScrobbleManager
     
     private var hadFoldersAtStartup: Bool = false
     private let playbackStateKey = "SavedPlaybackState"
@@ -42,9 +41,6 @@ class AppCoordinator: ObservableObject {
         
         // Setup menubar
         menuBarManager = MenuBarManager(playbackManager: playbackManager, playlistManager: playlistManager)
-        
-        // Setup Scrobbling
-        scrobbleManager = ScrobbleManager()
         
         hadFoldersAtStartup = !libraryManager.folders.isEmpty
         

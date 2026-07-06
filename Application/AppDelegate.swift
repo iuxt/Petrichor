@@ -8,12 +8,6 @@ import Foundation
 import AppKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            URLSchemeHandler.handle(url)
-        }
-    }
-
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Register UserDefaults with default settings
         AppDelegate.registerUserDefaultsDefaults()

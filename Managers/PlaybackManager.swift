@@ -12,10 +12,6 @@ import Foundation
 
 class PlaybackManager: NSObject, ObservableObject {
     let playbackProgressState = PlaybackProgressState()
-    
-    private var scrobbleManager: ScrobbleManager? {
-        AppCoordinator.shared?.scrobbleManager
-    }
 
     // MARK: - Published Properties
 
@@ -627,7 +623,6 @@ class PlaybackManager: NSObject, ObservableObject {
 
         startStateSaveTimer()
         updateNowPlayingInfo()
-        scrobbleManager?.trackStarted(lightweightTrack)
         // The gapless next is primed from `audioPlayerDidStartPlaying`, once the
         // engine confirms this track is actually playing - priming here (before
         // the engine's async play starts) is too early: the successor can't be
@@ -713,7 +708,6 @@ class PlaybackManager: NSObject, ObservableObject {
         pendingNext = nil
         pendingNextWasSkipped = false
 
-        scrobbleManager?.trackStarted(pending.track)
         updateNowPlayingInfo()
         Logger.info("Gapless advance to: \(pending.track.title)")
 
@@ -970,9 +964,8 @@ extension PlaybackManager: AudioPlayerDelegate {
 
             if stopReason == .eof, let finishedTrack {
                 self.playlistManager.incrementPlayCount(for: finishedTrack)
-                self.scrobbleManager?.trackFinished(finishedTrack)
 
-                Logger.info("Track completed naturally, updating play count, last played date, and scrobbling it if configured")
+                Logger.info("Track completed naturally, updating play count and last played date")
             }
 
             // Only tear down current playback when the finished entry is still

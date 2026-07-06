@@ -25,17 +25,6 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleURLName</key>
-            <string>org.Petrichor.callback</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>petrichor</string>
-            </array>
-        </dict>
-    </array>
     
     <!-- macOS Specific -->
     <key>LSApplicationCategoryType</key>
@@ -48,15 +37,5 @@
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
-
-    <!--  Last.fm Scrobble  -->
-    <key>LASTFM_API_KEY</key>
-    <string>$(LASTFM_API_KEY)</string>
-    <key>LASTFM_SHARED_SECRET</key>
-    <string>$(LASTFM_SHARED_SECRET)</string>
-
-    <!--  TMDB  -->
-    <key>TMDB_READ_ACCESS_TOKEN</key>
-    <string>$(TMDB_READ_ACCESS_TOKEN)</string>
 </dict>
 </plist>
