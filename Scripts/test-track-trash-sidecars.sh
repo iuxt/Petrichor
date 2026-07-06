@@ -20,6 +20,21 @@ trap 'rm -rf "$tmpdir"' EXIT
 cat > "$tmpdir/main.swift" <<'SWIFT'
 import Foundation
 
+// Minimal stubs of the canonical format enums so TrackTrashSidecars (which references
+// AudioFormat / AlbumArtFormat) links without pulling in all of Utilities/Constants.swift.
+// The sets mirror the real canonical lists.
+enum AudioFormat {
+    static let supportedExtensions = [
+        "mp3", "m4a", "wav", "aac", "aiff", "aif", "alac",
+        "flac", "ogg", "oga", "opus", "ape", "mpc", "wv",
+        "tta", "spx", "dsf", "dff", "mod", "it", "s3m", "xm", "au"
+    ]
+}
+enum AlbumArtFormat {
+    static let supportedExtensions = ["jpg", "jpeg", "png", "tiff", "tif", "bmp"]
+    static let knownFilenames = ["cover", "Cover", "folder", "Folder", "album", "Album", "artwork", "Artwork", "front", "Front"]
+}
+
 let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 let lonely = root.appendingPathComponent("Lonely.flac")
 let shared = root.appendingPathComponent("Shared.flac")

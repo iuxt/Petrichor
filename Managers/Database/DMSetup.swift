@@ -203,6 +203,7 @@ extension DatabaseManager {
             t.column("channels", .integer)
             t.column("codec", .text)
             t.column("bit_depth", .integer)
+            t.column("lossless", .boolean)
 
             // Sort fields
             t.column("sort_title", .text)
@@ -353,10 +354,12 @@ extension DatabaseManager {
             END
         """)
         
-        // Trigger for updated tracks
+        // Trigger for updated tracks. Scope to the indexed text columns only so that
+        // frequent non-text writes (play_count, rating, last_played_date, duplicate
+        // flags during scans) don't needlessly rewrite the FTS row.
         try db.execute(sql: """
             CREATE TRIGGER IF NOT EXISTS tracks_fts_update
-            AFTER UPDATE ON tracks
+            AFTER UPDATE OF title, filename_stem, artist, album, album_artist, composer, genre, year ON tracks
             BEGIN
                 UPDATE tracks_fts SET
                     title = NEW.title,

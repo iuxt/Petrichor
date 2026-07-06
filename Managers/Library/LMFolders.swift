@@ -76,14 +76,18 @@ extension LibraryManager {
                 self.loadMusicLibrary()
                 self.refreshDiscoverTracks()
                 // Stop the activity indicator
-                NotificationManager.shared.stopActivity()
-                
+                Task { @MainActor in
+                    NotificationManager.shared.stopActivity()
+                }
+
             case .failure(let error):
                 Logger.error("Failed to remove folder: \(error)")
                 // Stop the activity indicator on failure too
-                NotificationManager.shared.stopActivity()
-                // Show error message
-                NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to remove folder '\(folder.name)'"))
+                Task { @MainActor in
+                    NotificationManager.shared.stopActivity()
+                    // Show error message
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Failed to remove folder '\(folder.name)'"))
+                }
             }
         }
     }
@@ -135,7 +139,9 @@ extension LibraryManager {
                 globalScanState: globalScanState
             ) { result in
                 if startedAccess { folder.url.stopAccessingSecurityScopedResource() }
-                NotificationManager.shared.stopActivity()
+                Task { @MainActor in
+                    NotificationManager.shared.stopActivity()
+                }
                 switch result {
                 case .success:
                     Logger.info("Successfully refreshed folder \(folder.name)")
@@ -168,7 +174,9 @@ extension LibraryManager {
         }
         
         Logger.info("Found \(foldersToRemove.count) missing folders to optimize")
-        NotificationManager.shared.startActivity(String(appLocalized: "Optimizing database..."))
+        Task { @MainActor in
+            NotificationManager.shared.startActivity(String(appLocalized: "Optimizing database..."))
+        }
         
         let group = DispatchGroup()
         var removedFolders: [String] = []
@@ -191,21 +199,23 @@ extension LibraryManager {
         
         group.notify(queue: .main) { [weak self] in
             guard let self = self else { return }
-            
-            NotificationManager.shared.stopActivity()
-            
-            if !removedFolders.isEmpty {
-                let message = removedFolders.count == 1
-                    ? String(appLocalized: "Folder '\(removedFolders[0])' was removed as it no longer exists")
-                    : String(appLocalized: "\(removedFolders.count) folders were removed as they no longer exist")
-                NotificationManager.shared.addMessage(.info, message)
+
+            Task { @MainActor in
+                NotificationManager.shared.stopActivity()
+
+                if !removedFolders.isEmpty {
+                    let message = removedFolders.count == 1
+                        ? String(appLocalized: "Folder '\(removedFolders[0])' was removed as it no longer exists")
+                        : String(appLocalized: "\(removedFolders.count) folders were removed as they no longer exist")
+                    NotificationManager.shared.addMessage(.info, message)
+                }
+
+                if !failedRemovals.isEmpty {
+                    let message = String(appLocalized: "Failed to remove \(failedRemovals.count) missing folders")
+                    NotificationManager.shared.addMessage(.error, message)
+                }
             }
-            
-            if !failedRemovals.isEmpty {
-                let message = String(appLocalized: "Failed to remove \(failedRemovals.count) missing folders")
-                NotificationManager.shared.addMessage(.error, message)
-            }
-            
+
             self.performDatabaseOptimization(sizeBefore: sizeBefore, context: "optimization after folder cleanup")
             self.refreshLibraryCategories()
             self.loadMusicLibrary()
@@ -218,6 +228,16 @@ extension LibraryManager {
         guard FileManager.default.fileExists(atPath: folder.url.path) else {
             Logger.warning("Folder no longer exists at \(folder.url.path)")
             return
+        }
+
+        // `bookmarkData(options: .withSecurityScope)` requires an active security-scoped
+        // reference on the URL; without it the call silently fails on sandboxed volumes.
+        // Take a balanced reference for the duration of the bookmark creation.
+        let didStartAccess = folder.url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccess {
+                folder.url.stopAccessingSecurityScopedResource()
+            }
         }
 
         do {

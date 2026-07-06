@@ -178,17 +178,27 @@ extension DatabaseManager {
                             .filter(PlaylistTrack.Columns.playlistId == playlistId.uuidString)
                             .order(PlaylistTrack.Columns.position)
                             .fetchAll(db)
-                        
+
                         let trackIds = playlistTracks.map { $0.trackId }
-                        
-                        // Fetch all tracks at once
-                        let tracks = try Track
+
+                        // Fetch all matching tracks in one query, honoring the
+                        // "hide duplicate songs" preference so the pinned playlist
+                        // matches what the Playlists tab shows (see loadTracksForPlaylist).
+                        let tracks = try applyDuplicateFilter(Track.all())
                             .filter(trackIds.contains(Track.Columns.trackId))
                             .fetchAll(db)
-                        
+
+                        // Dictionary lookup keeps this O(n) instead of O(n*m).
+                        var trackDict: [Int64: Track] = [:]
+                        for track in tracks {
+                            if let trackId = track.trackId {
+                                trackDict[trackId] = track
+                            }
+                        }
+
                         // Sort tracks according to playlist order
                         return playlistTracks.compactMap { playlistTrack in
-                            tracks.first { $0.trackId == playlistTrack.trackId }
+                            trackDict[playlistTrack.trackId]
                         }
                     }
                 }

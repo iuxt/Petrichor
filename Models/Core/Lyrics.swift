@@ -97,16 +97,23 @@ extension LyricLine {
         
         for block in blocks {
             let lines = block.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-            
-            // Every block has at least 3 lines
-            guard lines.count >= 3 else { continue }
-            
-            // The second line is the time
-            let timeLine = lines[1]
+
+            // The SRT/WebSRT sequence number is optional: a block may be either
+            //   "<index>\n<time>\n<text...>" (>= 3 lines)
+            //   "<time>\n<text...>"            (>= 2 lines)
+            // Detect which form we have by checking whether the first line is a pure
+            // integer; if not, treat it as the time line. Without this, index-less
+            // blocks (valid per spec, emitted by many tools) are silently dropped.
+            let hasSequenceNumber = lines.first.map { Int($0) != nil } ?? false
+            let timeIndex = hasSequenceNumber ? 1 : 0
+
+            guard lines.count >= timeIndex + 2 else { continue }
+
+            let timeLine = lines[timeIndex]
             guard let match = timeRegex.firstMatch(in: timeLine, range: NSRange(timeLine.startIndex..., in: timeLine)) else {
                 continue
             }
-            
+
             let nsLine = timeLine as NSString
             // Start time
             let startH = Double(nsLine.substring(with: match.range(at: 1))) ?? 0
@@ -114,16 +121,16 @@ extension LyricLine {
             let startS = Double(nsLine.substring(with: match.range(at: 3))) ?? 0
             let startMs = Double(nsLine.substring(with: match.range(at: 4))) ?? 0
             let startTime = startH * 3600 + startM * 60 + startS + startMs / 1000.0
-            
+
             // End time
             let endH = Double(nsLine.substring(with: match.range(at: 5))) ?? 0
             let endM = Double(nsLine.substring(with: match.range(at: 6))) ?? 0
             let endS = Double(nsLine.substring(with: match.range(at: 7))) ?? 0
             let endMs = Double(nsLine.substring(with: match.range(at: 8))) ?? 0
             let endTime = endH * 3600 + endM * 60 + endS + endMs / 1000.0
-            
-            // Remaining lines (third onward) are the subtitle text
-            let textLines = lines.dropFirst(2)
+
+            // Remaining lines (after the time line) are the subtitle text
+            let textLines = lines.dropFirst(timeIndex + 1)
             let text = textLines.joined(separator: "\n")
 
             lyrics.append(LyricLine(text: text, startTime: startTime, endTime: endTime))

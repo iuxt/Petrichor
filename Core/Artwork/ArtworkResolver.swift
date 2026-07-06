@@ -16,12 +16,22 @@ final class ArtworkResolver {
             return embedded
         }
 
-        if let sameStemURL = externalArtworkURL(for: request.audioURL, kind: .sameStem),
+        // List the track's directory once and reuse the candidate set for both the
+        // same-stem and generic artwork lookups. Previously each miss re-listed the
+        // folder, doubling directory IO for every track without embedded artwork.
+        let directory = request.audioURL.deletingLastPathComponent()
+        let candidates = (try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+
+        if let sameStemURL = ExternalArtworkResolver.sameStemArtworkURL(forAudioURL: request.audioURL, candidates: candidates),
            let sameStem = cachedOrFileArtwork(for: request, fileURL: sameStemURL) {
             return sameStem
         }
 
-        if let genericURL = externalArtworkURL(for: request.audioURL, kind: .generic),
+        if let genericURL = ExternalArtworkResolver.genericArtworkURL(forAudioURL: request.audioURL, candidates: candidates),
            let generic = cachedOrFileArtwork(for: request, fileURL: genericURL) {
             return generic
         }
@@ -75,27 +85,6 @@ final class ArtworkResolver {
 
         cache.store(data, for: key)
         return data
-    }
-
-    private enum ExternalArtworkKind {
-        case sameStem
-        case generic
-    }
-
-    private func externalArtworkURL(for audioURL: URL, kind: ExternalArtworkKind) -> URL? {
-        let directory = audioURL.deletingLastPathComponent()
-        guard let candidates = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-
-        switch kind {
-        case .sameStem:
-            return ExternalArtworkResolver.sameStemArtworkURL(forAudioURL: audioURL, candidates: candidates)
-        case .generic:
-            return ExternalArtworkResolver.genericArtworkURL(forAudioURL: audioURL, candidates: candidates)
-        }
     }
 
     private func cacheKey(for request: ArtworkRequest, sourceURL: URL) -> ArtworkCacheKey? {

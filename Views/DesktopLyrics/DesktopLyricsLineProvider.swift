@@ -29,7 +29,13 @@ final class DesktopLyricsLineProvider: ObservableObject {
     deinit {
         loadTask?.cancel()
         if isSampling {
-            playbackManager?.setFineProgressSampling(false)
+            // Release the fine-sampling ref the provider held. `setFineProgressSampling`
+            // is `@MainActor`; hop asynchronously rather than asserting main, so a
+            // deinit off the main thread (rare but possible) can't trap. A slightly
+            // delayed decrement is harmless since the consumer is already gone.
+            Task { @MainActor [weak playbackManager] in
+                playbackManager?.setFineProgressSampling(false)
+            }
         }
     }
 

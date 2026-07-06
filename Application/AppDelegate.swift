@@ -316,37 +316,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // MARK: - Dock Menu Actions
     
-    @objc
+    @MainActor @objc
     private func setRepeatOff() {
         AppCoordinator.shared?.playlistManager.repeatMode = .off
     }
-    
-    @objc
+
+    @MainActor @objc
     private func setRepeatOne() {
         AppCoordinator.shared?.playlistManager.repeatMode = .one
     }
-    
-    @objc
+
+    @MainActor @objc
     private func setRepeatAll() {
         AppCoordinator.shared?.playlistManager.repeatMode = .all
     }
-    
-    @objc
+
+    @MainActor @objc
     private func toggleShuffle() {
         AppCoordinator.shared?.playlistManager.toggleShuffle()
     }
-    
-    @objc
+
+    @MainActor @objc
     private func togglePlayPause() {
         AppCoordinator.shared?.playbackManager.togglePlayPause()
     }
-    
-    @objc
+
+    @MainActor @objc
     private func playNext() {
         AppCoordinator.shared?.playlistManager.playNextTrack()
     }
-    
-    @objc
+
+    @MainActor @objc
     private func playPrevious() {
         AppCoordinator.shared?.playlistManager.playPreviousTrack()
     }

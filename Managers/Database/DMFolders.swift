@@ -486,12 +486,15 @@ extension DatabaseManager {
             Logger.info("Resolved artwork for \(artworkCount) tracks within \(folder.name)")
         }
 
-        // Pre-fetch existing tracks for this folder to avoid per-file DB lookups
+        // Pre-fetch existing tracks for this folder to avoid per-file DB lookups.
+        // Key by the standardized path so symlink resolution and trailing-slash /
+        // `private`-prefix differences don't cause a track to be treated as both
+        // missing (re-inserted, duplicating) and found.
         let existingTracksByPath: [String: Track] = try await dbQueue.read { db in
             let tracks = try Track
                 .filter(Track.Columns.folderId == folderId)
                 .fetchAll(db)
-            return Dictionary(uniqueKeysWithValues: tracks.map { ($0.url.path, $0) })
+            return Dictionary(uniqueKeysWithValues: tracks.map { ($0.url.standardizedFileURL.path, $0) })
         }
 
         // Remove tracks that no longer exist (skip on fresh scan when folder has no tracks)
@@ -544,7 +547,7 @@ extension DatabaseManager {
 
         guard let enumerator = fileManager.enumerator(
             at: folderURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
             throw DatabaseError.scanFailed("Unable to enumerate folder contents")
@@ -553,24 +556,38 @@ extension DatabaseManager {
         var musicFiles: [URL] = []
         var unsupportedFiles: [(url: URL, extension: String)] = []
         var artworkCandidatesByDirectory: [URL: [URL]] = [:]
+        // De-duplicate by resolved path so a symlinked file and its target (or two
+        // symlinks pointing at the same file) are ingested exactly once.
+        var seenResolvedPaths = Set<String>()
 
         while let fileURL = enumerator.nextObject() as? URL {
             let fileExtension = fileURL.pathExtension.lowercased()
 
             guard !fileExtension.isEmpty else { continue }
 
+            // Resolve symlinks before storage/dedup so the DB holds the real file path
+            // and metadata reads target the actual file. Without this, a symlink and its
+            // target (or several links to one file) would be ingested as duplicates, and
+            // self-referential symlink chains could loop the enumerator on some configs.
+            let resolvedURL = (fileURL.resolvingSymlinksInPath()).standardizedFileURL
+            let resolvedPath = resolvedURL.path
+            guard seenResolvedPaths.insert(resolvedPath).inserted else {
+                // Already ingested this exact file via another path/symlink.
+                continue
+            }
+
             if supportedExtensions.contains(fileExtension) {
-                musicFiles.append(fileURL)
+                musicFiles.append(resolvedURL)
             } else if AudioFormat.isNotSupported(fileExtension) {
-                unsupportedFiles.append((url: fileURL, extension: fileExtension))
-                Logger.info("Skipped unsupported audio file: \(fileURL.lastPathComponent) (.\(fileExtension))")
+                unsupportedFiles.append((url: resolvedURL, extension: fileExtension))
+                Logger.info("Skipped unsupported audio file: \(resolvedURL.lastPathComponent) (.\(fileExtension))")
             }
 
             // Collect supported image files; each audio file resolves its preferred
             // candidate after enumeration so same-name artwork can beat generic artwork.
             if AlbumArtFormat.isSupported(fileExtension) {
-                let directory = fileURL.deletingLastPathComponent()
-                artworkCandidatesByDirectory[directory, default: []].append(fileURL)
+                let directory = resolvedURL.deletingLastPathComponent()
+                artworkCandidatesByDirectory[directory, default: []].append(resolvedURL)
             }
         }
 
@@ -649,8 +666,8 @@ extension DatabaseManager {
         globalScanState: GlobalScanState? = nil
     ) async throws {
         let existingTracks = getTracksForFolder(folderId)
-        let foundPathStrings = Set(foundPaths.map { $0.path })
-        let tracksToRemove = existingTracks.filter { !foundPathStrings.contains($0.url.path) }
+        let foundPathStrings = Set(foundPaths.map { $0.standardizedFileURL.path })
+        let tracksToRemove = existingTracks.filter { !foundPathStrings.contains($0.url.standardizedFileURL.path) }
         let trackIdsToRemove = tracksToRemove.compactMap { $0.trackId }
         
         guard !trackIdsToRemove.isEmpty else { return }
@@ -670,17 +687,16 @@ extension DatabaseManager {
             }
         }
         
-        // Remove tracks from database
+        // Remove tracks from database and clean up orphaned artists/albums/genres
+        // in a single transaction, so a crash between the two can't leave dangling
+        // parent rows pointing at nothing.
         try await dbQueue.write { db in
+            try deleteTracksAndCleanupLocked(trackIdsToRemove, in: db)
             for track in tracksToRemove {
-                try track.delete(db)
                 Logger.info("Removed track that no longer exists: \(track.url.lastPathComponent)")
             }
         }
-        
-        // Clean up orphaned metadata
-        try await cleanupAfterTrackRemoval(trackIdsToRemove)
-        
+
         // Report results to user
         await MainActor.run {
             if !hasRemainingFiles {

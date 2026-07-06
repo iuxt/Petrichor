@@ -502,25 +502,24 @@ extension DatabaseManager {
     /// Get decade statistics
     func getDecadeStats() throws -> [(decade: Int, count: Int)] {
         try dbQueue.read { db in
-            // First, get all valid years
-            let validYears = try Track
-                .select(Track.Columns.year, as: String.self)
-                .filter(Track.Columns.year != "")
-                .filter(Track.Columns.year != "Unknown Year")
-                .distinct()
-                .fetchAll(db)
+            // A single GROUP BY query returns one row per year with its count; we then
+            // bucket the per-year counts into decades in Swift. This replaces the prior
+            // per-year COUNT(*) loop (one query per distinct year).
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT year, COUNT(*) AS track_count
+                    FROM tracks
+                    WHERE year != '' AND year != 'Unknown Year'
+                    GROUP BY year
+                    """
+            )
 
-            // Group by decade
             var decadeStats: [Int: Int] = [:]
-
-            for yearString in validYears {
-                guard let year = Int(yearString), year > 0 else { continue }
+            for row in rows {
+                guard let year = Int(row["year"]), year > 0 else { continue }
                 let decade = (year / 10) * 10
-
-                let count = try Track
-                    .filter(Track.Columns.year == yearString)
-                    .fetchCount(db)
-
+                let count: Int = row["track_count"]
                 decadeStats[decade, default: 0] += count
             }
 

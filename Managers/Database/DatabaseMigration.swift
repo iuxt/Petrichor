@@ -34,9 +34,9 @@ enum DatabaseMigrator {
         }
         
         migrator.registerMigration("v2_add_folder_content_hash") { db in
-            try db.alter(table: "folders") { t in
-                t.add(column: "shasum_hash", .text)
-            }
+            // Idempotent: some databases already have the column (created by an
+            // experimental build), and the unconditional ADD would crash on startup.
+            try db.addColumnIfNotExists(table: "folders", column: "shasum_hash", type: .text)
             Logger.info("Added shasum_hash column to folders table")
         }
         
@@ -122,9 +122,11 @@ enum DatabaseMigrator {
         }
         
         migrator.registerMigration("v5_add_lossless_column") { db in
-            try db.alter(table: "tracks") { t in
-                t.add(column: "lossless", .boolean)
-            }
+            // Use the existence-checking helper: some databases in the wild already
+            // have the `lossless` column (e.g. created by an experimental build that
+            // pre-dated this migration), and the unconditional `ALTER TABLE ADD COLUMN`
+            // throws `duplicate column name` on those, preventing the app from starting.
+            try db.addColumnIfNotExists(table: "tracks", column: "lossless", type: .boolean)
             Logger.info("v5_add_lossless_column migration completed")
         }
         

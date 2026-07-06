@@ -20,10 +20,11 @@ class AppCoordinator: ObservableObject {
     
     // Track restoration state to prevent race conditions
     private var isRestoringPlayback = false
-    private var libraryObserver: NSObjectProtocol?
+    private var didRegisterLibraryObserver = false
     
     // MARK: - Initialization
     
+    @MainActor
     init() {
         // Initialize managers
         libraryManager = LibraryManager()
@@ -55,20 +56,27 @@ class AppCoordinator: ObservableObject {
             
             // Schedule restoration after a minimal delay to ensure UI is ready
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                self?.restorePlaybackState()
+                MainActor.assumeIsolated {
+                    self?.restorePlaybackState()
+                }
             }
         }
     }
     
     deinit {
         // Clean up any remaining observers
-        if let observer = libraryObserver {
-            NotificationCenter.default.removeObserver(observer)
+        if didRegisterLibraryObserver {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSNotification.Name("LibraryDidLoad"),
+                object: nil
+            )
         }
     }
     
     // MARK: - Playback State Persistence
     
+    @MainActor
     private func clearAllSavedState() {
         UserDefaults.standard.removeObject(forKey: playbackStateKey)
         UserDefaults.standard.removeObject(forKey: playbackUIStateKey)
@@ -76,6 +84,7 @@ class AppCoordinator: ObservableObject {
         playbackManager.currentTrack = nil
     }
     
+    @MainActor
     func savePlaybackState(for calledFromStateTimer: Bool = false) {
         // Only save if we have a current track
         guard let currentTrack = playbackManager.currentTrack else {
@@ -126,6 +135,7 @@ class AppCoordinator: ObservableObject {
         }
     }
     
+    @MainActor
     func restoreUIStateImmediately() {
         // Try to restore UI state immediately
         guard let uiData = UserDefaults.standard.data(forKey: playbackUIStateKey),
@@ -137,6 +147,7 @@ class AppCoordinator: ObservableObject {
         playbackManager.restoreUIState(uiState)
     }
     
+    @MainActor
     func restorePlaybackState() {
         // Prevent concurrent restorations
         guard !isRestoringPlayback else {
@@ -153,14 +164,18 @@ class AppCoordinator: ObservableObject {
                 return
             }
             
-            // Use a stored observer reference to ensure proper cleanup
-            libraryObserver = NotificationCenter.default.addObserver(
-                forName: NSNotification.Name("LibraryDidLoad"),
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.libraryDidLoad()
-            }
+            // Use a flag to ensure proper cleanup. The selector-based observer
+            // avoids capturing `self` in a `@Sendable` block observer
+            // (`AppCoordinator` is not `Sendable`). `LibraryDidLoad` is posted on
+            // the main thread (by `loadMusicLibrary`), and `libraryDidLoad` is
+            // `@MainActor @objc`, so the call lands on the main actor as required.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(libraryDidLoad),
+                name: NSNotification.Name("LibraryDidLoad"),
+                object: nil
+            )
+            didRegisterLibraryObserver = true
             return
         }
         
@@ -168,11 +183,16 @@ class AppCoordinator: ObservableObject {
         performActualRestoration()
     }
     
+    @MainActor
     @objc
     private func libraryDidLoad() {
-        if let observer = libraryObserver {
-            NotificationCenter.default.removeObserver(observer)
-            libraryObserver = nil
+        if didRegisterLibraryObserver {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSNotification.Name("LibraryDidLoad"),
+                object: nil
+            )
+            didRegisterLibraryObserver = false
         }
         
         // Don't restore if we didn't have folders at startup
@@ -192,6 +212,7 @@ class AppCoordinator: ObservableObject {
         performActualRestoration()
     }
     
+    @MainActor
     private func performActualRestoration() {
         defer { isRestoringPlayback = false }
         
@@ -218,6 +239,7 @@ class AppCoordinator: ObservableObject {
         }
     }
     
+    @MainActor
     private func performStateRestoration(_ state: PlaybackState) {
         // Load only the tracks we need for restoration
         let trackIdsNeeded = Set(state.queueTrackIds + [state.currentTrackId].compactMap { $0 })

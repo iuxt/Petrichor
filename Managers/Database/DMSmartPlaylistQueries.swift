@@ -42,7 +42,13 @@ extension DatabaseManager {
         return query
     }
 
-    /// Count tracks matching a criteria (honoring its limit) within an already-open read.
+    /// Count tracks matching a criteria (ignoring its limit) within an already-open read.
+    ///
+    /// The limit is intentionally not applied: GRDB's `fetchCount` wraps the query as
+    /// `SELECT COUNT(*) FROM (...)` and drops the inner LIMIT, so `limit(n).fetchCount`
+    /// is at best a no-op and at worst surprising. The editor footer
+    /// (`countMatchesForCriteria`) also counts without the limit to convey how
+    /// selective the rules are, so both call sites now agree.
     func countSmartPlaylistTracks(
         _ criteria: SmartPlaylistCriteria,
         artists: [Artist],
@@ -50,9 +56,6 @@ extension DatabaseManager {
         db: Database
     ) throws -> Int {
         let query = smartPlaylistFilteredQuery(criteria, artists: artists, genres: genres)
-        if let limit = criteria.limit {
-            return try query.limit(limit).fetchCount(db)
-        }
         return try query.fetchCount(db)
     }
 

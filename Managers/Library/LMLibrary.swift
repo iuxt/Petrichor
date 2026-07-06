@@ -33,8 +33,10 @@ extension LibraryManager {
                         bookmarkDataIsStale: &isStale
                     )
 
-                    // Start accessing the security scoped resource
-                    if resolvedURL.startAccessingSecurityScopedResource() {
+                    // Start accessing the security scoped resource exactly once per
+                    // retained URL (see `retainSecurityScope(for:)`). Re-calling
+                    // loadMusicLibrary no longer leaks a new reference each time.
+                    if retainSecurityScope(for: resolvedURL) {
                         folderAccessible = true
                         resolvedFolders.append(folder)
                         Logger.info("Successfully resolved bookmark for \(folder.name)")
@@ -58,7 +60,7 @@ extension LibraryManager {
                 Logger.info("Attempting to create new bookmark for accessible folder \(folder.name)")
 
                 // Check if we already have permission to access this path
-                if folder.url.startAccessingSecurityScopedResource() {
+                if retainSecurityScope(for: folder.url) {
                     // We have access! Create a new bookmark
                     do {
                         let newBookmarkData = try folder.url.bookmarkData(
@@ -87,9 +89,13 @@ extension LibraryManager {
             }
         }
 
+        // Release security scopes for folders that are no longer present, so the
+        // retained set matches `resolvedFolders`. Each URL is stopped exactly once.
+        releaseStaleSecurityScopes(keeping: resolvedFolders)
+
         folders = resolvedFolders
         tracks = []
-        
+
         loadLibraryCategories()
         updateSearchResults()
         updateTotalCounts()
@@ -105,10 +111,14 @@ extension LibraryManager {
             }
         }
 
-        // Notify playlist manager to update smart playlists
+        // Notify playlist manager to update smart playlists. `loadMusicLibrary` runs on
+        // the main thread (from init and the debounced reload work item), and
+        // PlaylistManager is `@MainActor`, so hop via assumeIsolated.
         if let coordinator = AppCoordinator.shared {
-            coordinator.playlistManager.updateSmartPlaylists()
-            coordinator.playlistManager.reloadFileBackedPlaylists()
+            MainActor.assumeIsolated {
+                coordinator.playlistManager.updateSmartPlaylists()
+                coordinator.playlistManager.reloadFileBackedPlaylists()
+            }
             coordinator.handleLibraryChanged()
         }
 

@@ -61,7 +61,9 @@ extension PlaylistManager {
     /// Create a new basic playlist backed by an M3U file in the first music folder.
     func createPlaylist(name: String, tracks: [Track] = []) -> Playlist {
         guard let defaultFolder = libraryManager?.folders.first else {
-            NotificationManager.shared.addMessage(.error, PlaylistFileStoreError.missingDefaultMusicFolder.localizedDescription)
+            Task { @MainActor in
+                NotificationManager.shared.addMessage(.error, PlaylistFileStoreError.missingDefaultMusicFolder.localizedDescription)
+            }
             return Playlist(name: name, tracks: tracks)
         }
 
@@ -75,7 +77,9 @@ extension PlaylistManager {
             return newPlaylist
         } catch {
             Logger.error("Failed to create playlist file: \(error)")
-            NotificationManager.shared.addMessage(.error, error.localizedDescription)
+            Task { @MainActor in
+                NotificationManager.shared.addMessage(.error, error.localizedDescription)
+            }
             return Playlist(name: name, tracks: tracks)
         }
     }
@@ -93,7 +97,9 @@ extension PlaylistManager {
             Task { await handlePlaylistDeletionForPinnedItems(playlist.id) }
         } catch {
             Logger.error("Failed to delete playlist file: \(error)")
-            NotificationManager.shared.addMessage(.error, error.localizedDescription)
+            Task { @MainActor in
+                NotificationManager.shared.addMessage(.error, error.localizedDescription)
+            }
             reloadFileBackedPlaylists()
         }
     }
@@ -112,7 +118,9 @@ extension PlaylistManager {
             }
         } catch {
             Logger.error("Failed to rename playlist file: \(error)")
-            NotificationManager.shared.addMessage(.error, error.localizedDescription)
+            Task { @MainActor in
+                NotificationManager.shared.addMessage(.error, error.localizedDescription)
+            }
             reloadFileBackedPlaylists()
         }
     }

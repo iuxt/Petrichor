@@ -8,7 +8,14 @@
 
 import Foundation
 
-class PlaylistManager: ObservableObject {
+/// `@MainActor` because this is an `ObservableObject` consumed by SwiftUI (its
+/// `@Published` state drives views), it is created and mutated on the main thread, and
+/// it calls `@MainActor PlaybackManager` methods. Its methods are also invoked from
+/// `MPRemoteCommandCenter` handlers, but those already hop to the main actor (the
+/// closures capture a `@MainActor` `playlistManager`), so isolating the whole class to
+/// the main actor keeps those calls safe without extra hops.
+@MainActor
+final class PlaylistManager: ObservableObject {
     @Published var playlists: [Playlist] = []
     @Published var currentPlaylist: Playlist?
     @Published var isShuffleEnabled: Bool = false

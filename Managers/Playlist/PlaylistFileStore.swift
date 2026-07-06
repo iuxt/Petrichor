@@ -54,43 +54,49 @@ final class PlaylistFileStore {
     }
 
     func createPlaylist(named name: String, tracks: [Track], in defaultFolder: Folder) throws -> Playlist {
-        let directory = M3UPlaylistCodec.playlistDirectory(in: defaultFolder.url)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try withSecurityScope(for: defaultFolder.url) {
+            let directory = M3UPlaylistCodec.playlistDirectory(in: defaultFolder.url)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let fileURL = uniqueFileURL(for: name, in: directory)
-        try write(tracks: tracks, to: fileURL, musicFolder: defaultFolder.url)
+            let fileURL = uniqueFileURL(for: name, in: directory)
+            try write(tracks: tracks, to: fileURL, musicFolder: defaultFolder.url, playlistFileURL: fileURL)
 
-        var playlist = Playlist(
-            name: fileURL.deletingPathExtension().lastPathComponent,
-            tracks: tracks,
-            fileBacking: PlaylistFileBacking(musicFolderURL: defaultFolder.url, fileURL: fileURL)
-        )
-        playlist.trackCount = tracks.count
-        return playlist.withStableFileBackedID(for: fileURL)
+            var playlist = Playlist(
+                name: fileURL.deletingPathExtension().lastPathComponent,
+                tracks: tracks,
+                fileBacking: PlaylistFileBacking(musicFolderURL: defaultFolder.url, fileURL: fileURL)
+            )
+            playlist.trackCount = tracks.count
+            return playlist.withStableFileBackedID(for: fileURL)
+        }
     }
 
     func rename(_ playlist: Playlist, to newName: String) throws -> Playlist {
         guard let backing = playlist.fileBacking else { throw PlaylistFileStoreError.missingBackingFile }
 
-        let target = uniqueFileURL(
-            for: newName,
-            in: backing.fileURL.deletingLastPathComponent(),
-            excluding: backing.fileURL
-        )
+        return try withSecurityScope(for: backing.musicFolderURL) {
+            let target = uniqueFileURL(
+                for: newName,
+                in: backing.fileURL.deletingLastPathComponent(),
+                excluding: backing.fileURL
+            )
 
-        try fileManager.moveItem(at: backing.fileURL, to: target)
+            try fileManager.moveItem(at: backing.fileURL, to: target)
 
-        var updated = playlist
-        updated.name = target.deletingPathExtension().lastPathComponent
-        updated.dateModified = Date()
-        updated.fileBacking = PlaylistFileBacking(musicFolderURL: backing.musicFolderURL, fileURL: target)
-        return updated.withStableFileBackedID(for: target)
+            var updated = playlist
+            updated.name = target.deletingPathExtension().lastPathComponent
+            updated.dateModified = Date()
+            updated.fileBacking = PlaylistFileBacking(musicFolderURL: backing.musicFolderURL, fileURL: target)
+            return updated.withStableFileBackedID(for: target)
+        }
     }
 
     func delete(_ playlist: Playlist) throws {
         guard let backing = playlist.fileBacking else { throw PlaylistFileStoreError.missingBackingFile }
 
-        try moveItemToTrash(backing.fileURL)
+        try withSecurityScope(for: backing.musicFolderURL) {
+            try moveItemToTrash(backing.fileURL)
+        }
     }
 
     private func moveItemToTrash(_ url: URL) throws {
@@ -130,7 +136,9 @@ final class PlaylistFileStore {
     func write(tracks: [Track], for playlist: Playlist) throws -> Playlist {
         guard let backing = playlist.fileBacking else { throw PlaylistFileStoreError.missingBackingFile }
 
-        try write(tracks: tracks, to: backing.fileURL, musicFolder: backing.musicFolderURL)
+        try withSecurityScope(for: backing.musicFolderURL) {
+            try write(tracks: tracks, to: backing.fileURL, musicFolder: backing.musicFolderURL, playlistFileURL: backing.fileURL)
+        }
 
         var updated = playlist
         updated.tracks = tracks
@@ -139,9 +147,26 @@ final class PlaylistFileStore {
         return updated
     }
 
-    private func write(tracks: [Track], to fileURL: URL, musicFolder: URL) throws {
-        let content = M3UPlaylistCodec.render(trackURLs: tracks.map(\.url), musicFolder: musicFolder)
+    private func write(tracks: [Track], to fileURL: URL, musicFolder: URL, playlistFileURL: URL) throws {
+        let content = M3UPlaylistCodec.render(trackURLs: tracks.map(\.url), musicFolder: musicFolder, playlistFileURL: playlistFileURL)
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Run `body` while holding a security-scoped resource reference on `folderURL`.
+    ///
+    /// Playlist files live inside a user-chosen music folder whose access is granted
+    /// via a security-scoped bookmark. The app-wide `LibraryManager` retains these
+    /// scopes for the app's lifetime, but this store must not *depend* on that: it
+    /// takes its own (balanced) reference so writes remain correct even if the
+    /// library's retention strategy changes, and stops it in the matching `defer`.
+    private func withSecurityScope<T>(for folderURL: URL, _ body: () throws -> T) rethrows -> T {
+        let didStart = folderURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStart {
+                folderURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        return try body()
     }
 
     private func match(

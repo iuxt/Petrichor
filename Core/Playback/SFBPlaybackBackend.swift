@@ -347,6 +347,11 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
     /// Apply an EQ preset
     /// - Parameter preset: The EqualizerPreset to apply
     func applyEQPreset(_ preset: EqualizerPreset) {
+        guard preset.gains.count == 10 else {
+            Logger.warning("Equalizer preset must contain exactly 10 gains, got \(preset.gains.count)")
+            return
+        }
+
         currentEQGains = preset.gains
 
         if !effectsAttached {
@@ -435,29 +440,44 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
     }
 
     func handleEndOfAudio() {
-        let finalProgress = currentPlaybackProgress
-        let finalDuration = duration
+        // This is delivered on SFBAudioEngine's internal queue (non-main, non-render).
+        // Capture only the generation counter off-thread; re-read progress/duration and
+        // re-validate the entry id on the main thread before reporting EOF, so a
+        // concurrent play()/stop() can't produce a torn read that credits the wrong
+        // track or reports a stale entryId (the pre-buffer path uses the same guard).
+        let generationAtCallback = playGeneration
 
-        if let entryId = currentEntryId {
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
 
-                if self.sfbPlayer.playbackState != .stopped {
-                    Logger.info("Ignoring stale SFB end-of-audio callback while replacement playback is active")
-                    return
-                }
-
-                self.state = .stopped
-                self.backendDelegate?.backendDidFinishPlaying(
-                    entryId: entryId,
-                    stopReason: .eof,
-                    progress: finalProgress,
-                    duration: finalDuration
-                )
-
-                self.currentURL = nil
-                self.currentEntryId = nil
+            // If a new play() started after this callback fired, the generation won't
+            // match and the engine is no longer in the state this EOF describes.
+            guard self.playGeneration == generationAtCallback else {
+                Logger.info("Ignoring stale SFB end-of-audio callback (generation changed)")
+                return
             }
+
+            guard let entryId = self.currentEntryId else { return }
+
+            if self.sfbPlayer.playbackState != .stopped {
+                Logger.info("Ignoring stale SFB end-of-audio callback while replacement playback is active")
+                return
+            }
+
+            // Safe to read now: we're on main and the generation still matches.
+            let finalProgress = self.currentPlaybackProgress
+            let finalDuration = self.duration
+
+            self.state = .stopped
+            self.backendDelegate?.backendDidFinishPlaying(
+                entryId: entryId,
+                stopReason: .eof,
+                progress: finalProgress,
+                duration: finalDuration
+            )
+
+            self.currentURL = nil
+            self.currentEntryId = nil
         }
     }
 

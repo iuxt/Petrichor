@@ -50,7 +50,13 @@ enum DiagnosticSnapshot {
             library["trackCount"] = lm.totalTrackCount
             library["artistCount"] = lm.artistCount
             library["albumCount"] = lm.albumCount
-            library["playlistCount"] = coordinator.playlistManager.playlists.count
+            // `write(phase:)` runs on a background utility queue, but
+            // `PlaylistManager` is `@MainActor`. Hop to main synchronously to read
+            // the count (a brief block is fine for a diagnostic snapshot).
+            let playlistCount = DispatchQueue.main.sync {
+                coordinator.playlistManager.playlists.count
+            }
+            library["playlistCount"] = playlistCount
             library["pinnedItemCount"] = lm.pinnedItems.count
             library["totalDurationSec"] = HelperUtils.sanitizedWholeDuration(duration)
             library["totalSize"] = bytes(db.getTotalFileSize())

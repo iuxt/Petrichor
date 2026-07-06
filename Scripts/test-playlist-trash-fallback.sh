@@ -63,7 +63,7 @@ enum M3UPlaylistCodec {
         musicFolder.appendingPathComponent("playlists", isDirectory: true)
     }
 
-    static func render(trackURLs: [URL], musicFolder: URL) -> String {
+    static func render(trackURLs: [URL], musicFolder: URL, playlistFileURL: URL) -> String {
         trackURLs.map(\.path).joined(separator: "\n")
     }
 }

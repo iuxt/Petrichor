@@ -41,17 +41,25 @@ enum M3UPlaylistCodec {
     static func pathVariations(for entry: String, musicFolder: URL, playlistFileURL: URL) -> [String] {
         var normalized = entry.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Strip URL schemes. Percent-decoding only applies to scheme-bearing entries:
+        // bare relative/absolute paths are file paths and may legitimately contain
+        // a literal `%` character, which unconditional decoding would corrupt.
+        var wasSchemeEntry = false
         for scheme in ["file://", "smb://", "afp://", "nfs://"] where normalized.lowercased().hasPrefix(scheme) {
             normalized = String(normalized.dropFirst(scheme.count))
+            wasSchemeEntry = true
             break
         }
 
         if normalized.hasPrefix("//") {
+            // UNC/SMB-style share path: map to a /Volumes mount point.
             normalized = "/Volumes" + String(normalized.dropFirst(1))
         }
 
         normalized = normalized.replacingOccurrences(of: "\\", with: "/")
-        normalized = normalized.removingPercentEncoding ?? normalized
+        if wasSchemeEntry {
+            normalized = normalized.removingPercentEncoding ?? normalized
+        }
 
         var result: [String] = []
         func appendUnique(_ path: String) {
@@ -62,10 +70,11 @@ enum M3UPlaylistCodec {
 
         if normalized.hasPrefix("/") {
             appendUnique(URL(fileURLWithPath: normalized).standardizedFileURL.path)
+            // Only emit the cross-form (drop or add `/Volumes`) variant for entries that
+            // came in as a UNC/SMB share — a bare local path like /tmp/x.flac must not be
+            // rewritten into /Volumes/tmp/x.flac, which could silently bind the wrong track.
             if normalized.hasPrefix("/Volumes/") {
                 appendUnique(String(normalized.dropFirst(8)))
-            } else if !normalized.hasPrefix("/Users/") {
-                appendUnique("/Volumes" + normalized)
             }
         } else {
             var relativePath = normalized
@@ -80,23 +89,61 @@ enum M3UPlaylistCodec {
         return result
     }
 
-    static func relativeOrAbsolutePath(for trackURL: URL, musicFolder: URL) -> String {
-        let root = musicFolder.standardizedFileURL.path
-        let path = trackURL.standardizedFileURL.path
-        let prefix = root.hasSuffix("/") ? root : root + "/"
+    /// Render a single track's path for an M3U file.
+    ///
+    /// Writes a path *relative to the playlist file's own directory* when the track
+    /// lives inside the music folder (so the file is portable to other players, which
+    /// resolve entries relative to the `.m3u` location). Falls back to an absolute
+    /// path for tracks outside the playlist's directory, where no safe relative form
+    /// exists.
+    static func relativeOrAbsolutePath(for trackURL: URL, musicFolder: URL, playlistFileURL: URL) -> String {
+        let track = trackURL.standardizedFileURL
+        let playlistDir = playlistFileURL.standardizedFileURL.deletingLastPathComponent()
 
-        if path.hasPrefix(prefix) {
-            return String(path.dropFirst(prefix.count))
+        if let relative = relativePath(from: playlistDir, to: track) {
+            return relative
         }
 
-        return path
+        // Track is not under the playlist's directory: emit an absolute path so the
+        // entry remains unambiguous and resolvable.
+        return track.path
     }
 
-    static func render(trackURLs: [URL], musicFolder: URL) -> String {
+    /// Returns a POSIX relative path from `base` to `target`, including `..` segments
+    /// when `target` lives outside `base`'s subtree. Returns nil only when the result
+    /// would be empty. Both URLs must be standardized file URLs.
+    private static func relativePath(from base: URL, to target: URL) -> String? {
+        // pathComponents includes a leading "/" for absolute URLs; drop it so we
+        // compare the logical path segments.
+        var baseComponents = base.pathComponents
+        var targetComponents = target.pathComponents
+        if baseComponents.first == "/" { baseComponents.removeFirst() }
+        if targetComponents.first == "/" { targetComponents.removeFirst() }
+
+        // Strip the common prefix.
+        var commonCount = 0
+        while commonCount < baseComponents.count,
+              commonCount < targetComponents.count,
+              baseComponents[commonCount] == targetComponents[commonCount] {
+            commonCount += 1
+        }
+
+        // One ".." for each remaining base component not shared with the target.
+        let upCount = baseComponents.count - commonCount
+        let downComponents = Array(targetComponents.dropFirst(commonCount))
+
+        var pieces = [String](repeating: "..", count: upCount)
+        pieces.append(contentsOf: downComponents)
+
+        let relative = pieces.joined(separator: "/")
+        return relative.isEmpty ? nil : relative
+    }
+
+    static func render(trackURLs: [URL], musicFolder: URL, playlistFileURL: URL) -> String {
         var lines = [header]
 
         for url in trackURLs {
-            lines.append(relativeOrAbsolutePath(for: url, musicFolder: musicFolder))
+            lines.append(relativeOrAbsolutePath(for: url, musicFolder: musicFolder, playlistFileURL: playlistFileURL))
         }
 
         return lines.joined(separator: lineEnding) + lineEnding

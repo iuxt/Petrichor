@@ -99,6 +99,11 @@ public extension AudioPlayerDelegate {
 /// surface; only `PlaybackEngine` talks to it. This lets every delegate signature
 /// stay the concrete `PlaybackEngine` type, so the rest of the app never refers to
 /// a backend directly.
+///
+/// Kept `nonisolated`: the SFB backend's `reconfigureProcessingGraph` delegate
+/// callback is invoked synchronously from the engine's render/graph thread and
+/// must return a node immediately, so it cannot be `@MainActor`. The Crescendo
+/// backend is still `@MainActor` (its delegate bridge already hops to main).
 protocol PlaybackBackend: AnyObject {
     var backendDelegate: PlaybackBackendDelegate? { get set }
 
@@ -138,24 +143,6 @@ protocol PlaybackBackend: AnyObject {
     func applyEQCustom(gains: [Float])
     func setPreamp(_ gain: Float)
     func getPreamp() -> Float
-}
-
-/// Shared EQ headroom policy used by playback backends.
-///
-/// Positive EQ boosts consume digital headroom before the signal reaches the
-/// output path. Offset the largest boost, plus a small safety margin, so the
-/// user-facing preamp can remain stable while the backend feeds a safer
-/// effective gain to its engine.
-enum EqualizerHeadroomCompensation {
-    static func gainOffset(eqEnabled: Bool, gains: [Float]) -> Float {
-        guard eqEnabled else { return 0 }
-
-        let maxBandGain = gains.max() ?? 0
-        if maxBandGain > 0 {
-            return -(maxBandGain + 1.0)
-        }
-        return 0
-    }
 }
 
 /// Events a `PlaybackBackend` reports up to the `PlaybackEngine` facade. The facade
@@ -213,13 +200,17 @@ public class PlaybackEngine: NSObject {
 
     // MARK: - Initialization
 
+    @MainActor
     override public init() {
         self.backend = Self.makeBackend()
         super.init()
         self.backend.backendDelegate = self
     }
 
-    /// Builds the backend for the selected engine.
+    /// Builds the backend for the selected engine. `@MainActor` because the
+    /// Crescendo backend is main-actor-isolated; `PlaybackEngine` is constructed
+    /// from `PlaybackManager` (also `@MainActor`), so the hop is direct.
+    @MainActor
     private static func makeBackend() -> PlaybackBackend {
         switch MediaBackend.current {
         case .sfb:
@@ -234,6 +225,7 @@ public class PlaybackEngine: NSObject {
     /// any playback state to resume and for re-applying volume/effects afterward,
     /// since the new backend starts clean. The old backend's delegate is detached
     /// before teardown so its stop callbacks are not delivered as real events.
+    @MainActor
     public func reload() {
         backend.backendDelegate = nil
         backend.stop()

@@ -35,15 +35,17 @@ extension DatabaseManager {
     }
 
     /// Search tracks for playlist addition with exclusions
-    func searchTracksForPlaylist(_ searchText: String, excludingTrackIds: Set<Int64> = []) -> [Track] {
+    /// - Parameter limit: Cap on the number of results. Defaults to 200 to keep the
+    ///   picker responsive on very large libraries; pass `nil` for an unbounded query.
+    func searchTracksForPlaylist(_ searchText: String, excludingTrackIds: Set<Int64> = [], limit: Int? = 200) -> [Track] {
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return []
         }
-        
+
         do {
             return try dbQueue.read { db in
                 let prefixQuery = buildFTS5Query(searchText)
-                
+
                 // Respect the "hide duplicate songs" setting so playlist search results
                 // match what the rest of the library shows.
                 let duplicateClause = UserDefaults.standard.bool(forKey: "hideDuplicateTracks") ? " AND t.is_duplicate = 0" : ""
@@ -64,7 +66,9 @@ extension DatabaseManager {
                     args.append(contentsOf: excludedIds)
                     arguments = StatementArguments(args)
                 }
-                
+
+                let limitClause = limit.map { "LIMIT \($0)" } ?? ""
+
                 return try Track.fetchAll(
                     db,
                     sql: """
@@ -73,7 +77,7 @@ extension DatabaseManager {
                     JOIN tracks_fts fts ON t.id = fts.track_id
                     \(whereClause)
                     ORDER BY rank
-                    LIMIT 200
+                    \(limitClause)
                     """,
                     arguments: arguments
                 )

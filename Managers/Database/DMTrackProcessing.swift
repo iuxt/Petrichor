@@ -216,8 +216,11 @@ extension DatabaseManager {
         }
 
         do {
-            // Check if track already exists using prefetched dictionary
-            if let existingTrack = existingTracksByPath[fileURL.path] {
+            // Check if track already exists using prefetched dictionary.
+            // Standardize the lookup key to match how the dictionary is built (and how
+            // the scan enumerates files), so symlink-resolved / un-trailing-slashed
+            // paths don't cause a false miss and a duplicate insert.
+            if let existingTrack = existingTracksByPath[fileURL.standardizedFileURL.path] {
                 // Fetch the full track for comparison and update
                 guard let existingFullTrack = try await existingTrack.fullTrack(using: dbQueue) else {
                     // If we can't get full track, treat as new
@@ -413,16 +416,29 @@ extension DatabaseManager {
                     duplicateGroups[key]?.append(track)
                 }
                 
+                // Batch-fetch every FullTrack needed for quality scoring in one query
+                // (avoids an N+1 of `fetchOne` per duplicate member inside the loop).
+                let duplicateMemberIds = duplicateGroups
+                    .values
+                    .filter { $0.count > 1 }
+                    .flatMap { $0.compactMap { $0.trackId } }
+                let fullTrackById: [Int64: FullTrack] = duplicateMemberIds.isEmpty
+                    ? [:]
+                    : try FullTrack
+                        .filter(duplicateMemberIds.contains(FullTrack.Columns.trackId))
+                        .fetchAll(db)
+                        .reduce(into: [:]) { dict, track in
+                            if let id = track.trackId { dict[id] = track }
+                        }
+
                 // Process each group that has duplicates
                 for (_, tracks) in duplicateGroups where tracks.count > 1 {
-                    // Fetch full tracks for quality scoring
-                    let fullTracks = try tracks.compactMap { track -> FullTrack? in
+                    // Look up the pre-fetched FullTracks for this group's members
+                    let fullTracks = tracks.compactMap { track -> FullTrack? in
                         guard let trackId = track.trackId else { return nil }
-                        return try FullTrack
-                            .filter(FullTrack.Columns.trackId == trackId)
-                            .fetchOne(db)
+                        return fullTrackById[trackId]
                     }
-                    
+
                     // Sort by quality score (highest first)
                     let sortedTracks = fullTracks.sorted { $0.qualityScore > $1.qualityScore }
                     

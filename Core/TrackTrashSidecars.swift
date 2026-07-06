@@ -2,14 +2,13 @@ import Foundation
 
 enum TrackTrashSidecars {
     static let lyricExtensions = ["lrc", "srt"]
-    private static let supportedAudioExtensions: Set<String> = [
-        "mp3", "m4a", "wav", "aac", "aiff", "aif", "alac",
-        "flac", "ogg", "oga", "opus", "ape", "mpc", "wv",
-        "tta", "spx", "dsf", "dff", "mod", "it", "s3m", "xm",
-        "au"
-    ]
-    private static let supportedArtworkExtensions: Set<String> = ["jpg", "jpeg", "png", "tiff", "tif", "bmp"]
-    private static let knownArtworkFilenames: Set<String> = ["cover", "folder", "album", "artwork", "front"]
+    // Reuse the canonical format lists so a newly-supported audio/artwork extension
+    // is recognized here automatically. Hand-maintaining a parallel copy risks
+    // trashing directory cover art when the audio set grows but this list doesn't
+    // (the scanner would then see "no remaining audio file" and remove the art).
+    private static let supportedAudioExtensions: Set<String> = Set(AudioFormat.supportedExtensions.map { $0.lowercased() })
+    private static let supportedArtworkExtensions: Set<String> = Set(AlbumArtFormat.supportedExtensions.map { $0.lowercased() })
+    private static let knownArtworkFilenames: Set<String> = Set(AlbumArtFormat.knownFilenames.map { $0.lowercased() })
 
     static func sidecarURLs(
         forAudioURL audioURL: URL,

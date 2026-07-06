@@ -52,8 +52,8 @@ if end < 0:
 body = source[brace + 1:end]
 patterns = [
     "cachedOrEmbeddedArtwork",
-    "kind: .sameStem",
-    "kind: .generic"
+    "ExternalArtworkResolver.sameStemArtworkURL",
+    "ExternalArtworkResolver.genericArtworkURL"
 ]
 positions = []
 for pattern in patterns:

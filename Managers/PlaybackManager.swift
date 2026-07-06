@@ -10,7 +10,13 @@ import AVFoundation
 import Combine
 import Foundation
 
-class PlaybackManager: NSObject, ObservableObject {
+/// App-facing playback coordinator. `@MainActor` because it is an `ObservableObject`
+/// consumed by SwiftUI, drives a main-queue progress timer, and almost every method
+/// already assumed the main thread (or re-dispatched to it). Isolating it removes the
+/// ad-hoc `Thread.isMainThread` / `DispatchQueue.main.async` hops and closes latent
+/// races on `pendingNext`, `currentEntryId`, `playbackRequestGeneration`, etc.
+@MainActor
+final class PlaybackManager: NSObject, ObservableObject {
     let playbackProgressState = PlaybackProgressState()
 
     // MARK: - Published Properties
@@ -128,9 +134,13 @@ class PlaybackManager: NSObject, ObservableObject {
     }
 
     deinit {
-        stop()
-        stopProgressUpdateTimer()
-        stopStateSaveTimer()
+        // `PlaybackManager` is an app-lifetime singleton owned by `AppCoordinator`,
+        // so this runs only at process termination. `deinit` cannot call
+        // `@MainActor` methods, and mutating `@Published` / posting notifications
+        // from a half-deallocated `ObservableObject` is fragile, so we don't drive
+        // a full `stop()` here. The engine and timers are torn down by the OS on
+        // process exit; if lifetime ever changes, add a `prepareForDeinit()` that
+        // the owner calls on the main actor before release.
     }
     
     // MARK: - Player State Management
@@ -203,7 +213,9 @@ class PlaybackManager: NSObject, ObservableObject {
         
         guard FileManager.default.fileExists(atPath: track.url.path) else {
             Logger.warning("Track file does not exist: \(track.url.path)")
-            NotificationManager.shared.addMessage(.error, String(appLocalized: "Cannot play '\(track.title)': File not found"))
+            Task { @MainActor in
+                NotificationManager.shared.addMessage(.error, String(appLocalized: "Cannot play '\(track.title)': File not found"))
+            }
             
             // Auto-skip to next track if in queue
             if playlistManager.currentQueue.count > 1 {
@@ -392,12 +404,12 @@ class PlaybackManager: NSObject, ObservableObject {
         NotificationCenter.default.post(
             name: NSNotification.Name("PlayerDidSeek"),
             object: nil,
-            userInfo: ["time": time]
+            userInfo: ["time": clampedTime]
         )
-        
+
         if let track = currentTrack {
             nowPlayingManager.updateNowPlayingInfo(
-                track: track, currentTime: time, isPlaying: isPlaying)
+                track: track, currentTime: clampedTime, isPlaying: isPlaying)
         }
     }
     
@@ -817,13 +829,19 @@ class PlaybackManager: NSObject, ObservableObject {
     
     private func startStateSaveTimer() {
         stateSaveTimer?.invalidate()
+        // `Timer.scheduledTimer` fires on the current run loop, which is the main
+        // run loop here (this method is `@MainActor`). The closure is treated as
+        // `@Sendable`, so we re-enter the main actor explicitly before reading
+        // `isPlaying`.
         stateSaveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            if self.isPlaying {
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("SavePlaybackState"),
-                    object: nil
-                )
+            MainActor.assumeIsolated {
+                if self.isPlaying {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("SavePlaybackState"),
+                        object: nil
+                    )
+                }
             }
         }
     }
@@ -841,32 +859,36 @@ class PlaybackManager: NSObject, ObservableObject {
             audioPlayer.setStereoWidening(enabled: true)
             Logger.info("Restored stereo widening: enabled")
         }
-        
-        // Restore EQ enabled state
+
+        // Restore EQ preset or custom gains BEFORE flipping the enabled flag, so the
+        // band gains and headroom-compensated preamp are in place when the EQ goes
+        // live. (applyEQCustom/applyEQPreset attach the effects graph and compute the
+        // effective preamp against the supplied gains.) Otherwise enabling first
+        // leaves the EQ momentarily flat at 0dB until the preset is applied.
         let eqEnabled = UserDefaults.standard.bool(forKey: "eqEnabled")
         if eqEnabled {
+            if let presetRawValue = UserDefaults.standard.string(forKey: "eqPreset") {
+                if presetRawValue == "custom" {
+                    // Restore custom gains
+                    if let customGains = UserDefaults.standard.array(forKey: "customEQGains") as? [Float],
+                       customGains.count == 10 {
+                        audioPlayer.applyEQCustom(gains: customGains)
+                        Logger.info("Restored custom EQ gains")
+                    }
+                } else {
+                    // Restore preset
+                    if let preset = EqualizerPreset(rawValue: presetRawValue) {
+                        audioPlayer.applyEQPreset(preset)
+                        Logger.info("Restored EQ preset: \(preset.displayName)")
+                    }
+                }
+            }
+
+            // Now flip the enabled state with the correct gains already applied.
             audioPlayer.setEQEnabled(true)
             Logger.info("Restored EQ: enabled")
         }
-        
-        // Restore EQ preset or custom gains
-        if let presetRawValue = UserDefaults.standard.string(forKey: "eqPreset") {
-            if presetRawValue == "custom" {
-                // Restore custom gains
-                if let customGains = UserDefaults.standard.array(forKey: "customEQGains") as? [Float],
-                   customGains.count == 10 {
-                    audioPlayer.applyEQCustom(gains: customGains)
-                    Logger.info("Restored custom EQ gains")
-                }
-            } else {
-                // Restore preset
-                if let preset = EqualizerPreset(rawValue: presetRawValue) {
-                    audioPlayer.applyEQPreset(preset)
-                    Logger.info("Restored EQ preset: \(preset.displayName)")
-                }
-            }
-        }
-        
+
         // Restore preamp gain
         if UserDefaults.standard.object(forKey: "preampGain") != nil {
             let preampGain = UserDefaults.standard.float(forKey: "preampGain")
@@ -878,7 +900,12 @@ class PlaybackManager: NSObject, ObservableObject {
 
 // MARK: - AudioPlayerDelegate
 
-extension PlaybackManager: AudioPlayerDelegate {
+// `AudioPlayerDelegate` is a non-isolated protocol (it predates strict
+// concurrency and is implemented by other call sites), but `PlaybackManager`
+// is `@MainActor`. The conformance is `@preconcurrency` to acknowledge the
+// cross-isolation match is intentional — every method already hops to main
+// before touching `@MainActor` state.
+extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
     func audioPlayerDidStartPlaying(player: PlaybackEngine, with entryId: AudioEntryId) {
         DispatchQueue.main.async {
             // A gapless engine fires this for the primed next track when it
@@ -1018,7 +1045,9 @@ extension PlaybackManager: AudioPlayerDelegate {
                 self.currentTime = 0
                 self.isPlaying = false
                 Logger.error("Playback finished with error")
-                NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error occurred"))
+                Task { @MainActor in
+                    NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error occurred"))
+                }
             }
         }
     }
@@ -1026,7 +1055,9 @@ extension PlaybackManager: AudioPlayerDelegate {
     func audioPlayerUnexpectedError(player: PlaybackEngine, error: AudioPlayerError) {
         DispatchQueue.main.async {
             Logger.error("Audio player error: \(error.localizedDescription)")
-            NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error: \(error.localizedDescription)"))
+            Task { @MainActor in
+                NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error: \(error.localizedDescription)"))
+            }
         }
     }
 

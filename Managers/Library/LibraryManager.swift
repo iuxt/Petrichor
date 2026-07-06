@@ -72,6 +72,15 @@ class LibraryManager: ObservableObject {
     internal var folderTrackCounts: [Int64: Int] = [:]
     private var pendingLibraryReload: DispatchWorkItem?
 
+    /// Paths (standardized) of folder URLs for which this manager currently holds an
+    /// active security-scoped resource reference. `loadMusicLibrary()` is called
+    /// repeatedly (init, reloads, after folder add/remove/refresh); without tracking
+    /// this, each call re-`startAccessing` on URLs whose scope is already held,
+    /// growing the per-process reference count for the app's lifetime and eventually
+    /// causing subsequent starts to silently fail. We start each retained folder once
+    /// and stop the ones that are no longer present.
+    private var activeSecurityScopes: Set<String> = []
+
     // Database manager
     let databaseManager: DatabaseManager
 
@@ -171,7 +180,9 @@ class LibraryManager: ObservableObject {
 
     deinit {
         fileWatcherTimer?.invalidate()
-        // Stop accessing all security scoped resources
+        // Stop accessing all security scoped resources. Each retained URL is
+        // released exactly once via the tracking set maintained by
+        // `retainSecurityScope(for:)` / `loadMusicLibrary()`.
         for folder in folders where folder.bookmarkData != nil {
             folder.url.stopAccessingSecurityScopedResource()
         }
@@ -184,6 +195,36 @@ class LibraryManager: ObservableObject {
 
         if notify {
             NotificationCenter.default.post(name: .libraryDataDidChange, object: nil)
+        }
+    }
+
+    // MARK: - Security Scope Tracking
+
+    /// Start a security-scoped resource reference for `url` exactly once. Returns
+    /// `true` if the scope is active (either newly started or already retained by a
+    /// previous call). Idempotent across the repeated `loadMusicLibrary()` calls.
+    @discardableResult
+    internal func retainSecurityScope(for url: URL) -> Bool {
+        let key = url.standardizedFileURL.path
+        if activeSecurityScopes.contains(key) {
+            // Already retained earlier in this app session; don't take a second ref.
+            return true
+        }
+        if url.startAccessingSecurityScopedResource() {
+            activeSecurityScopes.insert(key)
+            return true
+        }
+        return false
+    }
+
+    /// Stop security scopes for folder URLs that are no longer in the library, so
+    /// the retained set tracks the live folders. Each released URL is stopped once.
+    internal func releaseStaleSecurityScopes(keeping folders: [Folder]) {
+        let retainedPaths = Set(folders.map { $0.url.standardizedFileURL.path })
+        let stale = activeSecurityScopes.subtracting(retainedPaths)
+        for path in stale {
+            URL(fileURLWithPath: path).stopAccessingSecurityScopedResource()
+            activeSecurityScopes.remove(path)
         }
     }
     
@@ -335,11 +376,16 @@ class LibraryManager: ObservableObject {
             // Perform scan after a short delay to let the UI initialize
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 guard let self = self else { return }
-                
-                // Only refresh if we're not already scanning
-                if !self.isScanning && !NotificationManager.shared.isActivityInProgress {
-                    Logger.info("Starting auto-scan on launch")
-                    self.refreshLibrary()
+
+                // Only refresh if we're not already scanning. The closure runs on
+                // the main queue (asyncAfter to .main) and `NotificationManager`
+                // is `@MainActor`, so re-enter the main actor explicitly to read
+                // its activity flag without crossing isolation.
+                MainActor.assumeIsolated {
+                    if !self.isScanning && !NotificationManager.shared.isActivityInProgress {
+                        Logger.info("Starting auto-scan on launch")
+                        self.refreshLibrary()
+                    }
                 }
             }
             return
@@ -361,10 +407,15 @@ class LibraryManager: ObservableObject {
         fileWatcherTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
 
-            // Only refresh if we're not currently scanning
-            if !self.isScanning && !NotificationManager.shared.isActivityInProgress {
-                Logger.info("Starting periodic refresh...")
-                self.refreshLibrary()
+            // Only refresh if we're not currently scanning. The timer fires on
+            // the main run loop and `NotificationManager` is `@MainActor`, so
+            // re-enter the main actor explicitly to read its activity flag
+            // without crossing isolation.
+            MainActor.assumeIsolated {
+                if !self.isScanning && !NotificationManager.shared.isActivityInProgress {
+                    Logger.info("Starting periodic refresh...")
+                    self.refreshLibrary()
+                }
             }
         }
     }

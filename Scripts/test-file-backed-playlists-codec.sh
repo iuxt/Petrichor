@@ -46,9 +46,13 @@ let rendered = M3UPlaylistCodec.render(
         root.appendingPathComponent("Artist/Album/Song.flac"),
         URL(fileURLWithPath: "/External/Loose.mp3")
     ],
-    musicFolder: root
+    musicFolder: root,
+    playlistFileURL: playlistFile
 )
-precondition(rendered.contains("Artist/Album/Song.flac"), rendered)
+// Tracks inside the music folder are now written relative to the playlist file's
+// own directory (/Music/playlists/), so a track at /Music/Artist/... resolves via ../
+precondition(rendered.contains("../Artist/Album/Song.flac"), rendered)
+// Tracks outside the music folder fall back to an absolute path.
 precondition(rendered.contains("/External/Loose.mp3"), rendered)
 precondition(rendered.hasPrefix("#EXTM3U\r\n"), rendered)
 

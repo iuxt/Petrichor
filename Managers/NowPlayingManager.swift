@@ -8,7 +8,12 @@ import Foundation
 import AppKit
 import MediaPlayer
 
-class NowPlayingManager {
+/// Owns the system Now Playing tile and the remote-command handlers.
+/// `@MainActor` because `MPNowPlayingInfoCenter` is documented to be touched from
+/// the main thread, and the cached-artwork fields were previously read/written
+/// from the playback progress timer and `seekTo` without isolation guarantees.
+@MainActor
+final class NowPlayingManager {
     init() {
         setupRemoteCommandCenter()
     }
@@ -94,6 +99,12 @@ class NowPlayingManager {
     }
 
     func connectRemoteCommandCenter(audioPlayer: PlaybackManager, playlistManager: PlaylistManager) {
+        // Remove any handlers registered by a previous connect call so we don't
+        // accumulate targets on the shared (singleton) command center. Without this,
+        // each connect stacks another handler, and a stale one returning
+        // `.commandFailed` for a deallocated player would shadow the success path.
+        setupRemoteCommandCenter()
+
         let commandCenter = MPRemoteCommandCenter.shared()
 
         // Add handler for play command

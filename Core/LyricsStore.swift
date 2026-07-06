@@ -37,7 +37,10 @@ final class LyricsStore {
         }
 
         let trackId = track.id
-        let task = Task { () throws -> Lyrics in
+        // Run the lyrics load on a background executor so file IO (`Data(contentsOf:)`)
+        // and the DB read don't block the main actor. `Task.detached` inherits no actor,
+        // so the work runs off-main even though `LyricsStore` itself is `@MainActor`.
+        let task = Task.detached(priority: .userInitiated) { () throws -> Lyrics in
             let result = try await LyricsLoader.loadLyrics(
                 for: track,
                 using: dbQueue
@@ -51,5 +54,14 @@ final class LyricsStore {
         let result = try await task.value
         cached = result
         return result
+    }
+
+    /// Drop the in-flight load for `trackId`, cancelling the underlying task so the
+    /// file/DB work stops when the caller no longer cares about the result.
+    func cancelInFlightLoad(for trackId: UUID) {
+        if let task = inFlight[trackId] {
+            task.cancel()
+            inFlight[trackId] = nil
+        }
     }
 }

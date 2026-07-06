@@ -63,8 +63,11 @@ extension PlaylistManager {
                 // Refresh smart playlists affected by play count/last played changes
                 Task.detached(priority: .background) { [weak self] in
                     guard let self = self else { return }
-                    
-                    for playlist in self.playlists where playlist.type == .smart && !playlist.isUserEditable {
+
+                    // Snapshot the (value-type) playlists array on the main actor before
+                    // iterating, since `self.playlists` is main-actor-isolated.
+                    let playlists = await MainActor.run { self.playlists }
+                    for playlist in playlists where playlist.type == .smart && !playlist.isUserEditable {
                         if playlist.name == DefaultPlaylists.mostPlayed ||
                            playlist.name == DefaultPlaylists.recentlyPlayed {
                             await self.loadSmartPlaylistTracks(playlist)

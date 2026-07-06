@@ -21,7 +21,7 @@ enum FilesystemUtils {
 
         guard let enumerator = FileManager.default.enumerator(
             at: folderURL,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
             return nil
@@ -29,6 +29,8 @@ enum FilesystemUtils {
 
         let basePath = folderURL.path
         var entries: [(path: String, modDate: TimeInterval, size: Int64)] = []
+        // De-duplicate by resolved path so symlinks to the same file hash once.
+        var seenResolvedPaths = Set<String>()
 
         while let fileURL = enumerator.nextObject() as? URL {
             let ext = fileURL.pathExtension.lowercased()
@@ -40,12 +42,17 @@ enum FilesystemUtils {
 
             guard isAudio || isArtwork else { continue }
 
+            // Resolve symlinks so the hash reflects the real file (matching the scan),
+            // and de-duplicate so multiple links to one file don't skew the hash.
+            let resolved = fileURL.resolvingSymlinksInPath().standardizedFileURL
+            guard seenResolvedPaths.insert(resolved.path).inserted else { continue }
+
             // Read file attributes (batched by OS via getattrlistbulk)
-            guard let resourceValues = try? fileURL.resourceValues(
+            guard let resourceValues = try? resolved.resourceValues(
                 forKeys: [.contentModificationDateKey, .fileSizeKey]
             ) else { continue }
 
-            let relativePath = String(fileURL.path.dropFirst(basePath.count))
+            let relativePath = String(resolved.path.dropFirst(basePath.count))
             let modDate = resourceValues.contentModificationDate?.timeIntervalSince1970 ?? 0
             let size = Int64(resourceValues.fileSize ?? 0)
 

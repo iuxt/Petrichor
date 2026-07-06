@@ -39,17 +39,23 @@ struct NotificationMessage: Identifiable {
 
 // MARK: - Notification Manager
 
-class NotificationManager: ObservableObject {
+/// UI-bound notification/activity tray. `@MainActor` so the throttle field and the
+/// `@Published` state are mutated on a single thread — previously the throttle
+/// (`lastProgressUpdateTime`) was written from concurrent scan task-group children,
+/// a data race under Swift strict concurrency. Callers that run off-main already
+/// hop through `MainActor.run` / `DispatchQueue.main.async`.
+@MainActor
+final class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
-    
+
     @Published var isActivityInProgress = false
     @Published var activityMessage = ""
     @Published var activityProgress: ActivityProgress?
     @Published var messages: [NotificationMessage] = []
-    
+
     private var lastProgressUpdateTime: Date = .distantPast
     private let progressUpdateInterval: TimeInterval = 0.5
-    
+
     struct ActivityProgress {
         let current: Int
         let total: Int
@@ -60,102 +66,75 @@ class NotificationManager: ObservableObject {
             return Double(current) / Double(total)
         }
     }
-    
+
     private let messagesKey = "NotificationTrayMessages"
-    
+
     private init() {
         loadPersistedMessages()
     }
-    
+
     // MARK: - Activity Management
-    
+
     func startActivity(_ message: String) {
-        guard !Thread.isMainThread else {
-            isActivityInProgress = true
-            activityMessage = message
-            activityProgress = nil
-            lastProgressUpdateTime = .distantPast
-            return
-        }
-
-        DispatchQueue.main.async {
-            self.isActivityInProgress = true
-            self.activityMessage = message
-            self.activityProgress = nil
-            self.lastProgressUpdateTime = .distantPast
-        }
+        isActivityInProgress = true
+        activityMessage = message
+        activityProgress = nil
+        lastProgressUpdateTime = .distantPast
     }
-    
+
     func stopActivity() {
-        guard !Thread.isMainThread else {
-            isActivityInProgress = false
-            activityMessage = ""
-            activityProgress = nil
-            return
-        }
-
-        DispatchQueue.main.async {
-            self.isActivityInProgress = false
-            self.activityMessage = ""
-            self.activityProgress = nil
-        }
+        isActivityInProgress = false
+        activityMessage = ""
+        activityProgress = nil
     }
-    
+
     func updateActivityProgress(current: Int, total: Int, detail: String? = nil) {
         let now = Date()
         guard now.timeIntervalSince(lastProgressUpdateTime) >= progressUpdateInterval else { return }
         lastProgressUpdateTime = now
-        
-        DispatchQueue.main.async {
-            self.activityProgress = ActivityProgress(
-                current: current,
-                total: total,
-                detail: detail
-            )
-        }
+
+        activityProgress = ActivityProgress(
+            current: current,
+            total: total,
+            detail: detail
+        )
     }
-    
+
     // MARK: - Message Management
-    
+
     func addMessage(_ type: NotificationType, _ title: String) {
-        DispatchQueue.main.async {
-            let message = NotificationMessage(type: type, title: title)
-            self.messages.append(message)
-            self.saveMessages()
-        }
+        let message = NotificationMessage(type: type, title: title)
+        messages.append(message)
+        saveMessages()
     }
-    
+
     func clearMessages() {
-        DispatchQueue.main.async {
-            self.messages.removeAll()
-            self.saveMessages()
-        }
+        messages.removeAll()
+        saveMessages()
     }
-    
+
     func removeMessage(_ message: NotificationMessage) {
-        DispatchQueue.main.async {
-            self.messages.removeAll { $0.id == message.id }
-            self.saveMessages()
-        }
+        messages.removeAll { $0.id == message.id }
+        saveMessages()
     }
-    
+
     // MARK: - Persistence
-    
+
     private func saveMessages() {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        
+
         if let encoded = try? encoder.encode(messages) {
             UserDefaults.standard.set(encoded, forKey: messagesKey)
         }
     }
-    
+
     private func loadPersistedMessages() {
         guard let data = UserDefaults.standard.data(forKey: messagesKey) else { return }
-        
+
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        
+
         if let decoded = try? decoder.decode([NotificationMessage].self, from: data) {
             messages = decoded
         }
