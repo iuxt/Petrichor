@@ -66,7 +66,13 @@ if "previousEngineProgress" not in helper_body or "progressAdvanced" not in help
         "Progress sampling must detect consecutive engine-time movement so stale paused/stopped state cannot freeze the UI."
     )
 
-if "self.isPlaying = true" not in timer_body:
+if "self.wantsPlaybackActive && engineState != .playing && !self.isPlaying" not in timer_body:
+    raise SystemExit("PlaybackManager must only resync playing UI from progress when the latest intent still wants playback.")
+
+if "self.wantsPlaybackActive = true" in timer_body:
+    raise SystemExit("Playback progress recovery must not overwrite an explicit pause intent.")
+
+if "self.setPlaybackActive(true)" not in timer_body:
     raise SystemExit("PlaybackManager must resync isPlaying when engine progress proves audio is still playing.")
 
 print("Playback progress state race checks passed")

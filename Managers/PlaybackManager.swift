@@ -68,6 +68,9 @@ final class PlaybackManager: NSObject, ObservableObject {
     private var artworkLoadTask: Task<Void, Never>?
     private var currentArtworkIdentity: String?
     private var playbackRequestGeneration: UInt64 = 0
+    private var wantsPlaybackActive = false
+    private let playPauseToggleThrottleInterval: TimeInterval = 0.25
+    private var lastPlayPauseToggleTime: TimeInterval = 0
 
     /// Position to seek to and resume from once a restored track settles in
     /// `.paused` (see `audioPlayerStateChanged`). Deferring to that transition
@@ -185,6 +188,7 @@ final class PlaybackManager: NSObject, ObservableObject {
                     self.currentFullTrack = fullTrack
                     self.restoredPosition = position
                     self.currentTime = position
+                    self.wantsPlaybackActive = false
                     self.isPlaying = false
                     
                     self.nowPlayingManager.updateNowPlayingInfo(
@@ -258,26 +262,30 @@ final class PlaybackManager: NSObject, ObservableObject {
             }
             return
         }
+
+        guard shouldAcceptPlayPauseToggle() else {
+            return
+        }
         
         if isPlaying {
+            wantsPlaybackActive = false
             audioPlayer.pause()
-            isPlaying = false
-            stopStateSaveTimer()
+            setPlaybackActive(false)
         } else {
+            wantsPlaybackActive = true
             if let fullTrack = currentFullTrack, let track = currentTrack, audioPlayer.state != .paused {
                 startPlayback(of: fullTrack, lightweightTrack: track)
             } else {
+                wantsPlaybackActive = true
                 audioPlayer.resume()
-                isPlaying = true
-                startStateSaveTimer()
+                syncPlaybackStateWithEngine()
             }
         }
-        
-        updateNowPlayingInfo()
     }
     
     func stop() {
         invalidatePlaybackRequests()
+        wantsPlaybackActive = false
         audioPlayer.stop()
         currentTrack = nil
         currentFullTrack = nil
@@ -293,6 +301,7 @@ final class PlaybackManager: NSObject, ObservableObject {
 
     func stopGracefully() {
         invalidatePlaybackRequests()
+        wantsPlaybackActive = false
         audioPlayer.stop()
         currentTrack = nil
         currentFullTrack = nil
@@ -318,6 +327,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         )
 
         invalidatePlaybackRequests()
+        wantsPlaybackActive = false
         pendingRestoreResume = nil
         audioPlayer.clearNextTrack()
         currentEntryId = nil
@@ -343,6 +353,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         pendingNextWasSkipped = false
         trackForEntry.removeAll()
         currentEntryId = nil
+        wantsPlaybackActive = false
         currentTrack = snapshot.track
         currentFullTrack = snapshot.fullTrack
         currentTime = snapshot.position
@@ -362,6 +373,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         guard isCurrentTrack(track) else { return }
 
         invalidatePlaybackRequests()
+        wantsPlaybackActive = false
         pendingRestoreResume = nil
         audioPlayer.clearNextTrack()
         audioPlayer.stop()
@@ -486,6 +498,41 @@ final class PlaybackManager: NSObject, ObservableObject {
         }
     }
 
+    private func shouldAcceptPlayPauseToggle() -> Bool {
+        let now = Date().timeIntervalSinceReferenceDate
+        guard now - lastPlayPauseToggleTime >= playPauseToggleThrottleInterval else {
+            Logger.info("Ignoring rapid play/pause toggle while playback state is settling")
+            return false
+        }
+
+        lastPlayPauseToggleTime = now
+        return true
+    }
+
+    private func setPlaybackActive(_ playing: Bool) {
+        let oldIsPlaying = isPlaying
+        isPlaying = playing
+
+        if playing {
+            startStateSaveTimer()
+        } else {
+            stopStateSaveTimer()
+        }
+
+        if oldIsPlaying != isPlaying {
+            updateNowPlayingInfo()
+        }
+    }
+
+    private func syncPlaybackStateWithEngine() {
+        switch audioPlayer.state {
+        case .playing:
+            setPlaybackActive(wantsPlaybackActive)
+        case .paused, .stopped, .ready:
+            setPlaybackActive(false)
+        }
+    }
+
     /// Rebuilds the playback engine for the currently selected backend (used when
     /// the user switches engines in Settings). Playback is halted, but the loaded
     /// track, queue, and position are kept so the progress bar stays put and the
@@ -495,6 +542,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         let resumePosition = currentTime
 
         audioPlayer.reload()
+        wantsPlaybackActive = false
         isPlaying = false
         // The freshly built backend has nothing primed; the next play re-primes.
         pendingNext = nil
@@ -602,6 +650,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     // MARK: - Private Methods
     
     private func startPlayback(of fullTrack: FullTrack, lightweightTrack: Track) {
+        wantsPlaybackActive = true
         currentTrack = lightweightTrack
         currentFullTrack = fullTrack
 
@@ -716,11 +765,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         playlistManager.advanceQueueIndex(to: pending.index)
         currentTime = 0
         lastObservedEngineProgress = 0
-        isPlaying = true
+        wantsPlaybackActive = true
+        setPlaybackActive(true)
         pendingNext = nil
         pendingNextWasSkipped = false
-
-        updateNowPlayingInfo()
         Logger.info("Gapless advance to: \(pending.track.title)")
 
         // If the pre-fetch didn't finish in time, load it now for pause/resume + UI.
@@ -762,11 +810,11 @@ final class PlaybackManager: NSObject, ObservableObject {
                 previousEngineProgress: previousEngineProgress
             ) else { return }
 
-            if engineState != .playing && !self.isPlaying {
+            if self.wantsPlaybackActive && engineState != .playing && !self.isPlaying {
                 Logger.warning(
                     "Playback progress advanced while engine state was \(engineState); resyncing playback UI"
                 )
-                self.isPlaying = true
+                self.setPlaybackActive(true)
             }
 
             self.currentTime = engineProgress
@@ -908,12 +956,25 @@ final class PlaybackManager: NSObject, ObservableObject {
 extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
     func audioPlayerDidStartPlaying(player: PlaybackEngine, with entryId: AudioEntryId) {
         DispatchQueue.main.async {
+            guard self.audioPlayer.state == .playing else {
+                Logger.info("Ignoring stale start-playing callback while engine is \(self.audioPlayer.state)")
+                return
+            }
+
             // A gapless engine fires this for the primed next track when it
             // self-advances; promote it instead of treating it as a fresh start.
             if let pending = self.pendingNext, pending.entryId == entryId {
+                guard self.wantsPlaybackActive else {
+                    Logger.info("Ignoring stale gapless start callback after pause intent")
+                    return
+                }
                 self.handleGaplessAdvance(to: pending)
             } else {
-                self.isPlaying = true
+                guard self.wantsPlaybackActive, entryId == self.currentEntryId else {
+                    Logger.info("Ignoring stale start-playing callback for \(entryId.id)")
+                    return
+                }
+                self.setPlaybackActive(true)
             }
             Logger.info("Track started playing: \(entryId.id)")
         }
@@ -921,37 +982,40 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
     
     func audioPlayerStateChanged(player: PlaybackEngine, with newState: AudioPlayerState, previous: AudioPlayerState) {
         DispatchQueue.main.async {
-            let oldIsPlaying = self.isPlaying
+            let effectiveState = self.audioPlayer.state
 
-            switch newState {
+            switch effectiveState {
             case .playing:
-                self.isPlaying = true
+                if self.wantsPlaybackActive {
+                    self.setPlaybackActive(true)
+                } else {
+                    Logger.info("Ignoring stale playing state after pause intent")
+                    self.setPlaybackActive(false)
+                }
             case .paused:
-                self.isPlaying = false
+                self.setPlaybackActive(false)
             case .stopped:
-                self.isPlaying = false
+                self.setPlaybackActive(false)
             case .ready:
-                break
-            }
-            
-            if oldIsPlaying != self.isPlaying {
-                self.updateNowPlayingInfo()
+                self.setPlaybackActive(false)
             }
 
             // Finish a deferred restore-resume: the startPaused load has now
             // settled in `.paused`, so the asset is open and the seek+resume is
             // safe. Guarded by entry identity so an unrelated pause never trips it.
-            if newState == .paused,
+            if effectiveState == .paused,
                let pending = self.pendingRestoreResume,
                pending.entryId == self.currentEntryId {
                 self.pendingRestoreResume = nil
                 if self.audioPlayer.seek(to: pending.position) {
                     self.currentTime = pending.position
+                    self.wantsPlaybackActive = true
                     self.audioPlayer.resume()
                     Logger.info("Resumed restored playback from \(pending.position)s")
                 } else if let url = self.currentFullTrack?.url {
                     Logger.warning("Restore seek failed, starting from beginning")
                     self.currentTime = 0
+                    self.wantsPlaybackActive = true
                     self.audioPlayer.play(url: url, entryId: pending.entryId, startPaused: false)
                 }
             }
@@ -962,11 +1026,11 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
             // priming is reliable where `didStartPlaying` alone was not.
             // A gapless advance keeps the state at .playing (no transition here),
             // so it re-primes via handleGaplessAdvance instead.
-            if newState == .playing {
+            if effectiveState == .playing {
                 self.primeNextTrack()
             }
 
-            Logger.info("Player state changed: \(previous) → \(newState)")
+            Logger.info("Player state changed: \(previous) → \(newState), effective: \(effectiveState)")
         }
     }
     
@@ -1012,8 +1076,8 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                             self.pendingNextWasSkipped = false
                             self.playlistManager.handleTrackCompletion()
                         } else {
-                            self.isPlaying = false
-                            self.stopStateSaveTimer()
+                            self.wantsPlaybackActive = false
+                            self.setPlaybackActive(false)
                             NotificationCenter.default.post(
                                 name: NSNotification.Name("SavePlaybackState"),
                                 object: nil
@@ -1035,6 +1099,7 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
 
             case .userAction:
                 if finishedEntryIsCurrent {
+                    self.wantsPlaybackActive = false
                     self.currentTime = 0
                     self.stopStateSaveTimer()
                 } else {
@@ -1043,7 +1108,8 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
 
             case .error:
                 self.currentTime = 0
-                self.isPlaying = false
+                self.wantsPlaybackActive = false
+                self.setPlaybackActive(false)
                 Logger.error("Playback finished with error")
                 Task { @MainActor in
                     NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error occurred"))
