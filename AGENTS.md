@@ -6,7 +6,7 @@
 
 Petrichor 是一个原生 macOS 离线音乐播放器，使用 Swift、SwiftUI 和 AppKit 构建。它会扫描用户选择的音乐文件夹，读取音频元数据，通过 GRDB 将资料库数据存入 SQLite，并通过 AVFoundation 及第三方解码后端播放音频。
 
-应用运行在沙盒中，除明确的用户可见操作外，不应修改用户的音频文件或文件夹结构。允许的明确行为包括写入播放列表文件、保存下载得到的 `.lrc` 歌词旁车文件，或将文件移到废纸篓。
+应用运行在沙盒中，除明确的用户可见操作外，不应修改用户的音频文件或文件夹结构。允许的明确行为包括写入播放列表文件，读取用户已有的 `.lrc` / `.srt` 歌词旁车文件，或将文件移到废纸篓。
 
 ## 仓库结构
 
@@ -69,9 +69,9 @@ Scripts/build-installer.sh
 - 资料库扫描、元数据读取、文件 IO 或网络工作不得阻塞主线程。
 - 不要写入音频文件。新的文件写入必须是明确的产品行为，并遵守沙盒和 security-scoped URL 模型。
 - 修改播放列表时要记住：普通播放列表通过 `.m3u` 文件做文件型存储；不要重新引入基于数据库的普通播放列表曲目变更路径。
-- 对于从网络下载的歌词，保留 `.lrc` 旁车文件行为；除非产品决策改变，不要把下载的歌词重新持久化到数据库。
+- 歌词功能应保持离线：读取用户已有的 `.lrc` / `.srt` 旁车文件和内嵌歌词，不要重新引入在线歌词下载或歌词数据库写入路径。
 - 删除或移动曲目/播放列表时，保留现有的废纸篓 fallback 行为，以支持没有本地废纸篓的卷。
-- 涉及隐私的集成必须保持 opt-in。Last.fm session 数据应存入 Keychain，而不是普通偏好设置或日志。
+- 不要重新引入 Last.fm、在线歌词、在线封面、在线艺人图片等运行时联网音乐服务。新增涉及隐私或联网的集成必须先有明确产品决策并保持 opt-in。
 
 ## UI 指南
 
@@ -91,9 +91,9 @@ Scripts/build-installer.sh
 - 本地化变更：`Scripts/test-localization-format-specifiers.sh`
 - 播放列表文件行为：`Scripts/test-file-backed-playlists-codec.sh` 和 `Scripts/test-file-backed-playlists-integration.sh`
 - 废纸篓行为：`Scripts/test-track-trash-sidecars.sh` 和 `Scripts/test-playlist-trash-fallback.sh`
-- 歌词行为：`Scripts/test-online-lyrics-sidecar.sh` 和 `Scripts/test-desktop-lyrics-line-selection.sh`
-- 封面行为：`Scripts/test-external-artwork-priority.sh`
-- 功能移除回归：`Scripts/test-favorites-updates-removed.sh` 和 `Scripts/test-artist-info-download-removed.sh`
+- 歌词行为：`Scripts/test-desktop-lyrics-line-selection.sh`
+- 封面行为：`Scripts/test-external-artwork-priority.sh` 和 `Scripts/test-artwork-resolver-priority.sh`
+- 功能移除回归：`Scripts/test-favorites-updates-removed.sh`、`Scripts/test-artist-info-download-removed.sh` 和 `Scripts/test-online-services-removed.sh`
 
 如果当前环境无法运行某项检查，请在最终回复中明确说明，并解释已改用什么方式验证。
 
@@ -108,5 +108,4 @@ Scripts/build-installer.sh
 
 - GRDB 用于 SQLite 支持的模型和查询。
 - 元数据和播放代码包含 AVFoundation、SFB 相关路径和 Crescendo 相关路径。后端专用逻辑应保持在对应的 `Core/Metadata/` 或 `Core/Playback/` 实现中。
-- 歌词和 Last.fm 等网络功能必须保持可选，不应添加分析或后台数据收集。
-
+- 当前音乐资料、歌词、封面和艺人图片功能应保持离线；不要添加分析、后台数据收集或运行时音乐服务请求。

@@ -34,8 +34,8 @@ for removed_asset_dir in "${removed_asset_dirs[@]}"; do
   fi
 done
 
-if rg -n 'ScrobbleManager|LyricsManager|TrackArtworkDownloadManager|ArtistImageDownloadManager|IntegrationsTabView|URLSchemeHandler|KeychainManager|LyricsSidecarWriter|TrackArtworkSidecarWriter|lastfmUsername|lastfmAvatarData|scrobblingEnabled|onlineLyricsEnabled|trackArtworkDownloadEnabled|artistImageDownloadEnabled|lastfm-callback|LASTFM_API_KEY|LASTFM_SHARED_SECRET|TMDB_READ_ACCESS_TOKEN|Fetch lyrics from internet when unavailable|Fetch artwork from internet when unavailable|Download artist images to music folders|Lyrics & Metadata|Track your listening history on Last\.fm|Connect your Last\.fm account|Disconnected from Last\.fm|Connected to Last\.fm|Failed to connect to Last\.fm|Last\.fm API|Last\.fm authorization|Last\.fm error' \
-  Application Managers Views Core Utilities Models Configuration Resources/Localizable.xcstrings PetrichorApp.swift >/dev/null
+if rg -n 'ScrobbleManager|LyricsManager|TrackArtworkDownloadManager|ArtistImageDownloadManager|IntegrationsTabView|URLSchemeHandler|KeychainManager|LyricsSidecarWriter|TrackArtworkSidecarWriter|lastfmUsername|lastfmAvatarData|scrobblingEnabled|onlineLyricsEnabled|trackArtworkDownloadEnabled|artistImageDownloadEnabled|lastfm-callback|LASTFM_API_KEY|LASTFM_SHARED_SECRET|TMDB_READ_ACCESS_TOKEN|Fetch lyrics from internet when unavailable|Fetch artwork from internet when unavailable|Download artist images to music folders|Lyrics & Metadata|Track your listening history on Last\.fm|Connect your Last\.fm account|Disconnected from Last\.fm|Connected to Last\.fm|Failed to connect to Last\.fm|Last\.fm API|Last\.fm authorization|Last\.fm error|download missing lyrics|downloaded \.lrc|Download track lyrics from the internet|internet lyric|online lyric|Network access' \
+  Application Managers Views Core Utilities Models Configuration Resources/Localizable.xcstrings PetrichorApp.swift AGENTS.md README.md ACKNOWLEDGEMENTS.md docs/LOCALIZATION.md >/dev/null
 then
   printf 'Removed online-service wiring, settings, credentials, or strings are still present.\n' >&2
   exit 1
