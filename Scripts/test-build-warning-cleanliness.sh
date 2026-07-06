@@ -107,6 +107,37 @@ if ! rg -n 'diskutil image attach --mountPoint "\\\$\{MOUNT_DIR\}" --nobrowse' "
     exit 1
 fi
 
+if ! rg -n 'POSIX path of \(it as alias\)' "$build_script" >/dev/null; then
+    printf 'build-installer must patch create-dmg AppleScript .DS_Store waits to use the actual mounted disk path when mounting under TMPDIR.\n' >&2
+    exit 1
+fi
+
+if command -v create-dmg >/dev/null 2>&1; then
+    wrapper_tmp=$(mktemp -d)
+    cleanup_wrapper_tmp() { rm -rf "$wrapper_tmp"; }
+    trap cleanup_wrapper_tmp EXIT
+
+    wrapper=$(
+        BUILD_DIR="$wrapper_tmp" bash -c \
+            'eval "$(awk "{print} /^# Check required tools/{exit}" Scripts/build-installer.sh)"; create_dmg_command'
+    )
+
+    if [ "$wrapper" != "$(command -v create-dmg)" ]; then
+        wrapper_template="$(dirname "$wrapper")/support/template.applescript"
+        if ! rg -n 'POSIX path of \(it as alias\)' "$wrapper_template" >/dev/null; then
+            printf 'patched create-dmg template must wait for .DS_Store using the actual mounted disk path.\n' >&2
+            exit 1
+        fi
+
+        if rg -n '"/Volumes/" & volumeName' "$wrapper_template" >/dev/null; then
+            printf 'patched create-dmg template must not wait for .DS_Store under /Volumes when the wrapper mounts under TMPDIR.\n' >&2
+            exit 1
+        fi
+    fi
+    rm -rf "$wrapper_tmp"
+    trap - EXIT
+fi
+
 if ! rg -n 'mkdir -p "\\\$\{MOUNT_DIR\}"' "$build_script" >/dev/null; then
     printf 'build-installer must create the random diskutil mount point before attaching the DMG.\n' >&2
     exit 1

@@ -50,6 +50,7 @@ extension LibraryManager {
                     switch result {
                     case .success(let dbFolders):
                         Logger.info("Successfully added \(dbFolders.count) folders to database")
+                        self.refreshDiscoverTracks()
                         self.scheduleLibraryReload()
                     case .failure(let error):
                         Logger.error("Failed to add folders to database: \(error)")
@@ -73,6 +74,7 @@ extension LibraryManager {
                 // Reload library immediately
                 self.refreshLibraryCategories()
                 self.loadMusicLibrary()
+                self.refreshDiscoverTracks()
                 // Stop the activity indicator
                 NotificationManager.shared.stopActivity()
                 
@@ -140,6 +142,7 @@ extension LibraryManager {
                     // Reload the library to reflect changes
                     self.refreshLibraryCategories()
                     self.loadMusicLibrary()
+                    self.refreshDiscoverTracks()
                 case .failure(let error):
                     Logger.error("Failed to refresh folder \(folder.name): \(error)")
                 }
@@ -206,6 +209,7 @@ extension LibraryManager {
             self.performDatabaseOptimization(sizeBefore: sizeBefore, context: "optimization after folder cleanup")
             self.refreshLibraryCategories()
             self.loadMusicLibrary()
+            self.refreshDiscoverTracks()
         }
     }
 

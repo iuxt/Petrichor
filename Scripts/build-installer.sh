@@ -105,10 +105,16 @@ create_dmg_command() {
     cp "$original" "$wrapper_dir/create-dmg"
     touch "$wrapper_dir/.this-is-the-create-dmg-repo"
 
+    local support_source=""
     if [ -d "$original_dir/support" ]; then
-        ln -s "$original_dir/support" "$wrapper_dir/support"
+        support_source="$original_dir/support"
     elif [ -d "$prefix_dir/share/create-dmg/support" ]; then
-        ln -s "$prefix_dir/share/create-dmg/support" "$wrapper_dir/support"
+        support_source="$prefix_dir/share/create-dmg/support"
+    fi
+
+    if [ -n "$support_source" ]; then
+        cp -R "$support_source" "$wrapper_dir/support"
+        perl -0pi -e 's#\Qset dsStore to "\"" & "/Volumes/" & volumeName & "/" & ".DS_STORE\""\E#set dsStore to quoted form of ((POSIX path of (it as alias)) & ".DS_Store")#g' "$wrapper_dir/support/template.applescript"
     fi
 
     perl -0pi -e '

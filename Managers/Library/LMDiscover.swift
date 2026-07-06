@@ -27,25 +27,19 @@ extension LibraryManager {
         var tracks: [Track]
         
         if shouldRefreshDiscover() {
-            // Generate new discover list
-            tracks = databaseManager.getDiscoverTracks(limit: discoverTrackCount)
-            
-            // Save track IDs
-            let trackIds = tracks.compactMap { $0.trackId }
-            userDefaults.set(trackIds, forKey: Self.discoverTrackIdsKey)
-            userDefaults.set(Date(), forKey: Self.discoverLastUpdatedKey)
+            tracks = loadFreshDiscoverTracks()
         } else {
             // Load from saved IDs
             if let savedIds = userDefaults.array(forKey: Self.discoverTrackIdsKey) as? [Int64] {
-                tracks = databaseManager.getTracks(byIds: savedIds)
+                let cappedSavedIds = Array(savedIds.prefix(discoverTrackCount))
+                tracks = databaseManager.getTracks(byIds: cappedSavedIds)
+
+                if tracks.count < min(savedIds.count, discoverTrackCount) {
+                    Logger.info("Saved Discover tracks are stale, regenerating")
+                    tracks = loadFreshDiscoverTracks()
+                }
             } else {
-                // No saved tracks, generate new
-                tracks = databaseManager.getDiscoverTracks(limit: discoverTrackCount)
-                
-                // Save track IDs
-                let trackIds = tracks.compactMap { $0.trackId }
-                userDefaults.set(trackIds, forKey: Self.discoverTrackIdsKey)
-                userDefaults.set(Date(), forKey: Self.discoverLastUpdatedKey)
+                tracks = loadFreshDiscoverTracks()
             }
         }
         
@@ -57,11 +51,7 @@ extension LibraryManager {
     func refreshDiscoverTracks() {
         Logger.info("Force refreshing discover tracks")
         
-        // Clear the last updated date to force refresh
-        userDefaults.removeObject(forKey: Self.discoverLastUpdatedKey)
-        
-        // Clear current tracks to force UI update
-        self.discoverTracks = []
+        invalidateDiscoverTracks()
         
         // Reload tracks immediately
         loadDiscoverTracks()
@@ -70,6 +60,22 @@ extension LibraryManager {
         DispatchQueue.main.async { [weak self] in
             self?.objectWillChange.send()
         }
+    }
+
+    func invalidateDiscoverTracks() {
+        userDefaults.removeObject(forKey: Self.discoverTrackIdsKey)
+        userDefaults.removeObject(forKey: Self.discoverLastUpdatedKey)
+        discoverTracks = []
+    }
+
+    private func loadFreshDiscoverTracks() -> [Track] {
+        let tracks = databaseManager.getDiscoverTracks(limit: discoverTrackCount)
+        let trackIds = tracks.compactMap { $0.trackId }
+
+        userDefaults.set(trackIds, forKey: Self.discoverTrackIdsKey)
+        userDefaults.set(Date(), forKey: Self.discoverLastUpdatedKey)
+
+        return tracks
     }
     
     /// Check if discover list needs refresh

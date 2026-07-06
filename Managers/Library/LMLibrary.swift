@@ -288,6 +288,7 @@ extension LibraryManager {
                 self?.loadMusicLibrary()
                 self?.updateSearchResults()
                 self?.updateTotalCounts()
+                self?.refreshDiscoverTracks()
 
                 // Stop activity after everything is done
                 NotificationManager.shared.stopActivity()
