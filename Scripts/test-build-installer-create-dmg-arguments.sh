@@ -34,6 +34,31 @@ if ! rg -n 'cp "\$INSTALLER_BACKGROUND" "\$dmg_source/\.background/install\.svg"
     exit 1
 fi
 
+if ! rg -n 'INSTALLER_DS_STORE="\$\{PETRICHOR_INSTALLER_DS_STORE:-\$SCRIPT_DIR/assets/installer\.DS_Store\}"' "$script" >/dev/null; then
+    printf 'build-installer must default to the repository installer .DS_Store and allow an environment override.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'stage_installer_ds_store "\$dmg_source"' "$script" >/dev/null; then
+    printf 'build-installer must stage the fixed installer .DS_Store in create-dmg source folders.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'cp "\$INSTALLER_DS_STORE" "\$target_dir/\.DS_Store"' "$script" >/dev/null; then
+    printf 'build-installer must copy the fixed installer .DS_Store to the DMG root.\n' >&2
+    exit 1
+fi
+
+if ! rg -n -- '--add-file "\.DS_Store" "\$INSTALLER_DS_STORE" 0 0' "$script" >/dev/null; then
+    printf 'build-installer must pass the fixed installer .DS_Store through create-dmg --add-file so create-dmg does not delete it from the source folder.\n' >&2
+    exit 1
+fi
+
+if [ ! -f "Scripts/assets/installer.DS_Store" ]; then
+    printf 'repository must include Scripts/assets/installer.DS_Store for deterministic DMG layout.\n' >&2
+    exit 1
+fi
+
 if rg -n 'ln -s /Applications "\$dmg_source/Applications"' "$script" >/dev/null; then
     printf 'build-installer must let create-dmg --app-drop-link create the Applications link instead of pre-staging it.\n' >&2
     exit 1
@@ -64,6 +89,11 @@ if ! rg -n -- '--skip-jenkins' "$script" >/dev/null; then
     exit 1
 fi
 
+if rg -n 'if \[ "\$\{CI:-false\}" = true \]; then' "$script" >/dev/null; then
+    printf 'build-installer must not limit --skip-jenkins to CI; local and CI builds must use the fixed .DS_Store path.\n' >&2
+    exit 1
+fi
+
 if ! rg -n 'create_dmg_with_layout "\$dmg_title" "\$dmg_path" "\$dmg_source"' "$script" >/dev/null; then
     printf 'build-installer must call create-dmg through the layout helper with output .dmg path and staged source folder.\n' >&2
     exit 1
@@ -76,6 +106,21 @@ fi
 
 if ! rg -n 'compatible_create_dmg_available' "$script" >/dev/null; then
     printf 'build-installer must verify the installed create-dmg command supports the Homebrew/create-dmg CLI before using layout arguments.\n' >&2
+    exit 1
+fi
+
+if ! rg -n -- '--generate-ds-store' "$script" >/dev/null; then
+    printf 'build-installer must expose an explicit --generate-ds-store maintainer mode.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'generate_installer_ds_store\(\)' "$script" >/dev/null; then
+    printf 'build-installer must implement a fixed .DS_Store regeneration helper.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'cp "\$mounted_ds_store" "\$INSTALLER_DS_STORE"' "$script" >/dev/null; then
+    printf 'build-installer regeneration must copy the mounted DMG .DS_Store into the repository asset.\n' >&2
     exit 1
 fi
 

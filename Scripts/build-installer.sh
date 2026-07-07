@@ -12,6 +12,7 @@ PROJECT="Petrichor.xcodeproj"
 NOTARY_PROFILE="Petrichor"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER_BACKGROUND="${PETRICHOR_INSTALLER_BACKGROUND:-$SCRIPT_DIR/assets/install.svg}"
+INSTALLER_DS_STORE="${PETRICHOR_INSTALLER_DS_STORE:-$SCRIPT_DIR/assets/installer.DS_Store}"
 CXX_EXPERIMENTAL_FLAGS='$(inherited) -D_LIBCPP_ENABLE_EXPERIMENTAL'
 DMG_WINDOW_WIDTH=660
 DMG_WINDOW_HEIGHT=400
@@ -37,6 +38,16 @@ error() { echo -e "❌ $1" >&2; }
 warning() { echo -e "⚠️  $1"; }
 info() { echo -e "ℹ️  $1"; }
 
+stage_installer_ds_store() {
+    local target_dir="$1"
+
+    if [ -f "$INSTALLER_DS_STORE" ]; then
+        cp "$INSTALLER_DS_STORE" "$target_dir/.DS_Store"
+    else
+        warning "Installer .DS_Store not found at $INSTALLER_DS_STORE"
+    fi
+}
+
 prepare_dmg_source() {
     local app_source="$1"
     local dmg_source="$2"
@@ -50,6 +61,8 @@ prepare_dmg_source() {
     else
         warning "Installer background not found at $INSTALLER_BACKGROUND"
     fi
+
+    stage_installer_ds_store "$dmg_source"
 }
 
 create_dmg_with_layout() {
@@ -73,11 +86,66 @@ create_dmg_with_layout() {
         args+=(--background "$dmg_source/.background/install.svg")
     fi
 
-    if [ "${CI:-false}" = true ]; then
+    if [ "${CREATE_DMG_ALLOW_APPLESCRIPT:-false}" != true ] && [ -f "$INSTALLER_DS_STORE" ]; then
+        args+=(--add-file ".DS_Store" "$INSTALLER_DS_STORE" 0 0)
+    fi
+
+    if [ "${CREATE_DMG_ALLOW_APPLESCRIPT:-false}" != true ]; then
         args+=(--skip-jenkins)
     fi
 
     "$create_dmg_bin" "${args[@]}" "$dmg_path" "$dmg_source"
+}
+
+generate_installer_ds_store() {
+    local app_source="$1"
+    local suffix="$2"
+    local dmg_source="$BUILD_DIR/dmg-source-$suffix-ds-store"
+    local dmg_path="$BUILD_DIR/${APP_NAME}-${suffix}-ds-store-layout.dmg"
+    local mount_dir=""
+    local mounted_ds_store=""
+
+    if ! compatible_create_dmg_available; then
+        error "Cannot generate installer .DS_Store because compatible create-dmg is not installed"
+        return 1
+    fi
+
+    if [ ! -d "$app_source" ]; then
+        error "Cannot generate installer .DS_Store because $app_source does not exist"
+        return 1
+    fi
+
+    rm -f "$dmg_path"
+    prepare_dmg_source "$app_source" "$dmg_source"
+    rm -f "$dmg_source/.DS_Store"
+
+    CREATE_DMG_ALLOW_APPLESCRIPT=true create_dmg_with_layout "$APP_NAME Layout" "$dmg_path" "$dmg_source" || {
+        rm -rf "$dmg_source"
+        error "create-dmg failed while generating installer .DS_Store"
+        return 1
+    }
+    rm -rf "$dmg_source"
+
+    mount_dir="$(mktemp -d "${TMPDIR:-/tmp}/petrichor-ds-store.XXXXXX")"
+    diskutil image attach --mountPoint "$mount_dir" --nobrowse "$dmg_path" >/dev/null || {
+        rm -rf "$mount_dir"
+        error "Failed to mount generated layout DMG"
+        return 1
+    }
+
+    mounted_ds_store="$mount_dir/.DS_Store"
+    if [ ! -f "$mounted_ds_store" ]; then
+        diskutil eject "$mount_dir" >/dev/null 2>&1 || true
+        rm -rf "$mount_dir"
+        error "Generated layout DMG did not contain .DS_Store"
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$INSTALLER_DS_STORE")"
+    cp "$mounted_ds_store" "$INSTALLER_DS_STORE"
+    diskutil eject "$mount_dir" >/dev/null
+    rm -rf "$mount_dir" "$dmg_path"
+    log "Installer .DS_Store regenerated at $INSTALLER_DS_STORE"
 }
 
 compatible_create_dmg_available() {
@@ -417,16 +485,17 @@ EOF
         rm -rf "$dmg_source"
     else
         # Fallback to diskutil
-        DMG_DIR="$BUILD_DIR/dmg-$suffix"
-        mkdir -p "$DMG_DIR"
-        cp -R "$export_path/$APP_NAME.app" "$DMG_DIR/"
-        ln -s /Applications "$DMG_DIR/Applications"
+        local dmg_dir="$BUILD_DIR/dmg-$suffix"
+        mkdir -p "$dmg_dir"
+        cp -R "$export_path/$APP_NAME.app" "$dmg_dir/"
+        ln -s /Applications "$dmg_dir/Applications"
+        stage_installer_ds_store "$dmg_dir"
         rm -f "$dmg_path"
         diskutil image create from \
             --volumeName "$APP_NAME $VERSION" \
             --format UDZO \
-            "$DMG_DIR" "$dmg_path"
-        rm -rf "$DMG_DIR"
+            "$dmg_dir" "$dmg_path"
+        rm -rf "$dmg_dir"
     fi
 
     [ -f "$dmg_path" ] || { error "DMG creation failed!"; return 1; }
@@ -485,6 +554,13 @@ create_local_installer() {
     mkdir -p "$export_path"
     ditto "$built_app" "$export_path/$APP_NAME.app"
 
+    if [ "$GENERATE_DS_STORE" = true ]; then
+        local generate_status=0
+        generate_installer_ds_store "$export_path/$APP_NAME.app" "$suffix" || generate_status=$?
+        rm -rf "$derived_data" "$export_path" "$error_log"
+        return $generate_status
+    fi
+
     info "Creating unsigned local DMG for $display_name..."
     if compatible_create_dmg_available; then
         local dmg_title="$APP_NAME $VERSION Local"
@@ -502,6 +578,7 @@ create_local_installer() {
         mkdir -p "$dmg_dir"
         cp -R "$export_path/$APP_NAME.app" "$dmg_dir/"
         ln -s /Applications "$dmg_dir/Applications"
+        stage_installer_ds_store "$dmg_dir"
         rm -f "$dmg_path"
         diskutil image create from \
             --volumeName "$APP_NAME $VERSION Local" \
@@ -532,6 +609,7 @@ print_usage() {
     echo "  --separate          Build separate Intel and Apple Silicon installers"
     echo "  --local             Build unsigned local DMG without signing or notarization"
     echo "                      Defaults to this Mac's architecture unless an arch option is set"
+    echo "  --generate-ds-store Regenerate Scripts/assets/installer.DS_Store from a local layout DMG"
     echo "  --bypass-notary     Skip notarization (still signs with Developer ID)"
     echo "  --help              Show this help message"
 }
@@ -601,6 +679,7 @@ BUILD_ARM=false
 BYPASS_NOTARY=false
 LOCAL_PACKAGE=false
 ARCH_OPTION_SET=false
+GENERATE_DS_STORE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -611,6 +690,7 @@ while [[ $# -gt 0 ]]; do
         --arm-only) BUILD_ARM=true; BUILD_UNIVERSAL=false; BUILD_INTEL=false; ARCH_OPTION_SET=true; shift ;;
         --separate) BUILD_UNIVERSAL=false; BUILD_INTEL=true; BUILD_ARM=true; ARCH_OPTION_SET=true; shift ;;
         --local) LOCAL_PACKAGE=true; BYPASS_NOTARY=true; shift ;;
+        --generate-ds-store) GENERATE_DS_STORE=true; LOCAL_PACKAGE=true; BYPASS_NOTARY=true; shift ;;
         --bypass-notary) BYPASS_NOTARY=true; shift ;;
         --help) print_usage; exit 0 ;;
         *) error "Unknown option: $1"; exit 1 ;;

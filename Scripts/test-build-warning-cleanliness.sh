@@ -77,6 +77,11 @@ if ! rg -n -- '--no-internet-enable' "$build_script" >/dev/null; then
     exit 1
 fi
 
+if ! rg -n 'stage_installer_ds_store "\$dmg_dir"' "$build_script" >/dev/null; then
+    printf 'build-installer fallback DMG creation must stage the fixed installer .DS_Store.\n' >&2
+    exit 1
+fi
+
 if rg -n -- '-destination "platform=macOS"' "$build_script" >/dev/null; then
     printf 'build-installer local builds must use a unique macOS destination to avoid xcodebuild multiple destination warnings.\n' >&2
     exit 1

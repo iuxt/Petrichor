@@ -151,12 +151,8 @@ struct ContentView: View {
         .onChange(of: rightSidebarContent) { _, newValue in
             mainWindowPanelState = MainWindowPanelState(content: newValue)
         }
-        .onChange(of: libraryManager.globalSearchText) { _, newValue in
-            if !newValue.isEmpty && selectedTab != .library {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    selectedTab = .library
-                }
-            }
+        .onChange(of: libraryManager.globalSearchText) { oldValue, newValue in
+            handleGlobalSearchChange(oldValue: oldValue, newValue: newValue)
         }
         .onChange(of: showFoldersTab) { _, newValue in
             if !newValue && selectedTab == .folders {
@@ -416,6 +412,25 @@ struct ContentView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
+    }
+
+    private func handleGlobalSearchChange(oldValue: String, newValue: String) {
+        if oldValue.isEmpty && !newValue.isEmpty {
+            selectAllLibrarySearchResults()
+        }
+
+        if !newValue.isEmpty && selectedTab != .library {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                selectedTab = .library
+            }
+        }
+    }
+
+    private func selectAllLibrarySearchResults() {
+        let totalCount = libraryManager.searchResults.count
+        libraryFilterItem = LibraryFilterItem.allItem(for: libraryFilterType, totalCount: totalCount)
+        librarySelectedSidebarItem = LibrarySidebarItem(allItemFor: libraryFilterType, count: totalCount)
+        libraryCachedTracks = libraryManager.searchResults
     }
 
     // MARK: - Helper Methods
