@@ -50,13 +50,8 @@ run_update_checks() {
 }
 
 run_migration_checks() {
-    if ! rg -n 'v15_remove_track_favorites' Managers/Database/DatabaseMigration.swift >/dev/null; then
-        printf 'Migration v15_remove_track_favorites is missing.\n' >&2
-        exit 1
-    fi
-
-    if rg -n 'is_favorite|idx_tracks_is_favorite' Managers/Database/DMSetup.swift >/dev/null; then
-        printf 'Fresh database setup still creates favorite schema.\n' >&2
+    if rg -n 'is_favorite|idx_tracks_is_favorite' Managers/Database/DatabaseMigration.swift Managers/Database/DMSetup.swift >/dev/null; then
+        printf 'Favorite schema or migration remnants remain.\n' >&2
         exit 1
     fi
 

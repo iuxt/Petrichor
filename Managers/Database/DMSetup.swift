@@ -25,6 +25,7 @@ extension DatabaseManager {
         try createPinnedItemsTable(in: db)
         try createArtistAliasesTable(in: db)
         try createAlbumAliasesTable(in: db)
+        try createBackgroundMigrationsTable(in: db)
         // Create all indices
         try createIndices(in: db)
         
@@ -313,6 +314,20 @@ extension DatabaseManager {
         Logger.info("Created `album_aliases` table")
     }
 
+    // MARK: - Background Migrations Table
+    // Tracks resumable one-shot background data migrations (artist rebuild, album-artist
+    // backfill, etc.). Distinct from GRDB's `_grdb_migrations` — this is an application
+    // table consulted at launch by `runPendingBackgroundMigrations`.
+    static func createBackgroundMigrationsTable(in db: Database) throws {
+        try db.createTableIfNotExists("background_migrations") { t in
+            t.column("identifier", .text).primaryKey()
+            t.column("completed_at", .datetime)
+            t.column("progress", .text)
+            t.column("resumable", .boolean).defaults(to: true)
+        }
+        Logger.info("Created `background_migrations` table")
+    }
+
     // MARK: - FTS5 Search Table
     static func createFTSTable(in db: Database) throws {
         // Create FTS5 virtual table for tracks
@@ -423,9 +438,7 @@ extension DatabaseManager {
         try db.createIndexIfNotExists(name: "idx_tracks_rating", table: "tracks", columns: ["rating"])
         try db.createIndexIfNotExists(name: "idx_tracks_compilation", table: "tracks", columns: ["compilation"])
         try db.createIndexIfNotExists(name: "idx_tracks_media_type", table: "tracks", columns: ["media_type"])
-
-        // TODO: Uncomment in next minor release to add filename index for playlist import performance
-        // try db.createIndexIfNotExists(name: "idx_tracks_filename", table: "tracks", columns: ["filename"])
+        try db.createIndexIfNotExists(name: "idx_tracks_filename", table: "tracks", columns: ["filename"])
 
         // Duplicate tracking indices
         try db.createIndexIfNotExists(name: "idx_tracks_primary_track_id", table: "tracks", columns: ["primary_track_id"])
