@@ -55,6 +55,7 @@ struct SettingsView: View {
                     style: tabbedButtonStyle,
                     animation: .transform
                 )
+                .id(localizationSettings.appLanguage.rawValue)
                 .focusable(false)
             }
             .padding(10)

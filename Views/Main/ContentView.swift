@@ -352,6 +352,7 @@ struct ContentView: View {
                 animation: .transform,
                 isDisabled: libraryManager.folders.isEmpty
             )
+            .id(localizationSettings.appLanguage.rawValue)
         }
 
         // Do not remove this spacer, it allows
@@ -386,6 +387,7 @@ struct ContentView: View {
                 animation: .transform,
                 isDisabled: libraryManager.folders.isEmpty
             )
+            .id(localizationSettings.appLanguage.rawValue)
         }
 
         ToolbarItem(placement: .confirmationAction) {
