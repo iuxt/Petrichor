@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// Controls how a row's play action affects the playback queue.
+enum QueuePlayBehavior {
+    /// Replace the whole queue with the current list and play (default).
+    case replace
+    /// Append the tapped track to the existing queue and play, leaving the rest
+    /// of the queue intact. If the track is already queued, jump to it instead.
+    case append
+}
+
 struct TrackTableView: View {
     let tracks: [Track]
     let playlistID: UUID?
@@ -11,6 +20,7 @@ struct TrackTableView: View {
     let contextMenuItems: ([Track], PlaybackManager) -> [ContextMenuItem]
     @Binding var sortOrder: [KeyPathComparator<Track>]
     @Binding var tableRowSize: TableRowSize
+    var queuePlayBehavior: QueuePlayBehavior = .replace
     
     @EnvironmentObject var playbackManager: PlaybackManager
     @EnvironmentObject var playlistManager: PlaylistManager
@@ -317,8 +327,13 @@ struct TrackTableView: View {
     }
     
     private func handlePlayTrack(_ track: Track) {
+        if queuePlayBehavior == .append {
+            playlistManager.playTrackByAppendingToQueue(track)
+            return
+        }
+
         playlistManager.playTrack(track, fromTracks: sortedTracks)
-        
+
         if let playlistID = playlistID,
            let playlist = playlistManager.playlists.first(where: { $0.id == playlistID }) {
             playlistManager.currentPlaylist = playlist

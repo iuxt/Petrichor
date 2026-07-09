@@ -71,6 +71,25 @@ extension PlaylistManager {
         }
     }
 
+    /// 追加单曲到现有播放队列并立即播放：若曲目已在队列中，则直接跳到它
+    /// 播放，不重复添加。保留 `currentPlaylist` / `currentQueueSource`，原队列
+    /// 剩余曲目继续按既有顺序播放。用于「搜索结果中点播不打断当前队列」。
+    func playTrackByAppendingToQueue(_ track: Track) {
+        if let existingIndex = currentQueue.firstIndex(where: { isSameTrack($0, track) }) {
+            currentQueueIndex = existingIndex
+        } else if currentQueue.isEmpty {
+            currentQueue = [track]
+            currentQueueIndex = 0
+        } else {
+            currentQueue.append(track)
+            currentQueueIndex = currentQueue.count - 1
+        }
+
+        audioPlayer?.playTrack(track)
+        audioPlayer?.updateNowPlayingInfo()
+        Logger.info("Played track by appending to existing queue: \(track.url)")
+    }
+
     func removeFromQueue(at index: Int) {
         guard index >= 0 && index < currentQueue.count else { return }
 

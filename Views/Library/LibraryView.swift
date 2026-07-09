@@ -139,7 +139,8 @@ struct LibraryView: View {
                             playlistManager: playlistManager,
                             currentContext: .library
                         )
-                    }
+                    },
+                    queuePlayBehavior: libraryManager.globalSearchText.isEmpty ? .replace : .append
                 )
             }
         }
