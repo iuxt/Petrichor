@@ -61,20 +61,24 @@ enum TrackContextMenu {
         }
         
         var items: [ContextMenuItem] = []
-        
+
         items.append(contentsOf: createBulkPlaybackItems(
             for: tracks,
             playlistManager: playlistManager
         ))
-        
+
         items.append(.divider)
-        
+
+        items.append(createBulkMoveToTrashItem(for: tracks))
+
+        items.append(.divider)
+
         items.append(contentsOf: createBulkPlaylistItems(
             for: tracks,
             playlistManager: playlistManager,
             currentContext: currentContext
         ))
-        
+
         return items
     }
     
@@ -204,6 +208,27 @@ enum TrackContextMenu {
         alert.messageText = String(appLocalized: "Move '\(track.title)' to Trash?")
         alert.informativeText = String(appLocalized: """
         The audio file will be moved to the Trash. Orphaned lyrics and cover artwork sidecar files may also be moved to the Trash.
+        """)
+        alert.addButton(withTitle: String(appLocalized: "Move to Trash"))
+        alert.addButton(withTitle: String(appLocalized: "Cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private static func createBulkMoveToTrashItem(for tracks: [Track]) -> ContextMenuItem {
+        .button(title: String(appLocalized: "Move to Trash..."), icon: Icons.trash, role: .destructive) {
+            guard confirmBulkMoveToTrash(tracks) else { return }
+            Task {
+                await TrackTrashManager.moveTracksToTrash(tracks)
+            }
+        }
+    }
+
+    private static func confirmBulkMoveToTrash(_ tracks: [Track]) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(appLocalized: "Move \(tracks.count) items to Trash?")
+        alert.informativeText = String(appLocalized: """
+        The audio files will be moved to the Trash. Orphaned lyrics and cover artwork sidecar files may also be moved to the Trash.
         """)
         alert.addButton(withTitle: String(appLocalized: "Move to Trash"))
         alert.addButton(withTitle: String(appLocalized: "Cancel"))

@@ -8156,6 +8156,125 @@
           }
         }
       }
+    },
+    "Move %lld items to Trash?": {
+      "comment": "Confirmation dialog title before moving multiple track files to Trash.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move %lld items to Trash?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将 %lld 个项目移到废纸篓？"
+          }
+        }
+      }
+    },
+    "The audio files will be moved to the Trash. Orphaned lyrics and cover artwork sidecar files may also be moved to the Trash.": {
+      "comment": "Bulk trash confirmation dialog informative text.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The audio files will be moved to the Trash. Orphaned lyrics and cover artwork sidecar files may also be moved to the Trash."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频文件将被移到废纸篓。孤立的歌词和封面图 sidecar 文件可能也会被移到废纸篓。"
+          }
+        }
+      }
+    },
+    "Failed to move %lld items to Trash": {
+      "comment": "Bulk trash notification when all selected tracks failed to move.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to move %lld items to Trash"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法将 %lld 个项目移到废纸篓"
+          }
+        }
+      }
+    },
+    "Moved %lld of %lld items to Trash; %lld could not be moved": {
+      "comment": "Bulk trash notification when only some tracks were moved.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved %lld of %lld items to Trash; %lld could not be moved"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将 %lld / %lld 个项目移到废纸篓；%lld 个无法移动"
+          }
+        }
+      }
+    },
+    "Moved %lld items to Trash, but some related files could not be moved": {
+      "comment": "Bulk trash notification when all audio files moved but some sidecars failed.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved %lld items to Trash, but some related files could not be moved"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将 %lld 个项目移到废纸篓，但部分相关文件未能移动"
+          }
+        }
+      }
+    },
+    "Moved %lld items to Trash": {
+      "comment": "Bulk trash notification when all selected tracks were moved successfully.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved %lld items to Trash"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将 %lld 个项目移到废纸篓"
+          }
+        }
+      }
+    },
+    "The files no longer exist": {
+      "comment": "Bulk trash notification when all selected audio files are missing.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The files no longer exist"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件已不存在"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
