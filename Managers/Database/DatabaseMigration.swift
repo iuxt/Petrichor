@@ -38,6 +38,21 @@ enum DatabaseMigrator {
         // MARK: - Future Migrations
         // Add new migrations here as: migrator.registerMigration("v2_description") { db in ... }
 
+        // Repairs databases that predate `shasum_hash` on `folders`. The column was
+        // originally added by a legacy v2 migration that was squashed into v1 baseline,
+        // but `createFoldersTable` did not declare it, so existing installs (and fresh
+        // installs created by the squashed code) lack it while the `Folder` model writes
+        // it unconditionally — see `LMFolders.addFolder` INSERT failures.
+        migrator.registerMigration("v17_add_folders_shasum_hash") { db in
+            let columnExists = try db.columns(in: "folders").contains { $0.name == "shasum_hash" }
+            if !columnExists {
+                try db.alter(table: "folders") { t in
+                    t.add(column: "shasum_hash", .text)
+                }
+                Logger.info("Added shasum_hash column to folders table")
+            }
+        }
+
         return migrator
     }
 

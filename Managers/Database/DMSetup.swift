@@ -49,6 +49,9 @@ extension DatabaseManager {
             t.column("date_added", .datetime).notNull()
             t.column("date_updated", .datetime).notNull()
             t.column("bookmark_data", .blob)
+            // Content hash used to skip rescans when a folder hasn't changed. Nullable so
+            // existing rows (and folders that haven't been hashed yet) remain valid.
+            t.column("shasum_hash", .text)
         }
         Logger.info("Created `folders` table")
     }
