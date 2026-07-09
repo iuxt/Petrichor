@@ -130,9 +130,18 @@ struct HomeSidebarView: View {
         // O(1) playlist lookups instead of a linear scan per pinned item.
         let playlistsById = Dictionary(playlistManager.playlists.map { ($0.id, $0) }) { first, _ in first }
         let pinnedSidebarItems = libraryManager.pinnedItems.map { pinnedItem in
-            let cachedCount = pinnedItemTrackCounts[pinnedItem.id ?? 0] ?? 0
             let playlist = pinnedItem.playlistId.flatMap { playlistsById[$0] }
-            return HomeSidebarItem(pinnedItem: pinnedItem, trackCount: cachedCount, playlist: playlist)
+            // Pinned playlists read their count from the in-memory Playlist (same
+            // source as PlaylistDetailView). Regular M3U-backed playlists never
+            // persist to the playlist_tracks table, so the DB count path would
+            // otherwise report 0 for them.
+            let count: Int
+            if pinnedItem.itemType == .playlist {
+                count = playlist?.trackCount ?? 0
+            } else {
+                count = pinnedItemTrackCounts[pinnedItem.id ?? 0] ?? 0
+            }
+            return HomeSidebarItem(pinnedItem: pinnedItem, trackCount: count, playlist: playlist)
         }
         items.append(contentsOf: pinnedSidebarItems)
         
@@ -153,11 +162,14 @@ struct HomeSidebarView: View {
     }
     
     private func updatePinnedItemTrackCounts() async {
-        // Don't update if we have no pinned items
-        guard !libraryManager.pinnedItems.isEmpty else { return }
-        
+        // Pinned playlist counts are read synchronously from playlistManager.playlists
+        // in updateAllItems (kept current via pinnedPlaylistCountSignature), so only
+        // library/folder items need the async batch query here.
+        let nonPlaylistItems = libraryManager.pinnedItems.filter { $0.itemType != .playlist }
+        guard !nonPlaylistItems.isEmpty else { return }
+
         // Create a single batch query for all library pinned items
-        let pinnedItemCounts = await libraryManager.getTrackCountForPinnedItems(libraryManager.pinnedItems)
+        let pinnedItemCounts = await libraryManager.getTrackCountForPinnedItems(nonPlaylistItems)
         
         // Update the UI on main thread
         await MainActor.run {
