@@ -93,7 +93,7 @@ struct HomeSidebarItem: SidebarItem {
     
     // Init for pinned items
     init(pinnedItem: PinnedItem, trackCount: Int = 0, playlist: Playlist? = nil) {
-        self.id = UUID(uuidString: "pinned-\(pinnedItem.id ?? 0)") ?? UUID()
+        self.id = HomeSidebarItem.stablePinnedID(for: pinnedItem.id ?? 0)
         self.type = nil
         self.source = .pinned(pinnedItem)
         self.title = playlist.map(DefaultPlaylists.displayName) ?? pinnedItem.displayName
@@ -110,6 +110,15 @@ struct HomeSidebarItem: SidebarItem {
         case .folder:
             return Icons.folderFill
         }
+    }
+
+    // Pinned-item stable IDs live in a separate namespace from HomeItemType.stableID
+    // (high 32 bits = 00000001 vs all-zeros), carrying the row id in the low 64 bits.
+    // Deterministic across rebuilds so SidebarView's id-based selection stays put when
+    // updateAllItems reconstructs items.
+    private static func stablePinnedID(for id: Int64) -> UUID {
+        let hex = String(format: "%016llx", UInt64(bitPattern: id))
+        return UUID(uuidString: "00000001-0000-0000-\(hex.prefix(4))-\(hex.suffix(12))") ?? UUID()
     }
 }
 
