@@ -77,17 +77,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Force a database checkpoint to ensure all data is persisted
             coordinator.libraryManager.databaseManager.checkpoint()
         }
-
-        // Capture snapshot after state save + checkpoint so counts reflect the
-        // final persisted state.
-        let semaphore = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
-            DiagnosticSnapshot.write(phase: "Termination")
-            semaphore.signal()
-        }
-        if semaphore.wait(timeout: .now() + 2.0) == .timedOut {
-            Logger.warning("Termination diagnostic snapshot timed out")
-        }
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -108,11 +97,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #else
         Logger.setMinimumLogLevel(.warning)
         #endif
-
-        // Capture snapshot after state restore and app launch is complete
-        DispatchQueue.global(qos: .utility).async {
-            DiagnosticSnapshot.write(phase: "Launch")
-        }
 
         NSWindow.allowsAutomaticWindowTabbing = false
         

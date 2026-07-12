@@ -160,16 +160,6 @@ final class Logger {
         shared.log(level: .critical, message: message, file: file, line: line, function: function)
     }
 
-    /// Writes a diagnostic snapshot as a single multi-line entry: one
-    /// timestamped header line followed by `body` appended verbatim.
-    /// Bypasses the configured minimum log level and writes synchronously on
-    /// the log queue so the call cannot race with app termination.
-    /// `performLogRotation` preserves continuation lines alongside their
-    /// header, so the block survives rotation intact.
-    static func diagnostic(header: String, body: String? = nil) {
-        shared.writeDiagnosticEntry(header: header, body: body)
-    }
-
     // MARK: - Configuration
     
     static func setMinimumLogLevel(_ level: LogLevel) {
@@ -262,36 +252,6 @@ final class Logger {
         if enableFileLogging {
             logQueue.async { [weak self] in
                 self?.fileManager.write(entry)
-            }
-        }
-    }
-    
-    private func writeDiagnosticEntry(header: String, body: String?) {
-        let entry = LogEntry(
-            timestamp: Date(),
-            level: .info,
-            message: header,
-            file: "Diagnostic",
-            line: 0,
-            function: "snapshot"
-        )
-
-        var output = entry.formattedMessage + "\n"
-        if let body = body, !body.isEmpty {
-            output += body
-            if !body.hasSuffix("\n") { output += "\n" }
-        }
-
-        if enableConsoleLogging {
-            let consoleOutput = body.map { "\(entry.consoleMessage)\n\($0)" } ?? entry.consoleMessage
-            os_log("%{public}@", log: osLog, type: .info, consoleOutput)
-        }
-
-        if enableFileLogging {
-            // Sync dispatch so the write is flushed before the caller continues —
-            // important for the termination snapshot.
-            logQueue.sync {
-                fileManager.writeRaw(output)
             }
         }
     }
