@@ -174,7 +174,7 @@ struct TrackDetailView: View {
     private func artworkSection(for fullTrack: FullTrack) -> some View {
         ZStack {
             AsyncArtworkImage(
-                request: ArtworkRequest.album(albumId: fullTrack.albumId, representativeTrackURL: fullTrack.url),
+                request: ArtworkRequest.album(albumId: fullTrack.albumId, representativeTrackURL: fullTrack.url, albumTitle: fullTrack.album),
                 onDataLoaded: { data in
                     resolvedArtworkData = data
                     updateGradientColors()

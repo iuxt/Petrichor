@@ -8,8 +8,13 @@ enum ExternalArtworkResolver {
         AlbumArtFormat.supportedExtensions
     )
 
-    static func artworkURL(forAudioURL audioURL: URL, candidates: [URL]) -> URL? {
+    static func artworkURL(
+        forAudioURL audioURL: URL,
+        candidates: [URL],
+        albumTitle: String? = nil
+    ) -> URL? {
         sameStemArtworkURL(forAudioURL: audioURL, candidates: candidates)
+            ?? albumNamedArtworkURL(forAudioURL: audioURL, albumTitle: albumTitle, candidates: candidates)
             ?? genericArtworkURL(forAudioURL: audioURL, candidates: candidates)
     }
 
@@ -18,6 +23,19 @@ enum ExternalArtworkResolver {
         let sameNameCandidates = supportedCandidates(forAudioURL: audioURL, candidates: candidates)
             .filter { normalizedStem($0) == audioStem }
         return preferredArtworkURL(from: sameNameCandidates)
+    }
+
+    static func albumNamedArtworkURL(
+        forAudioURL audioURL: URL,
+        albumTitle: String?,
+        candidates: [URL]
+    ) -> URL? {
+        let normalizedTitle = normalizedToken(albumTitle ?? "")
+        guard !normalizedTitle.isEmpty else { return nil }
+
+        let albumNamedCandidates = supportedCandidates(forAudioURL: audioURL, candidates: candidates)
+            .filter { normalizedStem($0) == normalizedTitle }
+        return preferredArtworkURL(from: albumNamedCandidates)
     }
 
     static func genericArtworkURL(forAudioURL audioURL: URL, candidates: [URL]) -> URL? {
@@ -61,7 +79,13 @@ enum ExternalArtworkResolver {
     }
 
     private static func normalizedStem(_ url: URL) -> String {
-        url.deletingPathExtension().lastPathComponent.lowercased()
+        normalizedToken(url.deletingPathExtension().lastPathComponent)
+    }
+
+    private static func normalizedToken(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: .caseInsensitive, locale: .current)
+            .precomposedStringWithCanonicalMapping
     }
 
     private static func uniqueLowercaseValues(_ values: [String]) -> [String] {

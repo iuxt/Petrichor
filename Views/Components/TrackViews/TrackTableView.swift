@@ -501,7 +501,7 @@ private final class TrackArtworkCache: @unchecked Sendable {
             return cached
         }
 
-        let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url)
+        let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url, albumTitle: track.album)
         guard let data = await ArtworkResolver.shared.artworkData(for: request) else {
             return nil
         }

@@ -39,13 +39,14 @@ struct ArtworkRequest: Hashable, Sendable {
     let kind: ArtworkKind
     let identity: String
     let audioURL: URL
+    let albumTitle: String?
 
     static func track(_ url: URL) -> ArtworkRequest {
-        ArtworkRequest(kind: .track, identity: url.standardizedFileURL.path, audioURL: url)
+        ArtworkRequest(kind: .track, identity: url.standardizedFileURL.path, audioURL: url, albumTitle: nil)
     }
 
-    static func album(albumId: Int64?, representativeTrackURL: URL) -> ArtworkRequest {
+    static func album(albumId: Int64?, representativeTrackURL: URL, albumTitle: String? = nil) -> ArtworkRequest {
         let albumIdentity = albumId.map { "album:\($0)" } ?? "album:\(representativeTrackURL.standardizedFileURL.path)"
-        return ArtworkRequest(kind: .album, identity: albumIdentity, audioURL: representativeTrackURL)
+        return ArtworkRequest(kind: .album, identity: albumIdentity, audioURL: representativeTrackURL, albumTitle: albumTitle)
     }
 }

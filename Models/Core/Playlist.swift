@@ -389,7 +389,7 @@ struct Playlist: Identifiable, FetchableRecord, PersistableRecord {
     }
 
     private func collageArtworkItem(for track: Track) async -> PlaylistCollageArtworkItem? {
-        let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url)
+        let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url, albumTitle: track.album)
         guard let data = await ArtworkResolver.shared.artworkData(for: request) else { return nil }
         return PlaylistCollageArtworkItem(trackId: track.trackId, albumId: track.albumId, data: data)
     }

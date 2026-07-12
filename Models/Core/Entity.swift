@@ -115,7 +115,7 @@ struct AlbumEntity: Entity {
 
     var artworkRequest: ArtworkRequest? {
         representativeTrackURL.map {
-            ArtworkRequest.album(albumId: albumId, representativeTrackURL: $0)
+            ArtworkRequest.album(albumId: albumId, representativeTrackURL: $0, albumTitle: name)
         }
     }
 

@@ -345,7 +345,7 @@ extension DatabaseManager {
             t.column("genre")
             t.column("year")
             
-            t.tokenizer = .unicode61()
+            t.tokenizer = FTS5TokenizerDescriptor(components: ["trigram"])
         }
         
         // Create triggers to keep FTS index in sync

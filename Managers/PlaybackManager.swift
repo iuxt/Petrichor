@@ -480,7 +480,7 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         artworkLoadTask?.cancel()
         artworkLoadTask = Task { [weak self, track, identity] in
-            let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url)
+            let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url, albumTitle: track.album)
             let data = await ArtworkResolver.shared.artworkData(for: request)
 
             await MainActor.run { [weak self] in

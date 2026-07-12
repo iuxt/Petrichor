@@ -53,6 +53,29 @@ enum DatabaseMigrator {
             }
         }
 
+        // Switches the FTS5 index from the default unicode61 tokenizer to trigram.
+        // unicode61 does not segment CJK runs, so "编号89757" is indexed as a single
+        // token and substring queries like "89757" or "简单" can never match. trigram
+        // indexes all 3-character substrings, so any ≥3-char query matches anywhere
+        // in any indexed column. Queries with tokens shorter than 3 characters fall
+        // back to LIKE in `DMSearchQueries`.
+        migrator.registerMigration("v18_fts_trigram_tokenizer") { db in
+            let tableSQL = try String.fetchOne(
+                db,
+                sql: "SELECT sql FROM sqlite_master WHERE type='table' AND name='tracks_fts'"
+            ) ?? ""
+
+            guard !tableSQL.contains("trigram") else { return }
+
+            try db.execute(sql: "DROP TRIGGER IF EXISTS tracks_fts_insert")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS tracks_fts_update")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS tracks_fts_delete")
+            try db.drop(table: "tracks_fts")
+
+            try DatabaseManager.createFTSTable(in: db)
+            Logger.info("Rebuilt tracks_fts with trigram tokenizer")
+        }
+
         return migrator
     }
 

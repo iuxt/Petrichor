@@ -31,6 +31,16 @@ final class ArtworkResolver {
             return sameStem
         }
 
+        if let albumTitle = request.albumTitle,
+           let albumNamedURL = ExternalArtworkResolver.albumNamedArtworkURL(
+               forAudioURL: request.audioURL,
+               albumTitle: albumTitle,
+               candidates: candidates
+           ),
+           let albumNamed = cachedOrFileArtwork(for: request, fileURL: albumNamedURL) {
+            return albumNamed
+        }
+
         if let genericURL = ExternalArtworkResolver.genericArtworkURL(forAudioURL: request.audioURL, candidates: candidates),
            let generic = cachedOrFileArtwork(for: request, fileURL: genericURL) {
             return generic
