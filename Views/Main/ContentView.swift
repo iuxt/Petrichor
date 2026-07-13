@@ -37,6 +37,27 @@ private enum MainWindowPanelState: String {
 
 private let mainWindowPanelStateKey = "mainWindowPanelState"
 
+private struct ImmersiveToolbarTransition: ViewModifier {
+    let isHidden: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: isHidden ? -64 : 0)
+            .opacity(isHidden ? 0 : 1)
+            .allowsHitTesting(!isHidden)
+            .animation(
+                .easeInOut(duration: AnimationDuration.immersiveTransition),
+                value: isHidden
+            )
+    }
+}
+
+private extension View {
+    func immersiveToolbarTransition(isHidden: Bool) -> some View {
+        modifier(ImmersiveToolbarTransition(isHidden: isHidden))
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject var playbackManager: PlaybackManager
     @EnvironmentObject var libraryManager: LibraryManager
@@ -58,6 +79,7 @@ struct ContentView: View {
     private var mainWindowPanelState: MainWindowPanelState = .none
     @State private var rightSidebarContent: RightSidebarContent = .none
     @State private var isImmersiveActive = false
+    @State private var isImmersiveToolbarContentHidden = false
     // Toolbar state captured before immersive hides it, so closing restores it.
     @State private var immersiveToolbarWasVisible = true
     @State private var pendingLibraryFilter: LibraryFilterRequest?
@@ -127,10 +149,8 @@ struct ContentView: View {
             }
         }
         .onChange(of: isImmersiveActive) { _, active in
-            // Restore the toolbar at the start of the close, while immersive still
-            // covers the window, so its reflow stays off-screen.
             if !active {
-                WindowManager.shared.mainWindow?.toolbar?.isVisible = immersiveToolbarWasVisible
+                restoreToolbarForImmersiveClose()
             }
         }
         .onAppear(perform: handleOnAppear)
@@ -215,16 +235,28 @@ struct ContentView: View {
         }
     }
 
-    /// Opens immersive mode, hiding the toolbar only once the cover animation finishes
-    /// so its reflow stays hidden behind immersive (hiding earlier reveals a jump).
+    /// Opens immersive mode, animating toolbar content out before the native
+    /// toolbar is collapsed so the main content does not visibly reflow.
     private func openImmersive() {
         immersiveToolbarWasVisible = WindowManager.shared.mainWindow?.toolbar?.isVisible ?? true
         withAnimation(.easeInOut(duration: AnimationDuration.immersiveTransition)) {
+            isImmersiveToolbarContentHidden = true
             isImmersiveActive = true
         } completion: {
             // Guard against a quick re-close before the open animation completes.
             if isImmersiveActive {
                 WindowManager.shared.mainWindow?.toolbar?.isVisible = false
+            }
+        }
+    }
+
+    /// Restores the native toolbar first, then gives its SwiftUI content one frame
+    /// in the hidden position before animating it back down.
+    private func restoreToolbarForImmersiveClose() {
+        WindowManager.shared.mainWindow?.toolbar?.isVisible = immersiveToolbarWasVisible
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: AnimationDuration.immersiveTransition)) {
+                isImmersiveToolbarContentHidden = false
             }
         }
     }
@@ -353,6 +385,7 @@ struct ContentView: View {
                 isDisabled: libraryManager.folders.isEmpty
             )
             .id(localizationSettings.appLanguage.rawValue)
+            .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
 
         // Do not remove this spacer, it allows
@@ -374,6 +407,7 @@ struct ContentView: View {
                 .frame(width: 280)
                 .disabled(!libraryManager.shouldShowMainUI)
             }
+            .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
     }
 
@@ -388,11 +422,13 @@ struct ContentView: View {
                 isDisabled: libraryManager.folders.isEmpty
             )
             .id(localizationSettings.appLanguage.rawValue)
+            .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
 
         ToolbarItem(placement: .confirmationAction) {
             NotificationTray()
                 .frame(width: 34, height: 30)
+                .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
         .adaptiveSharedBackgroundHidden()
 
@@ -405,6 +441,7 @@ struct ContentView: View {
             )
             .frame(width: 280)
             .disabled(!libraryManager.shouldShowMainUI)
+            .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
     }
     
