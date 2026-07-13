@@ -146,7 +146,6 @@ struct TrackLyricsContent: View {
                             .multilineTextAlignment(.center)
                             .lineSpacing(6)
                             .id(index)   // For scrollTo
-                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentLineIndex)
                     }
                 }
                 .padding(20)
@@ -234,9 +233,7 @@ struct TrackLyricsContent: View {
         } ?? -1
 
         if newIndex != currentLineIndex {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                currentLineIndex = newIndex
-            }
+            currentLineIndex = newIndex
         }
     }
 }
