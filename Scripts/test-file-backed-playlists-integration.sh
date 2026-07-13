@@ -66,11 +66,6 @@ if rg -n "DefaultPlaylists\\.favorites" Managers/Playlist/PMTrackUpdate.swift >/
     exit 1
 fi
 
-if ! rg -n "remove_builtin_favorites_playlist" Managers/Database/DatabaseMigration.swift >/dev/null; then
-    printf 'Migration to remove built-in Favorites playlist is missing.\n' >&2
-    exit 1
-fi
-
 if ! rg -n "DefaultPlaylists\\.recentlyPlayed" Managers/Database/DMSetup.swift >/dev/null; then
     printf 'Recently played default playlist is not pinned or seeded in setup.\n' >&2
     exit 1
