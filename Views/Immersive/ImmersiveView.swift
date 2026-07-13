@@ -31,7 +31,7 @@ private struct ImmersiveLayout {
     var titleSpacing: CGFloat { 6 * scale }
     var columnSpacing: CGFloat { 20 * scale }
     var controlsSpacing: CGFloat { 16 * scale }
-    var controlsScale: CGFloat { min(scale, 2.0) }
+    var controlsScale: CGFloat { min(scale * 1.3, 2.6) }
     var lyricsFontSize: CGFloat { 20 * scale }
     var cornerRadius: CGFloat { 12 * scale }
     var headerHorizontalPadding: CGFloat { 16 * scale }
