@@ -1,73 +1,74 @@
-[English](README_EN.md)
+ [中文](README.md)
  
-## 概览
+## Summary
  
-### ✨ 功能特性
+### ✨ Features
  
-- 你期望的离线音乐播放器该有的，这里都有！
-- 支持丰富的音频文件格式：
-  - MP3、AAC/M4A、WAV、AIFF、AIF、ALAC
-  - Ogg Vorbis、Speex、Opus 以及 FLAC
-  - APE（Monkey's Audio）
-  - MPC（Musepack）
-  - TTA（True Audio）
-  - WV（WavPack）
-  - DSF/DFF（Direct Stream Digital）
-  - ……还有 MOD、IT、S3M、XM 和 AU
-- 映射你的音乐文件夹，以结构化视图浏览资料库。
-- 在有可用歌词时显示当前播放曲目的本地歌词。
-- 创建、导入或导出播放列表。
-- 通过拖拽交互式地管理播放队列。
-- 需要时可用文件夹视图浏览音乐。
-- 把几乎任何内容固定到侧边栏，快速访问你喜欢的音乐。
-- 导航方便：右键点击曲目可直接跳转到对应的专辑、艺人、年份等。
-- 原生 macOS 集成，支持菜单栏和程序坞播放控制，并支持深色模式。
-- 能够很好地处理包含数千首歌曲的大型资料库。
+- Everything you'd expect from an offline music player!
+- Supports wide variety of audio file formats;
+  - MP3, AAC/M4A, WAV, AIFF, AIF, ALAC
+  - Ogg Vorbis, Speex, Opus, and FLAC
+  - APE (Monkey's Audio)
+  - MPC (Musepack)
+  - TTA (True Audio)
+  - WV (WavPack)
+  - DSF/DFF (Direct Stream Digital)
+  - ... MOD, IT, S3M, XM, and AU
+- Map your music folders and browse your library in an organized view.
+- Show local lyrics of a playing track when available.
+- Create, import or export playlists.
+- Manage the play queue interactively using drag and drop
+- Browse music using folder view when needed.
+- Pin _anything_ (almost!) to the sidebar for quick access to your favorite music.
+- Navigate easily: right-click a track to go to its album, artist, year, etc.
+- Native macOS integration with menubar and dock playback controls, plus dark mode support.
+- Works well with large libraries containing thousands of songs.
  
-💡 **提示**：Petrichor 的所有功能都非常依赖曲目拥有良好的元数据。
+💡 **Tip**: Petrichor relies heavily on tracks having good metadata for all its features to work well.
  
-###  系统要求
+###  Requirements
  
-- macOS 14 或更高版本
+- macOS 14 or later
  
-### ⚠️ 首次运行
+### ⚠️ First Run
  
-如果你从 App Store 以外的渠道下载了发行版，且 macOS 以"来自身份不明的开发者"的提示阻止运行，
-可以移除隔离属性：
+If you downloaded a release build outside the App Store and macOS blocks it with an
+"unidentified developer" warning, remove the quarantine attribute:
  
 ```bash
 sudo xattr -r -d com.apple.quarantine /Applications/Petrichor.app
 ```
  
-### 🔒 隐私与数据访问
+### 🔒 Privacy & Data Access
  
-- Petrichor 运行在沙盒中，并经 Apple 公证。
-- 它使用以下 macOS 权限：
-  - **读写访问**
-    - 用于读写用户选择的文件和文件夹，
-      写入权限仅用于导出 M3U 播放列表文件。
-- 它不会（也永远不会）收集任何关于你使用方式的分析数据。
-- 它绝不会以任何方式修改你的音频文件或文件夹结构。
-- 你的资料库数据始终保持在本地离线状态。
+- Petrichor is sandboxed and notarized by Apple.
+- It uses the following macOS permission:
+  - **Read-write access**
+    - To read and write into user-selected files and folders,
+      write access is used for exporting M3U playlist files.
+- It doesn't (and never will) have any analytics on how you use the app.
+- It never changes your audio files or folder structure in any way.
+- Your library data remains offline always.
  
-## 🏗️ 开发
+## 🏗️ Development
  
-### 动机
+### Motivation
  
-我多年来收藏了大量音乐文件，却一直怀念 macOS 上有一款好用的离线音乐播放器。我试过几款免费和付费的方案，
-但都缺少流媒体应用里常见的那种简洁与功能，于是我开发了 Petrichor 来满足这个需求，同时也顺便学习
-Swift 和 macOS 应用开发！
+I have a large collection of music files that I’ve gathered over the years, and I missed having a good offline
+music player on macOS. I've used several free and paid options but I missed the simplicity and features commonly
+found in streaming apps; so I built Petrichor to scratch that itch and learn Swift and macOS app development
+along the way!
  
-### 实现概览
+### Implementation Overview
  
-- 使用 Swift 和 SwiftUI 构建，部分采用 AppKit 以获得最佳的 macOS 集成。
-- 添加包含音乐文件的文件夹后，应用会扫描这些文件夹、提取所需元数据，并填充到 SQLite 数据库中。
-- 应用**不会**修改你的音乐文件，仅读取你添加的目录。
-- 曲目搜索由 [SQLite FTS5](https://www.sqlite.org/fts5.html) 处理。
-- 播放由 [AVFoundation](https://developer.apple.com/av-foundation/) 和第三方音频解码器处理。
+- Built with Swift and SwiftUI with some parts in AppKit for the best macOS integration.
+- Once folders containing music files are added, the app scans them, extracts required metadata, and populates the SQLite database.
+- The app does **not** alter your music files, it only reads from the directories you add.
+- Tracks searching is handled by [SQLite FTS5](https://www.sqlite.org/fts5.html).
+- Playback is handled by [AVFoundation](https://developer.apple.com/av-foundation/) and third-party audio decoders.
  
 <details>
-<summary>查看数据库 Schema</summary>
+<summary>View Database Schema</summary>
  
 ```mermaid
 erDiagram
@@ -270,41 +271,42 @@ erDiagram
  
 </details>
  
-### 鸣谢
+### Credits
  
-Petrichor 的诞生离不开以下开源项目！
+Petrichor wouldn't be possible without following open source projects!
  
 - [SFBAudioEngine](https://github.com/sbooth/SFBAudioEngine)
 - [GRDB.swift](https://github.com/groue/GRDB.swift/)
  
-### 开发环境
+### Development Setup
  
-- 确保你运行的是 macOS 14 或更高版本。
-- 安装 [Xcode](https://developer.apple.com/xcode/)。
-- 克隆仓库并打开 `Petrichor.xcodeproj`。
+- Make sure you’re running macOS 14 or later.
+- Install [Xcode](https://developer.apple.com/xcode/).
+- Clone the repository and open `Petrichor.xcodeproj`
  
-#### 构建与发布
+#### Build & Release
  
-你可以无需 Apple 签名凭证，构建一个未签名的本地 `.dmg` 安装包：
+You can build an unsigned local `.dmg` installer without Apple signing credentials:
  
 ```bash
 Scripts/build-installer.sh --local
 ```
  
-默认情况下，本地构建面向当前 Mac 的架构。如需指定安装包架构，可添加 `--universal`、`--arm-only` 或 `--intel-only`。
+By default, local builds target the current Mac's architecture. Add `--universal`, `--arm-only`, or `--intel-only`
+if you need a specific installer architecture.
  
-对于发布构建，你可以使用 [`build-installer.sh`](Scripts/build-installer.sh) 脚本进行签名和公证。
-发布公证需要付费的 Apple 开发者账号；若只想签名而不公证，可使用 `--bypass-notary`。使用该脚本前，
-请确保除 Xcode 外还安装了以下工具：
+For release builds, you can use the [`build-installer.sh`](Scripts/build-installer.sh) script with signing and
+notarization. Release notarization requires a paid Apple Developer account; use `--bypass-notary` if you want
+to sign without notarizing. To use the script, make sure you have following tools installed along with Xcode;
  
 - [xcpretty](https://github.com/xcpretty/xcpretty)
 - [create-dmg](https://github.com/create-dmg/create-dmg)
  
-推送 tag 时，GitHub Actions 也会自动发布一个未签名的发行版。tag 名称会传递给
-`Scripts/build-installer.sh --version`，用作打包的应用版本号。此 CI 发布流程不需要
-Apple 签名证书或仓库密钥。
+GitHub Actions also publishes an unsigned release automatically when a tag is pushed. The tag name is passed to
+`Scripts/build-installer.sh --version` and is used as the packaged app version. This CI release path does not
+require Apple signing certificates or repository secrets.
  
-发布一个发行版：
+To publish a release:
  
 ```bash
 git tag 1.2.3
