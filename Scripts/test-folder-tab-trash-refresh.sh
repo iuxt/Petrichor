@@ -46,4 +46,14 @@ if ! rg -F '@State private var hierarchyLoadGeneration = 0' "$folders_sidebar" >
     exit 1
 fi
 
+if ! rg -F 'isLoadingHierarchy = folderNodes.isEmpty' "$folders_sidebar" >/dev/null; then
+    printf 'Folder hierarchy refresh must keep an existing tree visible while loading.\n' >&2
+    exit 1
+fi
+
+if rg -n '^[[:space:]]*isLoadingHierarchy = true$' "$folders_sidebar" >/dev/null; then
+    printf 'Folder hierarchy refresh must not unconditionally replace the tree with loading UI.\n' >&2
+    exit 1
+fi
+
 printf 'Folder tab Trash refresh checks passed\n'

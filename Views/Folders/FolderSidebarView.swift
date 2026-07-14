@@ -96,7 +96,7 @@ struct FoldersSidebarView: View {
     private func loadFolderHierarchy() async {
         let refreshState = await MainActor.run {
             hierarchyLoadGeneration += 1
-            isLoadingHierarchy = true
+            isLoadingHierarchy = folderNodes.isEmpty
             return (
                 generation: hierarchyLoadGeneration,
                 selectedPath: selectedNode?.url.standardizedFileURL.path,
