@@ -5,6 +5,7 @@ struct FoldersSidebarView: View {
     @Binding var selectedNode: FolderNode?
     @State private var folderNodes: [FolderNode] = []
     @State private var isLoadingHierarchy = false
+    @State private var hierarchyLoadGeneration = 0
 
     private let hierarchyBuilder = FolderHierarchyBuilder()
 
@@ -93,16 +94,18 @@ struct FoldersSidebarView: View {
     // MARK: - Helper Methods
 
     private func loadFolderHierarchy() async {
-        let selectedPath = await MainActor.run {
-            selectedNode?.url.standardizedFileURL.path
-        }
-        let expandedPaths = await MainActor.run {
-            expandedNodePaths(in: folderNodes)
-        }
-
-        await MainActor.run {
+        let refreshState = await MainActor.run {
+            hierarchyLoadGeneration += 1
             isLoadingHierarchy = true
+            return (
+                generation: hierarchyLoadGeneration,
+                selectedPath: selectedNode?.url.standardizedFileURL.path,
+                expandedPaths: expandedNodePaths(in: folderNodes)
+            )
         }
+        let generation = refreshState.generation
+        let selectedPath = refreshState.selectedPath
+        let expandedPaths = refreshState.expandedPaths
 
         let trackCounts = libraryManager.getTrackCountsByFolderPath()
         let nodes = await hierarchyBuilder.buildHierarchy(
@@ -111,6 +114,8 @@ struct FoldersSidebarView: View {
         )
 
         await MainActor.run {
+            guard generation == hierarchyLoadGeneration else { return }
+
             restoreExpansion(in: nodes, expandedPaths: expandedPaths)
             folderNodes = nodes
             isLoadingHierarchy = false

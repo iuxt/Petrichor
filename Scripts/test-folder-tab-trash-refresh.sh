@@ -39,4 +39,11 @@ if ! rg -F 'selectedNode?.url.standardizedFileURL.path' "$folders_sidebar" >/dev
     exit 1
 fi
 
+if ! rg -F '@State private var hierarchyLoadGeneration = 0' "$folders_sidebar" >/dev/null ||
+   ! rg -F 'hierarchyLoadGeneration += 1' "$folders_sidebar" >/dev/null ||
+   ! rg -F 'guard generation == hierarchyLoadGeneration else { return }' "$folders_sidebar" >/dev/null; then
+    printf 'Folder hierarchy refresh must ignore stale asynchronous rebuilds.\n' >&2
+    exit 1
+fi
+
 printf 'Folder tab Trash refresh checks passed\n'
