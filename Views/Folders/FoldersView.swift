@@ -20,6 +20,9 @@ struct FoldersView: View {
                 .onChange(of: selectedFolderNode) { _, newNode in
                     handleFolderNodeSelection(newNode)
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
+                    handleFolderNodeSelection(selectedFolderNode)
+                }
         }
     }
 
