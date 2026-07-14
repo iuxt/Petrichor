@@ -50,10 +50,7 @@ class FolderHierarchyBuilder {
                     // Recursively build its subtree
                     await buildSubtree(for: childNode, tracksByFolder: tracksByFolder)
 
-                    // Only add folders that contain tracks (directly or in subfolders)
-                    if childNode.immediateTrackCount > 0 || !childNode.children.isEmpty {
-                        subfolders.append(childNode)
-                    }
+                    subfolders.append(childNode)
                 } else {
                     // Check if it's a supported audio file
                     let fileExtension = itemURL.pathExtension.lowercased()

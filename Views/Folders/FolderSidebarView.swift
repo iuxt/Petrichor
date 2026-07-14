@@ -46,6 +46,11 @@ struct FoldersSidebarView: View {
                 await loadFolderHierarchy()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
+            Task {
+                await loadFolderHierarchy()
+            }
+        }
     }
 
     // MARK: - Header
@@ -88,25 +93,64 @@ struct FoldersSidebarView: View {
     // MARK: - Helper Methods
 
     private func loadFolderHierarchy() async {
+        let selectedPath = await MainActor.run {
+            selectedNode?.url.standardizedFileURL.path
+        }
+        let expandedPaths = await MainActor.run {
+            expandedNodePaths(in: folderNodes)
+        }
+
         await MainActor.run {
             isLoadingHierarchy = true
         }
 
         let trackCounts = libraryManager.getTrackCountsByFolderPath()
-
         let nodes = await hierarchyBuilder.buildHierarchy(
             for: libraryManager.folders,
             trackCountsByFolder: trackCounts
         )
 
         await MainActor.run {
-            self.folderNodes = nodes
+            restoreExpansion(in: nodes, expandedPaths: expandedPaths)
+            folderNodes = nodes
             isLoadingHierarchy = false
 
-            // Select first node if none selected
-            if selectedNode == nil, let firstNode = nodes.first {
-                selectedNode = firstNode
+            if let selectedPath,
+               let restoredNode = findNode(atPath: selectedPath, in: nodes) {
+                selectedNode = restoredNode
+            } else {
+                selectedNode = nodes.first
             }
+        }
+    }
+
+    private func expandedNodePaths(in nodes: [FolderNode]) -> Set<String> {
+        var paths: Set<String> = []
+        for node in nodes {
+            if node.isExpanded {
+                paths.insert(node.url.standardizedFileURL.path)
+            }
+            paths.formUnion(expandedNodePaths(in: node.children))
+        }
+        return paths
+    }
+
+    private func findNode(atPath path: String, in nodes: [FolderNode]) -> FolderNode? {
+        for node in nodes {
+            if node.url.standardizedFileURL.path == path {
+                return node
+            }
+            if let match = findNode(atPath: path, in: node.children) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    private func restoreExpansion(in nodes: [FolderNode], expandedPaths: Set<String>) {
+        for node in nodes {
+            node.isExpanded = expandedPaths.contains(node.url.standardizedFileURL.path)
+            restoreExpansion(in: node.children, expandedPaths: expandedPaths)
         }
     }
 }
@@ -132,17 +176,13 @@ private struct FolderNodeRow: View {
         return node.isExpanded ? Icons.folderFillBadgeMinus : Icons.folderFillBadgePlus
     }
 
-    private var subtitle: String? {
+    private var subtitle: String {
         let folderCount = node.immediateFolderCount
         let trackCount = node.displayTrackCount
-        if folderCount > 0 && trackCount > 0 {
+        if folderCount > 0 {
             return String(appLocalized: "\(folderCount) folders, \(trackCount) tracks")
-        } else if folderCount > 0 {
-            return String(appLocalized: "\(folderCount) folders")
-        } else if trackCount > 0 {
-            return String(appLocalized: "\(trackCount) tracks")
         }
-        return nil
+        return String(appLocalized: "\(trackCount) tracks")
     }
 
     var body: some View {
@@ -189,12 +229,10 @@ private struct FolderNodeRow: View {
                             .truncationMode(.tail)
                             .help(node.name)
 
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.system(size: 11))
-                                .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
-                                .lineLimit(1)
-                        }
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                            .lineLimit(1)
                     }
 
                     Spacer()
