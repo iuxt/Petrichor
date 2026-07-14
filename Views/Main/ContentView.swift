@@ -253,12 +253,15 @@ struct ContentView: View {
     /// Restores the native toolbar first, then gives its SwiftUI content one frame
     /// in the hidden position before animating it back down.
     private func restoreToolbarForImmersiveClose() {
-        WindowManager.shared.mainWindow?.toolbar?.isVisible = immersiveToolbarWasVisible
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: AnimationDuration.immersiveTransition)) {
-                isImmersiveToolbarContentHidden = false
-            }
-        }
+       WindowManager.shared.mainWindow?.toolbar?.isVisible = immersiveToolbarWasVisible
+       DispatchQueue.main.async {
+           // Skip if immersive was reopened before this deferred restore runs;
+           // otherwise we'd flip content back to visible mid-open.
+           guard !isImmersiveActive else { return }
+           withAnimation(.easeInOut(duration: AnimationDuration.immersiveTransition)) {
+               isImmersiveToolbarContentHidden = false
+           }
+       }
     }
 
     // MARK: - View Components
