@@ -105,3 +105,201 @@ swiftc \
     -o "$TMP_DIR/DesktopLyricsLineSelectionTests"
 
 "$TMP_DIR/DesktopLyricsLineSelectionTests"
+
+cat > "$TMP_DIR/DesktopLyricsProviderIntegration.swift" <<'SWIFT'
+import Combine
+import Foundation
+
+struct Track {
+    let id: UUID
+}
+
+final class PlaybackProgressState {
+    var currentTime: TimeInterval
+
+    init(currentTime: TimeInterval) {
+        self.currentTime = currentTime
+    }
+}
+
+@MainActor
+final class PlaybackManager {
+    var currentTrack: Track?
+    let playbackProgressState: PlaybackProgressState
+    var isPlaying: Bool
+    private(set) var fineSamplingConsumers = 0
+
+    init(currentTrack: Track?, currentTime: TimeInterval, isPlaying: Bool) {
+        self.currentTrack = currentTrack
+        playbackProgressState = PlaybackProgressState(currentTime: currentTime)
+        self.isPlaying = isPlaying
+    }
+
+    func setFineProgressSampling(_ enabled: Bool) {
+        fineSamplingConsumers += enabled ? 1 : -1
+    }
+}
+
+struct StubDatabaseQueue {}
+
+final class StubDatabaseManager {
+    let dbQueue = StubDatabaseQueue()
+}
+
+final class LibraryManager {
+    let databaseManager = StubDatabaseManager()
+}
+
+@MainActor
+final class LyricsStore {
+    static let shared = LyricsStore()
+
+    struct Lyrics {
+        let trackId: UUID
+        let lines: [LyricLine]
+        let hasTimed: Bool
+        let isKaraoke: Bool
+    }
+
+    var cached: Lyrics?
+
+    func cachedLyrics(for trackId: UUID) -> Lyrics? {
+        guard cached?.trackId == trackId else { return nil }
+        return cached
+    }
+
+    func lyrics(
+        for track: Track,
+        using dbQueue: StubDatabaseQueue
+    ) async throws -> Lyrics {
+        guard let cached, cached.trackId == track.id else {
+            fatalError("Missing provider integration fixture")
+        }
+        return cached
+    }
+}
+
+@main
+struct DesktopLyricsProviderIntegrationTests {
+    @MainActor
+    static func main() async {
+        let first = LyricLine(
+            text: "first",
+            startTime: 0.05,
+            endTime: 0.15,
+            timingSegments: [
+                LyricTimingSegment(text: "first", startOffset: 0, duration: 0.10),
+            ]
+        )
+        let second = LyricLine(
+            text: "second",
+            startTime: 0.15,
+            endTime: 0.35,
+            timingSegments: [
+                LyricTimingSegment(text: "second", startOffset: 0, duration: 0.20),
+            ]
+        )
+        let track = Track(id: UUID())
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: track.id,
+            lines: [first, second],
+            hasTimed: true,
+            isKaraoke: true
+        )
+
+        let playbackManager = PlaybackManager(currentTrack: track, currentTime: 0, isPlaying: true)
+        let libraryManager = LibraryManager()
+        let provider = DesktopLyricsLineProvider(
+            playbackManager: playbackManager,
+            libraryManager: libraryManager
+        )
+        var publishedPairs: [(LyricLine, TimeInterval)] = []
+        let stateObservation = provider.$state.sink { [weak provider] state in
+            guard case .lyrics(let display) = state, let provider else { return }
+            publishedPairs.append((display.current, provider.rendererSampleTime))
+        }
+
+        provider.appear()
+        assertCurrent(provider, equals: first, message: "Load initialization must select the first KSC line")
+        assertClose(provider.rendererSampleTime, 0,
+                    "Load initialization must publish the renderer's sample")
+
+        try? await Task.sleep(nanoseconds: 220_000_000)
+        assertCurrent(provider, equals: second,
+                      message: "The local 0.15s boundary must select the second short KSC line")
+        assertClose(provider.rendererSampleTime, 0.15,
+                    "The local boundary must advance selection and renderer sample together")
+        guard let secondPublication = publishedPairs.last(where: { $0.0 == second }) else {
+            preconditionFailure("The second KSC line was never published")
+        }
+        assertClose(secondPublication.1, 0.15,
+                    "Renderer sample must update before the selected-line publication")
+
+        provider.playbackTimeChanged(0.08)
+        assertCurrent(provider, equals: first, message: "A global sample/seek must immediately reselect")
+        assertClose(provider.rendererSampleTime, 0.08,
+                    "A global sample/seek must immediately replace the renderer sample")
+
+        playbackManager.isPlaying = false
+        provider.playbackStateChanged(isPlaying: false)
+        let pausedTime = provider.rendererSampleTime
+        precondition(pausedTime >= 0.08 && pausedTime < 0.15,
+                     "Pause must publish the interpolated transition time, got \(pausedTime)")
+        assertCurrent(provider, equals: first,
+                      message: "Pause transition time and selected line must stay synchronized")
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        assertClose(provider.rendererSampleTime, pausedTime,
+                    "Paused desktop renderer sample must remain frozen")
+
+        playbackManager.isPlaying = true
+        provider.playbackStateChanged(isPlaying: true)
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        assertCurrent(provider, equals: second,
+                      message: "Resume must schedule the next short KSC boundary")
+        assertClose(provider.rendererSampleTime, 0.15,
+                    "Resume boundary must advance the renderer sample with selection")
+
+        provider.disappear()
+        withExtendedLifetime(stateObservation) {}
+        precondition(playbackManager.fineSamplingConsumers == 0,
+                     "Provider lifecycle must release fine progress sampling")
+        print("Desktop lyrics provider boundary/sample integration tests passed")
+    }
+
+    @MainActor
+    private static func assertCurrent(
+        _ provider: DesktopLyricsLineProvider,
+        equals expected: LyricLine,
+        message: String
+    ) {
+        guard case .lyrics(let display) = provider.state, display.current == expected else {
+            preconditionFailure("\(message): got \(provider.state)")
+        }
+    }
+
+    private static func assertClose(_ actual: Double, _ expected: Double, _ message: String) {
+        precondition(abs(actual - expected) < 0.005,
+                     "\(message): expected \(expected), got \(actual)")
+    }
+}
+SWIFT
+
+xcrun swiftc \
+    "$ROOT_DIR/Models/Core/Lyrics.swift" \
+    "$ROOT_DIR/Core/DesktopLyricsLineSelection.swift" \
+    "$ROOT_DIR/Core/KaraokeTiming.swift" \
+    "$ROOT_DIR/Views/DesktopLyrics/DesktopLyricsLineProvider.swift" \
+    "$TMP_DIR/DesktopLyricsProviderIntegration.swift" \
+    -o "$TMP_DIR/DesktopLyricsProviderIntegrationTests"
+
+"$TMP_DIR/DesktopLyricsProviderIntegrationTests"
+
+desktop_view="$ROOT_DIR/Views/DesktopLyrics/DesktopLyricsView.swift"
+rg -n 'sampleTime: provider\.rendererSampleTime' "$desktop_view" >/dev/null || {
+    printf 'Desktop KaraokeLyricText must consume the provider scheduler sample.\n' >&2
+    exit 1
+}
+if rg -n '@State private var sampledPlaybackTime' "$desktop_view" >/dev/null; then
+    printf 'DesktopLyricsView must not keep a second global-only renderer sample.\n' >&2
+    exit 1
+fi

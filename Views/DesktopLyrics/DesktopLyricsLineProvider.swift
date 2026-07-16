@@ -12,6 +12,7 @@ final class DesktopLyricsLineProvider: ObservableObject {
     }
 
     @Published private(set) var state: DisplayState = .idle
+    @Published private(set) var rendererSampleTime: TimeInterval = 0
 
     private weak var playbackManager: PlaybackManager?
     private weak var libraryManager: LibraryManager?
@@ -160,6 +161,9 @@ final class DesktopLyricsLineProvider: ObservableObject {
     }
 
     private func updateTimedDisplay(at time: TimeInterval) {
+        if isKaraokeLyrics {
+            rendererSampleTime = time
+        }
         if let lines = DesktopLyricsLineSelection.syncedDisplayLines(lines: lyricLines, at: time) {
             state = .lyrics(lines)
         } else {

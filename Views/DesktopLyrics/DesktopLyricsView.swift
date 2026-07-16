@@ -19,7 +19,6 @@ struct DesktopLyricsView: View {
     @State private var window: NSWindow?
     @State private var dragStartOrigin: CGPoint?
     @State private var dragStartMouse: CGPoint?
-    @State private var sampledPlaybackTime: TimeInterval = 0
 
     init(provider: DesktopLyricsLineProvider) {
         _provider = StateObject(wrappedValue: provider)
@@ -36,7 +35,6 @@ struct DesktopLyricsView: View {
                 DesktopLyricsWindowManager.shared.applyCurrentSettings()
             }
             .onAppear {
-                sampledPlaybackTime = playbackProgressState.currentTime
                 provider.appear()
             }
             .onDisappear {
@@ -52,7 +50,6 @@ struct DesktopLyricsView: View {
                 provider.playbackStateChanged(isPlaying: isPlaying)
             }
             .onReceive(playbackProgressState.$currentTime) { currentTime in
-                sampledPlaybackTime = currentTime
                 provider.playbackTimeChanged(currentTime)
             }
     }
@@ -89,7 +86,7 @@ struct DesktopLyricsView: View {
         if line.timingSegments?.isEmpty == false {
             KaraokeLyricText(
                 line: line,
-                sampleTime: sampledPlaybackTime,
+                sampleTime: provider.rendererSampleTime,
                 isPlaying: playbackManager.isPlaying,
                 fontName: desktopLyricsFontName == DesktopLyricsSettings.systemFontName ? nil : desktopLyricsFontName,
                 fontSize: CGFloat(desktopLyricsFontSize),
