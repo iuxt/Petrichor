@@ -16,6 +16,16 @@ rg -n 'fineProgressSampling \? \.milliseconds\(500\) : \.seconds\(1\)' \
     exit 1
 }
 
+TRACK_VIEW="$ROOT_DIR/Views/Main/TrackLyricsView.swift"
+rg -n 'KaraokeLyricText\(' "$TRACK_VIEW" >/dev/null || {
+    printf 'TrackLyricsContent must render timed KSC lines with KaraokeLyricText.\n' >&2
+    exit 1
+}
+rg -n 'sampledPlaybackTime = newTime' "$TRACK_VIEW" >/dev/null || {
+    printf 'TrackLyricsContent must anchor the renderer from published playback samples.\n' >&2
+    exit 1
+}
+
 xcrun swiftc -typecheck \
     "$ROOT_DIR/Models/Core/Lyrics.swift" \
     "$ROOT_DIR/Core/KaraokeTiming.swift" \

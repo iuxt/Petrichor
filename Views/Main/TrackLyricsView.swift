@@ -52,6 +52,7 @@ struct TrackLyricsContent: View {
     @State private var fetchFailed = false
     @State private var currentLineIndex: Int = -1
     @State private var hasTimedLyrics: Bool = false
+    @State private var sampledPlaybackTime: TimeInterval = 0
 
     private var currentTrack: Track? {
         playbackManager.currentTrack
@@ -81,6 +82,7 @@ struct TrackLyricsContent: View {
         }
         // Listen for playback time changes and update the current line in real time.
         .onReceive(playbackManager.playbackProgressState.$currentTime) { newTime in
+            sampledPlaybackTime = newTime
             updateCurrentLine(for: newTime)
         }
     }
@@ -137,14 +139,7 @@ struct TrackLyricsContent: View {
             ScrollView {
                 VStack(spacing: fontSize * 0.7) {
                     ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
-                        Text(line.text.isEmpty ? " " : line.text)
-                            .font(.system(size: fontSize))
-                            // Only apply highlight styles if lyrics are timed
-                            .fontWeight(hasTimedLyrics && currentLineIndex == index ? .bold : .regular)
-                            .scaleEffect(hasTimedLyrics && currentLineIndex == index ? 1.1 : 1.0)
-                            .foregroundColor(hasTimedLyrics && currentLineIndex == index ? activeColor : inactiveColor)
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(6)
+                        lyricRow(line: line, index: index)
                             .id(index)   // For scrollTo
                     }
                 }
@@ -159,6 +154,35 @@ struct TrackLyricsContent: View {
                     proxy.scrollTo(newIndex, anchor: .center)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func lyricRow(line: LyricLine, index: Int) -> some View {
+        let isCurrent = hasTimedLyrics && currentLineIndex == index
+
+        if isCurrent, line.timingSegments?.isEmpty == false {
+            KaraokeLyricText(
+                line: line,
+                sampleTime: sampledPlaybackTime,
+                isPlaying: playbackManager.isPlaying,
+                fontSize: fontSize,
+                fontWeight: .bold,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
+                lineSpacing: 6
+            )
+            .frame(maxWidth: .infinity)
+            .scaleEffect(1.1)
+            .multilineTextAlignment(.center)
+        } else {
+            Text(line.text.isEmpty ? " " : line.text)
+                .font(.system(size: fontSize))
+                .fontWeight(isCurrent ? .bold : .regular)
+                .scaleEffect(isCurrent ? 1.1 : 1.0)
+                .foregroundColor(isCurrent ? activeColor : inactiveColor)
+                .multilineTextAlignment(.center)
+                .lineSpacing(6)
         }
     }
 
@@ -180,7 +204,8 @@ struct TrackLyricsContent: View {
             hasTimedLyrics = cached.hasTimed
             isLoading = false
             fetchFailed = false
-            updateCurrentLine(for: playbackManager.playbackProgressState.currentTime)
+            sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
+            updateCurrentLine(for: sampledPlaybackTime)
             return
         }
 
@@ -205,6 +230,8 @@ struct TrackLyricsContent: View {
                     hasTimedLyrics = result.hasTimed
                     isLoading = false
                     fetchFailed = false
+                    sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
+                    updateCurrentLine(for: sampledPlaybackTime)
                 }
             } catch {
                 await MainActor.run {
