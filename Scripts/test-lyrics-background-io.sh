@@ -8,8 +8,8 @@ if ! rg -n 'Task\.detached\(priority: \.utility\)' "$source_file" >/dev/null; th
     exit 1
 fi
 
-if ! rg -n 'loadExternalLyrics' "$source_file" >/dev/null; then
-    printf 'LyricsLoader external sidecar path is missing.\n' >&2
+if ! rg -n 'LyricsSidecarLoader\.load\(forAudioURL:' "$source_file" >/dev/null; then
+    printf 'LyricsLoader external sidecar delegation is missing.\n' >&2
     exit 1
 fi
 
