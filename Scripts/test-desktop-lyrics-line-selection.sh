@@ -78,6 +78,26 @@ assertNil(
     "finite-ended timed lyrics return nil after the final line"
 )
 
+assertEqual(
+    DesktopLyricsLineSelection.syncedDisplayLines(
+        lines: finiteTimed,
+        at: 3,
+        gapBehavior: .holdPreviousLine
+    ),
+    DesktopLyricsDisplayLines(current: finiteTimed[0], next: finiteTimed[1]),
+    "KSC gaps hold the most recently started non-empty line"
+)
+
+assertEqual(
+    DesktopLyricsLineSelection.syncedDisplayLines(
+        lines: finiteTimed,
+        at: 7,
+        gapBehavior: .holdPreviousLine
+    ),
+    DesktopLyricsDisplayLines(current: finiteTimed[1], next: nil),
+    "KSC keeps the final non-empty line after its end time"
+)
+
 let plain = [
     LyricLine(text: "", startTime: 0),
     LyricLine(text: "plain one", startTime: 0),
@@ -263,6 +283,55 @@ struct DesktopLyricsProviderIntegrationTests {
         withExtendedLifetime(stateObservation) {}
         precondition(playbackManager.fineSamplingConsumers == 0,
                      "Provider lifecycle must release fine progress sampling")
+
+        let gapFirst = LyricLine(
+            text: "gap first",
+            startTime: 0,
+            endTime: 1,
+            timingSegments: [
+                LyricTimingSegment(text: "gap first", startOffset: 0, duration: 1),
+            ]
+        )
+        let gapSecond = LyricLine(
+            text: "gap second",
+            startTime: 5,
+            endTime: 6,
+            timingSegments: [
+                LyricTimingSegment(text: "gap second", startOffset: 0, duration: 1),
+            ]
+        )
+        let gapTrack = Track(id: UUID())
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: gapTrack.id,
+            lines: [gapFirst, gapSecond],
+            hasTimed: true,
+            isKaraoke: true
+        )
+        let gapPlaybackManager = PlaybackManager(
+            currentTrack: gapTrack,
+            currentTime: 3,
+            isPlaying: false
+        )
+        let gapProvider = DesktopLyricsLineProvider(
+            playbackManager: gapPlaybackManager,
+            libraryManager: libraryManager
+        )
+
+        gapProvider.appear()
+        assertCurrent(
+            gapProvider,
+            equals: gapFirst,
+            message: "A loaded KSC gap must keep the completed previous line"
+        )
+        gapProvider.playbackTimeChanged(7)
+        assertCurrent(
+            gapProvider,
+            equals: gapSecond,
+            message: "KSC must keep the final line after its end time"
+        )
+        gapProvider.disappear()
+        precondition(gapPlaybackManager.fineSamplingConsumers == 0,
+                     "Gap provider lifecycle must release fine progress sampling")
         print("Desktop lyrics provider boundary/sample integration tests passed")
     }
 

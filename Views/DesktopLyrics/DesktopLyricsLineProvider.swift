@@ -164,7 +164,14 @@ final class DesktopLyricsLineProvider: ObservableObject {
         if isKaraokeLyrics {
             rendererSampleTime = time
         }
-        if let lines = DesktopLyricsLineSelection.syncedDisplayLines(lines: lyricLines, at: time) {
+        let gapBehavior: DesktopLyricsLineSelection.GapBehavior = isKaraokeLyrics
+            ? .holdPreviousLine
+            : .empty
+        if let lines = DesktopLyricsLineSelection.syncedDisplayLines(
+            lines: lyricLines,
+            at: time,
+            gapBehavior: gapBehavior
+        ) {
             state = .lyrics(lines)
         } else {
             state = .empty

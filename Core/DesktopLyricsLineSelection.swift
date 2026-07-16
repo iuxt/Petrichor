@@ -6,7 +6,16 @@ struct DesktopLyricsDisplayLines: Equatable {
 }
 
 enum DesktopLyricsLineSelection {
-    static func syncedDisplayLines(lines: [LyricLine], at time: TimeInterval) -> DesktopLyricsDisplayLines? {
+    enum GapBehavior: Equatable {
+        case empty
+        case holdPreviousLine
+    }
+
+    static func syncedDisplayLines(
+        lines: [LyricLine],
+        at time: TimeInterval,
+        gapBehavior: GapBehavior = .empty
+    ) -> DesktopLyricsDisplayLines? {
         guard !lines.isEmpty else { return nil }
 
         let activeIndex = lines.lastIndex { line in
@@ -21,6 +30,8 @@ enum DesktopLyricsLineSelection {
             currentIndex = nonEmptyIndex(in: lines, from: activeIndex)
         } else if let firstStartTime = lines.first?.startTime, time < firstStartTime {
             currentIndex = nonEmptyIndex(in: lines, from: 0)
+        } else if gapBehavior == .holdPreviousLine {
+            currentIndex = lastStartedNonEmptyIndex(in: lines, at: time)
         } else {
             currentIndex = nil
         }
@@ -55,6 +66,15 @@ enum DesktopLyricsLineSelection {
             return index
         }
         return nil
+    }
+
+    private static func lastStartedNonEmptyIndex(
+        in lines: [LyricLine],
+        at time: TimeInterval
+    ) -> Int? {
+        lines.lastIndex { line in
+            time >= line.startTime && !trimmedText(line).isEmpty
+        }
     }
 
     private static func trimmedText(_ line: LyricLine) -> String {
