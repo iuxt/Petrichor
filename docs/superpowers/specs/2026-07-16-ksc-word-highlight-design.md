@@ -61,7 +61,7 @@ KSC 行自身的开始和结束时间是行级选择的权威边界。逐字时�
 
 只有成功解析出至少一行歌词的候选文件才会被选中。KSC 文件存在但无法解码或没有有效正文时，继续尝试 LRC、SRT 和内嵌歌词，而不是返回空结果。
 
-沿用现有编码探测顺序，包括 UTF-8、UTF-16、Shift JIS、EUC-JP、EUC-KR、GBK、Big5、ISO-2022-JP 及最后的西文单字节 fallback。KSC 常见的 GBK 文件因此无需新增依赖即可读取。
+复用现有编码集合，但针对 KSC 调整歧义编码的尝试顺序：先尝试 UTF-8 和带 BOM／具有明确零字节分布的 UTF-16，再优先尝试 GB18030、GBK，最后尝试 Shift JIS、EUC-JP、EUC-KR、Big5、ISO-2022-JP 及西文单字节 fallback。无 BOM 的 GBK 字节也可能被 UTF-16 或 Shift JIS 宽松解码，因此不能只凭“解码返回非空”把这些格式放在 GBK 前面。该策略无需新增依赖，并确保常见中文 KSC 不会显示为乱码。
 
 `LyricsSource` 增加 `.ksc`，用于保留来源信息；缓存继续存放统一的 `LyricLine` 数组。
 
