@@ -52,7 +52,9 @@ struct TrackLyricsContent: View {
     @State private var fetchFailed = false
     @State private var currentLineIndex: Int = -1
     @State private var hasTimedLyrics: Bool = false
+    @State private var isKaraokeLyrics = false
     @State private var sampledPlaybackTime: TimeInterval = 0
+    @StateObject private var boundaryScheduler = KaraokeLineBoundaryScheduler()
 
     private var currentTrack: Track? {
         playbackManager.currentTrack
@@ -75,15 +77,21 @@ struct TrackLyricsContent: View {
             playbackManager.setFineProgressSampling(true)
         }
         .onDisappear {
+            boundaryScheduler.cancel()
             playbackManager.setFineProgressSampling(false)
         }
         .onChange(of: playbackManager.currentTrack?.id) { _, _ in
+            boundaryScheduler.cancel()
             loadLyricsForCurrentTrack()
+        }
+        .onChange(of: playbackManager.isPlaying) { _, isPlaying in
+            transitionKaraokeBoundarySchedule(isPlaying: isPlaying)
         }
         // Listen for playback time changes and update the current line in real time.
         .onReceive(playbackManager.playbackProgressState.$currentTime) { newTime in
             sampledPlaybackTime = newTime
             updateCurrentLine(for: newTime)
+            resetKaraokeBoundarySchedule(at: newTime)
         }
     }
 
@@ -190,7 +198,10 @@ struct TrackLyricsContent: View {
 
     private func loadLyricsForCurrentTrack(forceReload: Bool = false) {
         guard let track = currentTrack else {
+            boundaryScheduler.cancel()
             lyricLines = []
+            hasTimedLyrics = false
+            isKaraokeLyrics = false
             isLoading = false
             fetchFailed = false
             return
@@ -202,17 +213,21 @@ struct TrackLyricsContent: View {
         if !forceReload, let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
             lyricLines = cached.lines
             hasTimedLyrics = cached.hasTimed
+            isKaraokeLyrics = cached.isKaraoke
             isLoading = false
             fetchFailed = false
             sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
             updateCurrentLine(for: sampledPlaybackTime)
+            resetKaraokeBoundarySchedule(at: sampledPlaybackTime)
             return
         }
 
+        boundaryScheduler.cancel()
         isLoading = true
         lyricLines = []
         fetchFailed = false
         hasTimedLyrics = false   // Reset until we know
+        isKaraokeLyrics = false
 
         Task {
             do {
@@ -228,16 +243,20 @@ struct TrackLyricsContent: View {
                     guard currentTrack?.id == loadedTrackId else { return }
                     lyricLines = result.lines
                     hasTimedLyrics = result.hasTimed
+                    isKaraokeLyrics = result.isKaraoke
                     isLoading = false
                     fetchFailed = false
                     sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
                     updateCurrentLine(for: sampledPlaybackTime)
+                    resetKaraokeBoundarySchedule(at: sampledPlaybackTime)
                 }
             } catch {
                 await MainActor.run {
                     guard currentTrack?.id == loadedTrackId else { return }
+                    boundaryScheduler.cancel()
                     lyricLines = []
                     hasTimedLyrics = false
+                    isKaraokeLyrics = false
                     isLoading = false
                     fetchFailed = true
                 }
@@ -262,5 +281,38 @@ struct TrackLyricsContent: View {
         if newIndex != currentLineIndex {
             currentLineIndex = newIndex
         }
+    }
+
+    private func resetKaraokeBoundarySchedule(at sampleTime: TimeInterval) {
+        guard isKaraokeLyrics else {
+            boundaryScheduler.cancel()
+            return
+        }
+        boundaryScheduler.reset(
+            sampleTime: sampleTime,
+            isPlaying: playbackManager.isPlaying,
+            lines: lyricLines,
+            isKaraoke: true
+        ) { boundaryTime in
+            sampledPlaybackTime = boundaryTime
+            updateCurrentLine(for: boundaryTime)
+        }
+    }
+
+    private func transitionKaraokeBoundarySchedule(isPlaying: Bool) {
+        guard isKaraokeLyrics else {
+            boundaryScheduler.cancel()
+            return
+        }
+        let transitionTime = boundaryScheduler.transition(
+            isPlaying: isPlaying,
+            lines: lyricLines,
+            isKaraoke: true
+        ) { boundaryTime in
+            sampledPlaybackTime = boundaryTime
+            updateCurrentLine(for: boundaryTime)
+        }
+        sampledPlaybackTime = transitionTime
+        updateCurrentLine(for: transitionTime)
     }
 }

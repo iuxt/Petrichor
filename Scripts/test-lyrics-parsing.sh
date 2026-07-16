@@ -111,6 +111,32 @@ precondition(abs(segments[1].startOffset - 0.1) < 0.001 && abs(segments[3].start
              "KSC segment offsets were not accumulated")
 precondition(abs(segments[3].duration - 0.4) < 0.001, "KSC millisecond duration was not converted to seconds")
 
+// --- KSC: only supported quote/slash escapes consume the backslash ---
+let kscEscapes = #"""
+karaoke.add('00:20.000', '00:21.000', 'A\'B', '100,100,100');
+karaoke.add('00:21.000', '00:22.000', 'A\\B', '100,100,100');
+karaoke.add('00:22.000', '00:23.000', 'A\qB', '100,100,100,100');
+"""#
+let escapedLines = LyricLine.parseKSC(from: kscEscapes)
+precondition(escapedLines.map(\.text) == ["A'B", #"A\B"#, #"A\qB"#],
+             "KSC quote, slash, and unknown escape handling must preserve the intended text")
+precondition(escapedLines.allSatisfy { $0.timingSegments != nil },
+             "Preserved KSC escape characters must still align with grapheme durations")
+
+// --- KSC: non-finite fields and overflowing computed timestamps are invalid ---
+let nonFiniteKSC = """
+karaoke.add('inf:01.000', 'inf:02.000', 'bad minute', '1000');
+karaoke.add('inf:00:01.000', 'inf:00:02.000', 'bad hour', '1000');
+karaoke.add('00:nan', '00:02.000', 'bad second', '1000');
+karaoke.add('1e308:00:01.000', '1e308:00:02.000', 'overflow', '1000');
+karaoke.add('00:24.000', '00:25.000', 'valid', '1000');
+"""
+let finiteKSC = LyricLine.parseKSC(from: nonFiniteKSC)
+precondition(finiteKSC.count == 1 && finiteKSC[0].text == "valid",
+             "KSC parsing must reject non-finite fields and computed timestamps")
+precondition(finiteKSC.allSatisfy { $0.startTime.isFinite && $0.endTime?.isFinite == true },
+             "Every accepted KSC line timestamp must be finite")
+
 // --- KSC: invalid segment metadata degrades without dropping the line ---
 let kscFallback = """
 karaoke.add('00:01.000', '00:02.000', '两个', '500');

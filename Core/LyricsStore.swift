@@ -12,6 +12,7 @@ final class LyricsStore {
         let trackId: UUID
         let lines: [LyricLine]
         let hasTimed: Bool
+        let isKaraoke: Bool
     }
 
     private var cached: Lyrics?
@@ -46,7 +47,12 @@ final class LyricsStore {
                 using: dbQueue
             )
             let hasTimed = result.lyrics.contains { $0.startTime > 0 || $0.endTime != nil }
-            return Lyrics(trackId: trackId, lines: result.lyrics, hasTimed: hasTimed)
+            return Lyrics(
+                trackId: trackId,
+                lines: result.lyrics,
+                hasTimed: hasTimed,
+                isKaraoke: result.source == .ksc
+            )
         }
         inFlight[trackId] = task
         defer { inFlight[trackId] = nil }

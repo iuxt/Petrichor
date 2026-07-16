@@ -48,6 +48,9 @@ struct DesktopLyricsView: View {
             .onChange(of: playbackManager.currentTrack?.id) {
                 provider.currentTrackChanged()
             }
+            .onChange(of: playbackManager.isPlaying) { _, isPlaying in
+                provider.playbackStateChanged(isPlaying: isPlaying)
+            }
             .onReceive(playbackProgressState.$currentTime) { currentTime in
                 sampledPlaybackTime = currentTime
                 provider.playbackTimeChanged(currentTime)

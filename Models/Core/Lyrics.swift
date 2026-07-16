@@ -45,6 +45,8 @@ extension LyricLine {
                   arguments.count >= 4,
                   let startTime = kscTime(arguments[0]),
                   let endTime = kscTime(arguments[1]),
+                  startTime.isFinite,
+                  endTime.isFinite,
                   endTime >= startTime else {
                 continue
             }
@@ -88,7 +90,12 @@ extension LyricLine {
 
         for character in body {
             if isEscaping {
-                current.append(character)
+                if character == "'" || character == "\\" {
+                    current.append(character)
+                } else {
+                    current.append("\\")
+                    current.append(character)
+                }
                 isEscaping = false
             } else if isQuoted && character == "\\" {
                 isEscaping = true
@@ -112,20 +119,23 @@ extension LyricLine {
         let fields = raw.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
         guard fields.count == 2 || fields.count == 3,
               let seconds = Double(fields.last ?? ""),
+              seconds.isFinite,
               seconds >= 0, seconds < 60 else {
             return nil
         }
 
         if fields.count == 2 {
-            guard let minutes = Double(fields[0]), minutes >= 0 else { return nil }
-            return minutes * 60 + seconds
+            guard let minutes = Double(fields[0]), minutes.isFinite, minutes >= 0 else { return nil }
+            let timestamp = minutes * 60 + seconds
+            return timestamp.isFinite ? timestamp : nil
         }
 
-        guard let hours = Double(fields[0]), hours >= 0,
-              let minutes = Double(fields[1]), minutes >= 0, minutes < 60 else {
+        guard let hours = Double(fields[0]), hours.isFinite, hours >= 0,
+              let minutes = Double(fields[1]), minutes.isFinite, minutes >= 0, minutes < 60 else {
             return nil
         }
-        return hours * 3600 + minutes * 60 + seconds
+        let timestamp = hours * 3600 + minutes * 60 + seconds
+        return timestamp.isFinite ? timestamp : nil
     }
 
     private static func kscTimingSegments(text: String, rawDurations: String) -> [LyricTimingSegment]? {

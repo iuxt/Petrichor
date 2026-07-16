@@ -45,6 +45,57 @@ assertClose(paused.time(at: instant.advanced(by: .seconds(2)), upperBound: 10), 
 let seeked = KaraokePlaybackTimeAnchor(sampleTime: 1.5, sampleInstant: instant, isPlaying: true)
 assertClose(seeked.time(at: instant.advanced(by: .milliseconds(100)), upperBound: nil), 1.6, "A new anchor must reset after seeking")
 
+let pausedTransition = playing.reanchored(
+    at: instant.advanced(by: .milliseconds(250)),
+    isPlaying: false,
+    upperBound: 10
+)
+assertClose(pausedTransition.sampleTime, 4.25, "Pausing must preserve already-interpolated playback time")
+assertClose(
+    pausedTransition.time(at: instant.advanced(by: .seconds(2)), upperBound: 10),
+    4.25,
+    "A transitioned pause anchor must remain frozen"
+)
+let resumedTransition = pausedTransition.reanchored(
+    at: instant.advanced(by: .seconds(2)),
+    isPlaying: true,
+    upperBound: 10
+)
+assertClose(
+    resumedTransition.time(at: instant.advanced(by: .milliseconds(2250)), upperBound: 10),
+    4.5,
+    "Resuming must advance from the preserved transition time"
+)
+
+let shortBoundaryLines = [
+    LyricLine(
+        text: "a",
+        startTime: 20.10,
+        endTime: 20.24,
+        timingSegments: [LyricTimingSegment(text: "a", startOffset: 0, duration: 0.14)]
+    ),
+    LyricLine(
+        text: "b",
+        startTime: 20.24,
+        endTime: 20.39,
+        timingSegments: [LyricTimingSegment(text: "b", startOffset: 0, duration: 0.15)]
+    ),
+]
+precondition(
+    KaraokeLineBoundaries.all(in: shortBoundaryLines) == [20.10, 20.24, 20.39],
+    "Sub-sample KSC start/end boundaries must remain individually schedulable"
+)
+assertClose(
+    KaraokeLineBoundaries.next(after: 20.10, in: shortBoundaryLines) ?? -1,
+    20.24,
+    "The scheduler must advance monotonically past an exact boundary"
+)
+assertClose(
+    KaraokeLineBoundaries.next(after: 20.25, in: shortBoundaryLines) ?? -1,
+    20.39,
+    "The scheduler must retain a second boundary inside one 0.5-second sample interval"
+)
+
 print("Karaoke timing checks passed")
 SWIFT
 

@@ -7,7 +7,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 touch "$TMP_DIR/Priority.flac" "$TMP_DIR/Fallback.flac" "$TMP_DIR/GBK.flac" \
     "$TMP_DIR/UTF16LEBOMKSC.flac" "$TMP_DIR/UTF16BEBOMSRT.flac" \
-    "$TMP_DIR/UTF16LEBOMLRC.flac" "$TMP_DIR/UTF16BEBomlessKSC.flac"
+    "$TMP_DIR/UTF16LEBOMLRC.flac" "$TMP_DIR/UTF16BEBomlessKSC.flac" \
+    "$TMP_DIR/NonFiniteFallback.flac"
 printf "%s\n" "karaoke.add('00:01.000','00:02.000','KSC','1000');" > "$TMP_DIR/Priority.ksc"
 printf "%s\n" "[00:01.00]LRC" > "$TMP_DIR/Priority.lrc"
 printf "%s\n" "not valid ksc" > "$TMP_DIR/Fallback.ksc"
@@ -25,6 +26,9 @@ printf "%s\n" "[00:06.00]LRC UTF16" \
     | iconv -f UTF-8 -t UTF-16LE >> "$TMP_DIR/UTF16LEBOMLRC.lrc"
 printf "%s\n" "karaoke.add('00:07.000','00:08.000','BE','500,500');" \
     | iconv -f UTF-8 -t UTF-16BE > "$TMP_DIR/UTF16BEBomlessKSC.ksc"
+printf "%s\n" "karaoke.add('inf:01.000','inf:02.000','invalid','1000');" \
+    > "$TMP_DIR/NonFiniteFallback.ksc"
+printf "%s\n" "[00:08.00]finite fallback" > "$TMP_DIR/NonFiniteFallback.lrc"
 
 cat > "$TMP_DIR/main.swift" <<'SWIFT'
 import Foundation
@@ -69,6 +73,12 @@ let utf16BEBomlessKSC = require("UTF16BEBomlessKSC")
 precondition(
     utf16BEBomlessKSC.source == .ksc && utf16BEBomlessKSC.lyrics.first?.text == "BE",
     "BOM-less UTF-16BE KSC decoding failed"
+)
+
+let nonFiniteFallback = require("NonFiniteFallback")
+precondition(
+    nonFiniteFallback.source == .lrc && nonFiniteFallback.lyrics.first?.text == "finite fallback",
+    "A KSC with non-finite timestamps must not block the valid LRC fallback"
 )
 
 print("Lyrics sidecar loading checks passed")
