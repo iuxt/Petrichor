@@ -92,10 +92,45 @@ precondition(multiline.count == 1, "Expected 1 multi-line SRT block, got \(multi
 precondition(multiline[0].text == "Line one\nLine two", "Multi-line SRT text wrong: '\(multiline[0].text)'")
 print("SRT multi-line text OK")
 
+// --- KSC: line timing, stable sorting, escapes, grapheme timing ---
+let ksc = #"""
+karaoke.songname := 'ignored metadata';
+karaoke.add('0:12.500', '0:14.000', 'A\'好👨‍👩‍👧‍👦', '100,200,300,400');
+karaoke.add('00:00:02.250', '00:00:03.000', '先', '750');
+"""#
+let kscLines = LyricLine.parseKSC(from: ksc.replacingOccurrences(of: "\n", with: "\r\n"))
+precondition(kscLines.count == 2, "Expected 2 KSC lines, got \(kscLines.count)")
+precondition(kscLines[0].text == "先" && abs(kscLines[0].startTime - 2.25) < 0.001,
+             "KSC lines must be sorted by start time")
+precondition(kscLines[1].text == "A'好👨‍👩‍👧‍👦", "KSC escaped lyric text was parsed incorrectly")
+precondition(kscLines[1].endTime == 14.0, "KSC end time was parsed incorrectly")
+let segments = kscLines[1].timingSegments ?? []
+precondition(segments.count == 4, "Expected one KSC segment per grapheme cluster")
+precondition(segments.map(\.text) == ["A", "'", "好", "👨‍👩‍👧‍👦"], "KSC grapheme splitting was incorrect")
+precondition(abs(segments[1].startOffset - 0.1) < 0.001 && abs(segments[3].startOffset - 0.6) < 0.001,
+             "KSC segment offsets were not accumulated")
+precondition(abs(segments[3].duration - 0.4) < 0.001, "KSC millisecond duration was not converted to seconds")
+
+// --- KSC: invalid segment metadata degrades without dropping the line ---
+let kscFallback = """
+karaoke.add('00:01.000', '00:02.000', '两个', '500');
+karaoke.add('00:02.000', '00:03.000', '坏时长', '100,nope,300');
+karaoke.add('00:03.000', '00:04.000', '零', '0');
+karaoke.add('00:05.000', '00:04.000', '倒序', '100,100');
+"""
+let fallbackLines = LyricLine.parseKSC(from: kscFallback)
+precondition(fallbackLines.count == 3, "Only the reversed KSC line should be dropped")
+precondition(fallbackLines[0].timingSegments == nil, "Mismatched KSC duration count must degrade to line timing")
+precondition(fallbackLines[1].timingSegments == nil, "Non-numeric KSC duration must degrade to line timing")
+precondition(fallbackLines[2].timingSegments?.first?.duration == 0, "Zero-duration KSC segments must remain valid")
+print("KSC parsing and degradation OK")
+
 // --- Empty/garbage input is handled gracefully ---
 precondition(LyricLine.parseLRC(from: "").isEmpty, "Empty LRC should yield no lines")
 precondition(LyricLine.parseSRT(from: "").isEmpty, "Empty SRT should yield no blocks")
 precondition(LyricLine.parseSRT(from: "not a valid srt").isEmpty, "Garbage SRT should yield no blocks")
+precondition(LyricLine.parseKSC(from: "").isEmpty, "Empty KSC should yield no lines")
+precondition(LyricLine.parseKSC(from: "karaoke.clear();").isEmpty, "KSC without add commands should yield no lines")
 print("Empty/garbage input OK")
 
 print("All lyrics parsing tests passed")

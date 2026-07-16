@@ -1,15 +1,28 @@
 import Foundation
 
+struct LyricTimingSegment: Codable, Equatable, Sendable {
+    let text: String
+    let startOffset: TimeInterval
+    let duration: TimeInterval
+}
+
 struct LyricLine: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     let text: String
     let startTime: TimeInterval // seconds
     var endTime: TimeInterval?  // seconds; nil for the last line
+    let timingSegments: [LyricTimingSegment]?
     
-    init(text: String, startTime: TimeInterval, endTime: TimeInterval? = nil) {
+    init(
+        text: String,
+        startTime: TimeInterval,
+        endTime: TimeInterval? = nil,
+        timingSegments: [LyricTimingSegment]? = nil
+    ) {
         self.text = text
         self.startTime = startTime
         self.endTime = endTime
+        self.timingSegments = timingSegments
     }
 }
 
@@ -22,6 +35,119 @@ extension LyricLine {
         string
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
+    }
+
+    static func parseKSC(from kscString: String) -> Lyrics {
+        var parsed: [(inputIndex: Int, line: LyricLine)] = []
+
+        for (inputIndex, rawLine) in normalizingNewlines(kscString).split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            guard let arguments = kscArguments(from: String(rawLine)),
+                  arguments.count >= 4,
+                  let startTime = kscTime(arguments[0]),
+                  let endTime = kscTime(arguments[1]),
+                  endTime >= startTime else {
+                continue
+            }
+
+            let text = arguments[2].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            parsed.append((
+                inputIndex,
+                LyricLine(
+                    text: text,
+                    startTime: startTime,
+                    endTime: endTime,
+                    timingSegments: kscTimingSegments(text: text, rawDurations: arguments[3])
+                )
+            ))
+        }
+
+        return parsed.sorted { lhs, rhs in
+            if lhs.line.startTime == rhs.line.startTime {
+                return lhs.inputIndex < rhs.inputIndex
+            }
+            return lhs.line.startTime < rhs.line.startTime
+        }.map(\.line)
+    }
+
+    private static func kscArguments(from line: String) -> [String]? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.lowercased().hasPrefix("karaoke.add"),
+              let openingParenthesis = trimmed.firstIndex(of: "("),
+              let closingParenthesis = trimmed.lastIndex(of: ")"),
+              openingParenthesis < closingParenthesis else {
+            return nil
+        }
+
+        let body = trimmed[trimmed.index(after: openingParenthesis)..<closingParenthesis]
+        var arguments: [String] = []
+        var current = ""
+        var isQuoted = false
+        var isEscaping = false
+
+        for character in body {
+            if isEscaping {
+                current.append(character)
+                isEscaping = false
+            } else if isQuoted && character == "\\" {
+                isEscaping = true
+            } else if character == "'" {
+                isQuoted.toggle()
+            } else if character == "," && !isQuoted {
+                arguments.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            } else {
+                current.append(character)
+            }
+        }
+
+        guard !isQuoted else { return nil }
+        if isEscaping { current.append("\\") }
+        arguments.append(current.trimmingCharacters(in: .whitespaces))
+        return arguments.count >= 4 ? arguments : nil
+    }
+
+    private static func kscTime(_ raw: String) -> TimeInterval? {
+        let fields = raw.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard fields.count == 2 || fields.count == 3,
+              let seconds = Double(fields.last ?? ""),
+              seconds >= 0, seconds < 60 else {
+            return nil
+        }
+
+        if fields.count == 2 {
+            guard let minutes = Double(fields[0]), minutes >= 0 else { return nil }
+            return minutes * 60 + seconds
+        }
+
+        guard let hours = Double(fields[0]), hours >= 0,
+              let minutes = Double(fields[1]), minutes >= 0, minutes < 60 else {
+            return nil
+        }
+        return hours * 3600 + minutes * 60 + seconds
+    }
+
+    private static func kscTimingSegments(text: String, rawDurations: String) -> [LyricTimingSegment]? {
+        let rawValues = rawDurations.split(separator: ",", omittingEmptySubsequences: false)
+        guard !rawValues.isEmpty else { return nil }
+
+        var durations: [TimeInterval] = []
+        for rawValue in rawValues {
+            guard let milliseconds = Int(rawValue.trimmingCharacters(in: .whitespaces)), milliseconds >= 0 else {
+                return nil
+            }
+            durations.append(TimeInterval(milliseconds) / 1000)
+        }
+
+        let graphemes = text.map(String.init)
+        guard graphemes.count == durations.count else { return nil }
+
+        var offset: TimeInterval = 0
+        return zip(graphemes, durations).map { text, duration in
+            defer { offset += duration }
+            return LyricTimingSegment(text: text, startOffset: offset, duration: duration)
+        }
     }
 
     /// Parse the lyrics from the LRC files
