@@ -19,6 +19,7 @@ struct DesktopLyricsView: View {
     @State private var window: NSWindow?
     @State private var dragStartOrigin: CGPoint?
     @State private var dragStartMouse: CGPoint?
+    @State private var sampledPlaybackTime: TimeInterval = 0
 
     init(provider: DesktopLyricsLineProvider) {
         _provider = StateObject(wrappedValue: provider)
@@ -35,6 +36,7 @@ struct DesktopLyricsView: View {
                 DesktopLyricsWindowManager.shared.applyCurrentSettings()
             }
             .onAppear {
+                sampledPlaybackTime = playbackProgressState.currentTime
                 provider.appear()
             }
             .onDisappear {
@@ -47,6 +49,7 @@ struct DesktopLyricsView: View {
                 provider.currentTrackChanged()
             }
             .onReceive(playbackProgressState.$currentTime) { currentTime in
+                sampledPlaybackTime = currentTime
                 provider.playbackTimeChanged(currentTime)
             }
     }
@@ -64,14 +67,9 @@ struct DesktopLyricsView: View {
             statusText("Lyrics Failed to Load")
         case .lyrics(let lines):
             VStack(spacing: 8) {
-                Text(lines.current)
-                    .font(currentLineFont)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity)
+                currentLyricsLine(lines.current)
 
-                Text(lines.next ?? " ")
+                Text(lines.next?.text ?? " ")
                     .font(nextLineFont)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -80,6 +78,31 @@ struct DesktopLyricsView: View {
             }
             .padding(.horizontal, 24)
             .textShadowForDesktopLyrics()
+        }
+    }
+
+    @ViewBuilder
+    private func currentLyricsLine(_ line: LyricLine) -> some View {
+        if line.timingSegments?.isEmpty == false {
+            KaraokeLyricText(
+                line: line,
+                sampleTime: sampledPlaybackTime,
+                isPlaying: playbackManager.isPlaying,
+                fontName: desktopLyricsFontName == DesktopLyricsSettings.systemFontName ? nil : desktopLyricsFontName,
+                fontSize: CGFloat(desktopLyricsFontSize),
+                fontWeight: .semibold,
+                activeColor: .primary,
+                inactiveColor: .secondary,
+                lineLimit: 1
+            )
+            .frame(maxWidth: .infinity)
+        } else {
+            Text(line.text)
+                .font(currentLineFont)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity)
         }
     }
 

@@ -31,25 +31,25 @@ let timed = [
 
 assertEqual(
     DesktopLyricsLineSelection.syncedDisplayLines(lines: timed, at: 4),
-    DesktopLyricsDisplayLines(current: "first", next: "second"),
+    DesktopLyricsDisplayLines(current: timed[0], next: timed[2]),
     "synced lyrics select current line and next non-empty line"
 )
 
 assertEqual(
     DesktopLyricsLineSelection.syncedDisplayLines(lines: timed, at: 11),
-    DesktopLyricsDisplayLines(current: "second", next: "third"),
+    DesktopLyricsDisplayLines(current: timed[2], next: timed[3]),
     "empty active lines advance to the next non-empty line"
 )
 
 assertEqual(
     DesktopLyricsLineSelection.syncedDisplayLines(lines: timed, at: -1),
-    DesktopLyricsDisplayLines(current: "first", next: "second"),
+    DesktopLyricsDisplayLines(current: timed[0], next: timed[2]),
     "times before the first timestamp show the first two non-empty lines"
 )
 
 assertEqual(
     DesktopLyricsLineSelection.syncedDisplayLines(lines: timed, at: 22),
-    DesktopLyricsDisplayLines(current: "third", next: nil),
+    DesktopLyricsDisplayLines(current: timed[3], next: nil),
     "last synced line has no next line"
 )
 
@@ -86,7 +86,7 @@ let plain = [
 
 assertEqual(
     DesktopLyricsLineSelection.plainDisplayLines(lines: plain),
-    DesktopLyricsDisplayLines(current: "plain one", next: "plain two"),
+    DesktopLyricsDisplayLines(current: plain[1], next: plain[2]),
     "plain lyrics use first two non-empty lines"
 )
 

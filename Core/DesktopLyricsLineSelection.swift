@@ -1,8 +1,8 @@
 import Foundation
 
 struct DesktopLyricsDisplayLines: Equatable {
-    let current: String
-    let next: String?
+    let current: LyricLine
+    let next: LyricLine?
 }
 
 enum DesktopLyricsLineSelection {
@@ -31,8 +31,8 @@ enum DesktopLyricsLineSelection {
         let nextIndex = nonEmptyIndex(in: lines, from: currentIndex + 1)
 
         return DesktopLyricsDisplayLines(
-            current: trimmedText(lines[currentIndex]),
-            next: nextIndex.map { trimmedText(lines[$0]) }
+            current: lines[currentIndex],
+            next: nextIndex.map { lines[$0] }
         )
     }
 
@@ -42,8 +42,8 @@ enum DesktopLyricsLineSelection {
         }
 
         return DesktopLyricsDisplayLines(
-            current: trimmedText(lines[currentIndex]),
-            next: nonEmptyIndex(in: lines, from: currentIndex + 1).map { trimmedText(lines[$0]) }
+            current: lines[currentIndex],
+            next: nonEmptyIndex(in: lines, from: currentIndex + 1).map { lines[$0] }
         )
     }
 

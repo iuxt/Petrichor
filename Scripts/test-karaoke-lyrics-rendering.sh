@@ -26,6 +26,12 @@ rg -n 'sampledPlaybackTime = newTime' "$TRACK_VIEW" >/dev/null || {
     exit 1
 }
 
+DESKTOP_VIEW="$ROOT_DIR/Views/DesktopLyrics/DesktopLyricsView.swift"
+rg -n 'KaraokeLyricText\(' "$DESKTOP_VIEW" >/dev/null || {
+    printf 'Desktop lyrics must render timed KSC lines with KaraokeLyricText.\n' >&2
+    exit 1
+}
+
 xcrun swiftc -typecheck \
     "$ROOT_DIR/Models/Core/Lyrics.swift" \
     "$ROOT_DIR/Core/KaraokeTiming.swift" \
