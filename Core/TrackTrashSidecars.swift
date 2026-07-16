@@ -1,7 +1,7 @@
 import Foundation
 
 enum TrackTrashSidecars {
-    static let lyricExtensions = ["lrc", "srt"]
+    static let lyricExtensions = ["ksc", "lrc", "srt"]
     // Reuse the canonical format lists so a newly-supported audio/artwork extension
     // is recognized here automatically. Hand-maintaining a parallel copy risks
     // trashing directory cover art when the audio set grows but this list doesn't

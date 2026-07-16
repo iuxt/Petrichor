@@ -47,12 +47,13 @@ func touch(_ url: URL) {
 }
 
 touch(lonely)
+touch(root.appendingPathComponent("Lonely.ksc"))
 touch(root.appendingPathComponent("Lonely.lrc"))
 touch(root.appendingPathComponent("Lonely.srt"))
 touch(root.appendingPathComponent("cover.jpg"))
 
 let lonelySidecars = Set(TrackTrashSidecars.sidecarURLs(forAudioURL: lonely).map(\.lastPathComponent))
-let expectedLonely: Set<String> = ["Lonely.lrc", "Lonely.srt", "cover.jpg"]
+let expectedLonely: Set<String> = ["Lonely.ksc", "Lonely.lrc", "Lonely.srt", "cover.jpg"]
 guard lonelySidecars == expectedLonely else {
     fputs("Expected lonely sidecars \(expectedLonely), got \(lonelySidecars)\n", stderr)
     exit(1)
