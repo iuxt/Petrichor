@@ -57,23 +57,16 @@ enum LyricsSidecarLoader {
     private static func loadFileWithEncodingDetection(_ url: URL, source: LyricsSource) -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
 
+        if (data.starts(with: [0xFE, 0xFF]) || data.starts(with: [0xFF, 0xFE])),
+           let content = String(data: data, encoding: .utf16) {
+            return content
+        }
+        if let encoding = inferredUTF16Encoding(data),
+           let content = String(data: data, encoding: encoding) {
+            return content
+        }
         if let content = String(data: data, encoding: .utf8) {
             return content
-        }
-        if data.starts(with: [0xFE, 0xFF]),
-           let content = String(data: data, encoding: .utf16BigEndian) {
-            return content
-        }
-        if data.starts(with: [0xFF, 0xFE]),
-           let content = String(data: data, encoding: .utf16LittleEndian) {
-            return content
-        }
-        if looksLikeUTF16(data) {
-            for encoding in [String.Encoding.utf16LittleEndian, .utf16BigEndian] {
-                if let content = String(data: data, encoding: encoding) {
-                    return content
-                }
-            }
         }
 
         let ianaNames = source == .ksc
@@ -104,11 +97,15 @@ enum LyricsSidecarLoader {
         return String(data: data, encoding: String.Encoding(rawValue: nsEncoding))
     }
 
-    private static func looksLikeUTF16(_ data: Data) -> Bool {
-        guard data.count >= 4 else { return false }
+    private static func inferredUTF16Encoding(_ data: Data) -> String.Encoding? {
+        guard data.count >= 4 else { return nil }
         let bytes = [UInt8](data.prefix(128))
         let evenZeroes = stride(from: 0, to: bytes.count, by: 2).filter { bytes[$0] == 0 }.count
         let oddZeroes = stride(from: 1, to: bytes.count, by: 2).filter { bytes[$0] == 0 }.count
-        return max(evenZeroes, oddZeroes) >= bytes.count / 4
+        guard max(evenZeroes, oddZeroes) >= bytes.count / 4,
+              evenZeroes != oddZeroes else {
+            return nil
+        }
+        return evenZeroes > oddZeroes ? .utf16BigEndian : .utf16LittleEndian
     }
 }
