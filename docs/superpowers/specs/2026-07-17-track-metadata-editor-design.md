@@ -72,7 +72,7 @@ For text and numeric controls:
 - typing marks it dirty and applies the new value to the batch;
 - after a dirty field has been cleared, its patch value is an explicit removal rather than `unchanged`.
 
-Compilation aggregates to `on`, `off`, or `mixed`. An untouched mixed control produces no patch. Choosing on or off produces an explicit Boolean patch for the whole writable batch.
+Compilation aggregates to `on`, `off`, or `mixed`, with a missing compilation tag treated as `off`. An untouched mixed control produces no patch. Choosing on or off produces an explicit Boolean patch for the whole writable batch; the first release does not expose a separate "remove compilation tag" action.
 
 ### Input Rules
 
@@ -118,6 +118,8 @@ Patch operations distinguish:
 - `unchanged`, which does not assign the corresponding `AudioMetadata` property;
 - `set(value)`, which assigns a validated value; and
 - `remove`, which assigns `nil`.
+
+Compilation uses only `unchanged` and `set(Bool)` because the UI treats an absent compilation tag and an explicit false value as the same `off` state.
 
 Release year is stored through SFBAudioEngine's release-date field. Petrichor's existing metadata mapping derives the lightweight library year from the value read back.
 
@@ -248,7 +250,7 @@ File-level smoke tests operate only on temporary audio fixtures or disposable co
 - Open and cancel single-track editing without changing the file.
 - Edit every supported field on a disposable single-track fixture.
 - Batch-edit tracks whose fields are common, mixed, and missing.
-- Explicitly clear text, numeric, date, Boolean, and comment tags.
+- Explicitly clear text, numeric, date, and comment tags, and set compilation both on and off.
 - Mix writable, unsupported, missing, and read-only files in one selection.
 - Save the current track while playing and while paused; verify track, queue position, state, and approximate playback time.
 - Relaunch Petrichor and confirm file tags, library categories, search results, playlists, queue metadata, and track details remain consistent.
