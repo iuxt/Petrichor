@@ -75,5 +75,46 @@ if "self.wantsPlaybackActive = true" in timer_body:
 if "self.setPlaybackActive(true)" not in timer_body:
     raise SystemExit("PlaybackManager must resync isPlaying when engine progress proves audio is still playing.")
 
+if "private var progressResolver = PlaybackProgressResolver()" not in manager:
+    raise SystemExit("PlaybackManager must own the progress resolver.")
+
+if "private var lastProgressSampleUptime: TimeInterval?" not in manager:
+    raise SystemExit("PlaybackManager must measure sampler elapsed time with monotonic system uptime.")
+
+if "let resolution = self.progressResolver.resolve(" not in timer_body:
+    raise SystemExit("PlaybackManager must resolve raw engine samples before publishing them.")
+
+if "ProcessInfo.processInfo.systemUptime" not in timer_body:
+    raise SystemExit("PlaybackManager progress fallback must use monotonic system uptime.")
+
+if "playbackIsActive: self.wantsPlaybackActive" not in timer_body:
+    raise SystemExit("Playback progress fallback must require the latest active playback intent.")
+
+if "self.currentTime = resolvedProgress" not in timer_body:
+    raise SystemExit("PlaybackManager must publish the resolved progress value.")
+
+if "self.currentTime = engineProgress" in timer_body:
+    raise SystemExit("PlaybackManager must not bypass the resolver with the raw engine sample.")
+
+if "case .enteredFallback:" not in timer_body or "case .recovered:" not in timer_body:
+    raise SystemExit("PlaybackManager must log one fallback entry and one recovery transition.")
+
+if "private func resetProgressResolution" not in manager:
+    raise SystemExit("PlaybackManager must centralize progress resolver lifecycle resets.")
+
+for function_name in (
+    "func seekTo(time: Double)",
+    "func reloadPlaybackEngine()",
+    "private func startPlayback",
+    "private func handleGaplessAdvance",
+):
+    function_start = manager.index(function_name)
+    next_marker = manager.find("\n    func ", function_start + 1)
+    private_marker = manager.find("\n    private func ", function_start + 1)
+    candidates = [index for index in (next_marker, private_marker) if index != -1]
+    function_end = min(candidates) if candidates else len(manager)
+    if "resetProgressResolution" not in manager[function_start:function_end]:
+        raise SystemExit(f"{function_name} must reset frozen-progress recovery state.")
+
 print("Playback progress state race checks passed")
 PY
