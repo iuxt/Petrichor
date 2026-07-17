@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kushalpandya/CrescendoKit",
       "state" : {
-        "revision" : "c01fb59f6a255e61247a51b36be683e3ee329b83",
-        "version" : "1.0.0"
+        "revision" : "ef50ecfcafad7b5976735c09a8741158b642d258",
+        "version" : "1.1.1"
       }
     },
     {
