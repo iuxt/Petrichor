@@ -725,8 +725,9 @@ and `xcodebuild` exits 0 reporting CrescendoKit 1.1.1.
 Run:
 
 ```bash
+set -e
 for script in Scripts/test-*.sh; do
-  "$script"
+  bash "$script"
 done
 ```
 

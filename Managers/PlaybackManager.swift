@@ -58,6 +58,8 @@ final class PlaybackManager: NSObject, ObservableObject {
     private var currentFullTrack: FullTrack?
     private var progressUpdateTimer: DispatchSourceTimer?
     private var lastObservedEngineProgress: Double?
+    private var progressResolver = PlaybackProgressResolver()
+    private var lastProgressSampleUptime: TimeInterval?
     private var fineProgressSampling = false
     // Reference count of views requesting fine sampling (e.g. main-window and
     // mini-player lyrics can be visible at once); sampling stays fine while > 0.
@@ -158,6 +160,8 @@ final class PlaybackManager: NSObject, ObservableObject {
         restoredUITrack = tempTrack
         currentTrack = tempTrack
         restoredPosition = uiState.playbackPosition
+        currentTime = uiState.playbackPosition
+        resetProgressResolution(engineProgress: uiState.playbackPosition)
         volume = uiState.volume
         
         nowPlayingManager.updateNowPlayingInfo(
@@ -188,6 +192,7 @@ final class PlaybackManager: NSObject, ObservableObject {
                     self.currentFullTrack = fullTrack
                     self.restoredPosition = position
                     self.currentTime = position
+                    self.resetProgressResolution(engineProgress: position)
                     self.wantsPlaybackActive = false
                     self.isPlaying = false
                     
@@ -293,6 +298,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         pendingNext = nil
         pendingNextWasSkipped = false
         currentTime = 0
+        resetProgressResolution(engineProgress: 0)
         isPlaying = false
         restoredPosition = 0
         stopStateSaveTimer()
@@ -309,6 +315,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         pendingNext = nil
         pendingNextWasSkipped = false
         currentTime = 0
+        resetProgressResolution(engineProgress: 0)
         isPlaying = false
         stopStateSaveTimer()
         Logger.info("Playback stopped gracefully")
@@ -336,6 +343,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         pendingNextWasSkipped = false
         audioPlayer.stop()
         currentTime = snapshot.position
+        resetProgressResolution(engineProgress: snapshot.position)
         isPlaying = false
         restoredPosition = snapshot.restoredPosition
         stopStateSaveTimer()
@@ -357,6 +365,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         currentTrack = snapshot.track
         currentFullTrack = snapshot.fullTrack
         currentTime = snapshot.position
+        resetProgressResolution(engineProgress: snapshot.position)
         restoredPosition = snapshot.position
         isPlaying = false
         stopStateSaveTimer()
@@ -385,6 +394,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         pendingNext = nil
         pendingNextWasSkipped = false
         currentTime = 0
+        resetProgressResolution(engineProgress: 0)
         isPlaying = false
         restoredPosition = 0
         stopStateSaveTimer()
@@ -410,7 +420,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         let clampedTime = engineDuration > 0 ? min(time, engineDuration) : time
         audioPlayer.seek(to: clampedTime)
         currentTime = clampedTime
-        lastObservedEngineProgress = clampedTime
+        resetProgressResolution(engineProgress: clampedTime)
         restoredPosition = clampedTime
         
         NotificationCenter.default.post(
@@ -561,6 +571,7 @@ final class PlaybackManager: NSObject, ObservableObject {
             currentTime = resumePosition
             updateNowPlayingInfo()
         }
+        resetProgressResolution(engineProgress: resumePosition)
 
         Logger.info("Playback engine reloaded for backend: \(MediaBackend.current)")
     }
@@ -665,7 +676,7 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         let seekToPosition = restoredPosition
         restoredPosition = 0
-        lastObservedEngineProgress = seekToPosition > 0 ? seekToPosition : 0
+        resetProgressResolution(engineProgress: seekToPosition > 0 ? seekToPosition : 0)
 
         if seekToPosition > 0 {
             // Load paused and defer the seek+resume to the `.paused` transition
@@ -764,7 +775,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         trackForEntry[pending.entryId.id] = pending.track
         playlistManager.advanceQueueIndex(to: pending.index)
         currentTime = 0
-        lastObservedEngineProgress = 0
+        resetProgressResolution(engineProgress: 0)
         wantsPlaybackActive = true
         setPlaybackActive(true)
         pendingNext = nil
@@ -799,6 +810,11 @@ final class PlaybackManager: NSObject, ObservableObject {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
 
+            let sampleUptime = ProcessInfo.processInfo.systemUptime
+            let elapsed = self.lastProgressSampleUptime
+                .map { max(0, sampleUptime - $0) } ?? 0
+            self.lastProgressSampleUptime = sampleUptime
+
             let engineState = self.audioPlayer.state
             let engineProgress = self.audioPlayer.currentPlaybackProgress
             let previousEngineProgress = self.lastObservedEngineProgress
@@ -817,7 +833,34 @@ final class PlaybackManager: NSObject, ObservableObject {
                 self.setPlaybackActive(true)
             }
 
-            self.currentTime = engineProgress
+            let tolerance = self.fineProgressSampling ? 0.05 : 0.2
+            let resolution = self.progressResolver.resolve(
+                engineProgress: engineProgress,
+                previousEngineProgress: previousEngineProgress,
+                displayedProgress: self.currentTime,
+                elapsed: elapsed,
+                duration: self.currentTrack?.duration ?? self.audioPlayer.duration,
+                playbackIsActive: self.wantsPlaybackActive
+                    && (engineState == .playing || self.isPlaying),
+                tolerance: tolerance
+            )
+
+            guard let resolvedProgress = resolution.progress else { return }
+
+            switch resolution.transition {
+            case .enteredFallback:
+                Logger.warning(
+                    "Playback progress stalled on \(MediaBackend.current) while engine state was \(engineState); using monotonic display progress from \(engineProgress)s"
+                )
+            case .recovered:
+                Logger.info(
+                    "Playback engine progress recovered at \(engineProgress)s; ending monotonic display fallback"
+                )
+            case .none:
+                break
+            }
+
+            self.currentTime = resolvedProgress
             // Refresh the system Now Playing tile at ~1s regardless of sampling
             // rate - it extrapolates elapsed between updates from the rate anchor,
             // so a higher rate is wasted work (and an artwork re-decode on SFB).
@@ -868,6 +911,12 @@ final class PlaybackManager: NSObject, ObservableObject {
         let uiTimeIsStale = abs(engineProgress - currentTime) > tolerance
 
         return progressAdvanced && uiTimeIsStale
+    }
+
+    private func resetProgressResolution(engineProgress: TimeInterval? = nil) {
+        progressResolver.reset()
+        lastObservedEngineProgress = engineProgress
+        lastProgressSampleUptime = nil
     }
 
     private func stopProgressUpdateTimer() {
@@ -1077,6 +1126,7 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                             self.playlistManager.handleTrackCompletion()
                         } else {
                             self.wantsPlaybackActive = false
+                            self.resetProgressResolution(engineProgress: 0)
                             self.setPlaybackActive(false)
                             NotificationCenter.default.post(
                                 name: NSNotification.Name("SavePlaybackState"),
@@ -1088,6 +1138,7 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                     self.currentTime = 0
                     self.playlistManager.handleTrackCompletion()
                     if !self.isPlaying {
+                        self.resetProgressResolution(engineProgress: 0)
                         self.stopStateSaveTimer()
 
                         NotificationCenter.default.post(
@@ -1101,6 +1152,7 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                 if finishedEntryIsCurrent {
                     self.wantsPlaybackActive = false
                     self.currentTime = 0
+                    self.resetProgressResolution(engineProgress: 0)
                     self.stopStateSaveTimer()
                 } else {
                     Logger.info("Ignoring stale user stop for non-current entry")
@@ -1108,6 +1160,7 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
 
             case .error:
                 self.currentTime = 0
+                self.resetProgressResolution(engineProgress: 0)
                 self.wantsPlaybackActive = false
                 self.setPlaybackActive(false)
                 Logger.error("Playback finished with error")
