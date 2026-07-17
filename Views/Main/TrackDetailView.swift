@@ -66,8 +66,8 @@ struct TrackDetailView: View {
                                 metadataSection(title: String(appLocalized: "Details"), items: items)
                             }
 
-                            // Collapsible File Details section
-                            FileDetailsSection(fullTrack: fullTrack)
+                            // File Details section
+                            metadataSection(title: String(appLocalized: "File Details"), items: fileDetailsItems(for: fullTrack))
                         }
                         .padding(20)
                     }
@@ -367,109 +367,13 @@ struct TrackDetailView: View {
         }
     }
 
-    // MARK: - Helper Methods
+    // MARK: - File Details
 
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-
-    private func formatDate(_ dateString: String) -> String {
-        if let date = parseDateString(dateString) {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .short
-            return formatter.string(from: date)
-        }
-        
-        return dateString
-    }
-
-    private func parseDateString(_ dateString: String) -> Date? {
-        let iso8601Formatter = ISO8601DateFormatter()
-        if let date = iso8601Formatter.date(from: dateString) {
-            return date
-        }
-        
-        let dateFormatter = DateFormatter()
-        
-        let formats = ["yyyy-MM-dd", "yyyy-MM", "yyyy"]
-        for format in formats {
-            dateFormatter.dateFormat = format
-            if let date = dateFormatter.date(from: dateString) {
-                return date
-            }
-        }
-        
-        return nil
-    }
-}
-
-// MARK: - File Details Section View
-
-private struct FileDetailsSection: View {
-    let fullTrack: FullTrack
-    @State private var isExpanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Collapsible header
-            Button(action: {
-                withAnimation(.easeInOut(duration: AnimationDuration.mediumDuration)) {
-                    isExpanded.toggle()
-                }
-            }, label: {
-                HStack {
-                    Image(systemName: Icons.chevronRight)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .font(.system(size: 12))
-
-                    Text("File Details")
-                        .font(.headline)
-
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            })
-            .buttonStyle(.plain)
-
-            // Expandable content
-            if isExpanded {
-                VStack(spacing: 8) {
-                    ForEach(fileDetailsItems, id: \.label) { item in
-                        HStack(alignment: .top, spacing: 12) {
-                            Text(item.label)
-                                .font(.system(size: 13))
-                                .foregroundColor(.secondary)
-                                .frame(width: 120, alignment: .trailing)
-
-                            Text(item.value)
-                                .font(.system(size: 13))
-                                .foregroundColor(.primary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                    }
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.thinMaterial)
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-    }
-
-    private var fileDetailsItems: [(label: String, value: String)] {
+    private func fileDetailsItems(for fullTrack: FullTrack) -> [(label: String, value: String)] {
         var items: [(label: String, value: String)] = []
 
-        // File format
         items.append((String(appLocalized: "Format"), fullTrack.format.uppercased()))
 
-        // Audio properties
         if let codec = fullTrack.codecDisplay {
             items.append((String(appLocalized: "Codec"), codec))
         }
@@ -490,15 +394,12 @@ private struct FileDetailsSection: View {
             items.append((String(appLocalized: "Channels"), channels))
         }
 
-        // File info
         if let fileSize = fullTrack.fileSize, fileSize > 0 {
             items.append((String(appLocalized: "File Size"), formatFileSize(fileSize)))
         }
 
-        // File path
         items.append((String(appLocalized: "File Path"), fullTrack.url.path))
 
-        // Dates
         if let dateAdded = fullTrack.dateAdded {
             items.append((String(appLocalized: "Date Added"), formatDate(dateAdded)))
         }
@@ -507,13 +408,14 @@ private struct FileDetailsSection: View {
             items.append((String(appLocalized: "Date Modified"), formatDate(dateModified)))
         }
 
-        // Media Type
         if let mediaType = fullTrack.mediaType, !mediaType.isEmpty {
             items.append((String(appLocalized: "Media Type"), mediaType))
         }
 
         return items
     }
+
+    // MARK: - Helper Methods
 
     private func formatFileSize(_ bytes: Int64) -> String {
         let formatter = ByteCountFormatter()
@@ -526,6 +428,36 @@ private struct FileDetailsSection: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    private func formatDate(_ dateString: String) -> String {
+        if let date = parseDateString(dateString) {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
+        }
+
+        return dateString
+    }
+
+    private func parseDateString(_ dateString: String) -> Date? {
+        let iso8601Formatter = ISO8601DateFormatter()
+        if let date = iso8601Formatter.date(from: dateString) {
+            return date
+        }
+
+        let dateFormatter = DateFormatter()
+
+        let formats = ["yyyy-MM-dd", "yyyy-MM", "yyyy"]
+        for format in formats {
+            dateFormatter.dateFormat = format
+            if let date = dateFormatter.date(from: dateString) {
+                return date
+            }
+        }
+
+        return nil
     }
 }
 
