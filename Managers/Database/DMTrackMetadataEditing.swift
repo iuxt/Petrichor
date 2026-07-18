@@ -73,6 +73,10 @@ extension DatabaseManager {
                 .select(AlbumArtist.Columns.artistId, as: Int64.self)
                 .fetchSet(db)
 
+            try rebuildAlbumMetadata(
+                albumIDs: affectedAlbumIDs,
+                in: db
+            )
             try rebuildAlbumArtists(
                 albumIDs: affectedAlbumIDs,
                 in: db
@@ -215,6 +219,42 @@ extension DatabaseManager {
             .filter(affectedTrackIDs.contains(Track.Columns.trackId))
             .order(Track.Columns.trackId)
             .fetchAll(db)
+    }
+
+    private func rebuildAlbumMetadata(
+        albumIDs: Set<Int64>,
+        in db: Database
+    ) throws {
+        guard !albumIDs.isEmpty else { return }
+
+        let tracks = try FullTrack
+            .filter(albumIDs.contains(FullTrack.Columns.albumId))
+            .fetchAll(db)
+        let tracksByAlbumID = Dictionary(grouping: tracks) { $0.albumId }
+
+        for albumID in albumIDs.sorted() {
+            guard let album = try Album.fetchOne(db, key: albumID),
+                  let albumTracks = tracksByAlbumID[albumID],
+                  !albumTracks.isEmpty else {
+                continue
+            }
+
+            let inputs = albumTracks.compactMap { track -> AlbumMetadataAggregateInput? in
+                guard let trackID = track.trackId else { return nil }
+                return AlbumMetadataAggregateInput(
+                    trackID: trackID,
+                    trackNumber: track.trackNumber,
+                    releaseDate: track.releaseDate,
+                    year: track.year,
+                    totalDiscs: track.totalDiscs
+                )
+            }
+            let aggregate = AlbumMetadataAggregator.aggregate(inputs)
+            album.releaseDate = aggregate.releaseDate
+            album.releaseYear = aggregate.releaseYear
+            album.totalDiscs = aggregate.totalDiscs
+            try album.update(db)
+        }
     }
 
     private func rebuildAlbumArtists(
