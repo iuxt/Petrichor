@@ -122,6 +122,22 @@ let yearFallback = AlbumMetadataAggregator.aggregate([
 expect(yearFallback.releaseDate == nil, "year fallback must not invent a date")
 expect(yearFallback.releaseYear == 2023, "legacy year fallback")
 
+let belowSchemaRange = AlbumMetadataAggregator.aggregate([
+    input(id: 1, track: 1, date: "1800", discs: nil)
+])
+expect(
+    belowSchemaRange.releaseYear == nil,
+    "release year below the album schema range"
+)
+
+let aboveSchemaRange = AlbumMetadataAggregator.aggregate([
+    input(id: 1, track: 1, date: "2101", discs: nil)
+])
+expect(
+    aboveSchemaRange.releaseYear == nil,
+    "release year above the album schema range"
+)
+
 print("Album metadata aggregate behavior checks passed")
 SWIFT
 

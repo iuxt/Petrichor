@@ -55,6 +55,10 @@ enum AlbumMetadataAggregator {
         guard let value = normalized(value), value.count >= 4 else {
             return nil
         }
-        return Int(value.prefix(4))
+        guard let year = Int(value.prefix(4)),
+              (1900...2100).contains(year) else {
+            return nil
+        }
+        return year
     }
 }
