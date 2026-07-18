@@ -9,6 +9,7 @@ AUTOMATION="$ROOT_DIR/Managers/Automation/AMTransport.swift"
 PLAYER_VIEW="$ROOT_DIR/Views/Main/PlayerView.swift"
 NOW_PLAYING_CONTROLS="$ROOT_DIR/Views/Components/NowPlaying/NowPlayingControlsView.swift"
 MENU_BAR="$ROOT_DIR/Managers/MenuBarManager.swift"
+APP_DELEGATE="$ROOT_DIR/Application/AppDelegate.swift"
 PLAYLIST="$ROOT_DIR/Managers/Playlist/PMTrackUpdate.swift"
 LIBRARY="$ROOT_DIR/Managers/Library/LMTrackMetadataEditing.swift"
 ENGINE="$ROOT_DIR/Core/Playback/PlaybackEngine.swift"
@@ -101,6 +102,7 @@ require_pattern "$AUTOMATION" 'func pause\(\) \{\s+_ = playback\?\.requestPause\
 require_pattern "$PLAYER_VIEW" 'playbackManager\.isPlaying\s+\?\s+playbackManager\.requestPause\(\)\s+:\s+playbackManager\.requestPlay\(\)' 'The labeled player button must issue the explicit action it displays.'
 require_pattern "$NOW_PLAYING_CONTROLS" 'playbackManager\.isPlaying\s+\?\s+playbackManager\.requestPause\(\)\s+:\s+playbackManager\.requestPlay\(\)' 'The labeled now-playing button must issue the explicit action it displays.'
 require_pattern "$MENU_BAR" 'playbackManager\.isPlaying\s+\?\s+playbackManager\.requestPause\(\)\s+:\s+playbackManager\.requestPlay\(\)' 'The labeled menu-bar item must issue the explicit action it displays.'
+require_pattern "$APP_DELEGATE" 'playbackManager\.isPlaying\s+\?\s+playbackManager\.requestPause\(\)\s+:\s+playbackManager\.requestPlay\(\)' 'The labeled Dock menu item must issue the explicit action it displays.'
 
 if [[ ! -f "$SUSPENSION" ]]; then
     printf '%s\n' 'The metadata-write suspension reducer is missing.' >&2

@@ -322,7 +322,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor @objc
     private func togglePlayPause() {
-        AppCoordinator.shared?.playbackManager.togglePlayPause()
+        guard let playbackManager = AppCoordinator.shared?.playbackManager else {
+            return
+        }
+        _ = playbackManager.isPlaying
+            ? playbackManager.requestPause()
+            : playbackManager.requestPlay()
     }
 
     @MainActor @objc
