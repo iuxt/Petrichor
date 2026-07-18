@@ -342,10 +342,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditPlayingIfNeeded() {
             return true
         }
-        if setPendingPlaybackRestoreIntent(shouldResume: true) {
+        if setPendingPlaybackRequestIntent(shouldStartPlaying: true) {
             return true
         }
-        if setPendingPlaybackRequestIntent(shouldStartPlaying: true) {
+        if setPendingPlaybackRestoreIntent(shouldResume: true) {
             return true
         }
         guard !isPlaying else { return false }
@@ -358,10 +358,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditPausedIfNeeded() {
             return true
         }
-        if setPendingPlaybackRestoreIntent(shouldResume: false) {
+        if setPendingPlaybackRequestIntent(shouldStartPlaying: false) {
             return true
         }
-        if setPendingPlaybackRequestIntent(shouldStartPlaying: false) {
+        if setPendingPlaybackRestoreIntent(shouldResume: false) {
             return true
         }
         guard isPlaying else { return false }
@@ -384,10 +384,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditToggleIfNeeded() {
             return
         }
-        if togglePendingPlaybackRestoreIntent() {
+        if togglePendingPlaybackRequestIntent() {
             return
         }
-        if togglePendingPlaybackRequestIntent() {
+        if togglePendingPlaybackRestoreIntent() {
             return
         }
         cancelMetadataRestoreForPlaybackChange()
@@ -839,13 +839,21 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
 
     private func applyPendingPlaybackFallbackIntent(shouldPlay: Bool) {
+        var canControlSettlingEngine = true
+        if var settling = pendingPlaybackRestore,
+           settling.entryId == currentEntryId {
+            settling.shouldResume = shouldPlay
+            pendingPlaybackRestore = settling
+            canControlSettlingEngine = settling.didApplyPosition
+        }
+
         wantsPlaybackActive = shouldPlay
         if shouldPlay {
-            if audioPlayer.state == .paused {
+            if canControlSettlingEngine, audioPlayer.state == .paused {
                 audioPlayer.resume()
                 syncPlaybackStateWithEngine()
             }
-        } else if audioPlayer.state == .playing {
+        } else if canControlSettlingEngine, audioPlayer.state == .playing {
             audioPlayer.pause()
             setPlaybackActive(false)
         }

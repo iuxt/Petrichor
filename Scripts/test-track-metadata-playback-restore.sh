@@ -73,7 +73,7 @@ require_pattern "$PLAYBACK" 'guard finishedEntryIsCurrent else \{\s+Logger\.erro
 require_pattern "$PLAYBACK" 'let snapshotPosition = currentTime\.isFinite && currentTime >= 0 \? currentTime : 0' 'Metadata playback snapshots must sanitize invalid positions.'
 require_pattern "$PLAYBACK" 'position: snapshotPosition' 'The metadata snapshot must store the sanitized position.'
 require_pattern "$PLAYBACK" 'pending\.shouldResume\.toggle\(\)' 'A toggle during pending restoration must change only its requested intent.'
-require_pattern "$PLAYBACK" 'if togglePendingPlaybackRestoreIntent\(\) \{\s+return\s+\}\s+if togglePendingPlaybackRequestIntent\(\) \{\s+return\s+\}\s+cancelMetadataRestoreForPlaybackChange\(\)' 'Pending restore and async-load intents must be handled before cancellation.'
+require_pattern "$PLAYBACK" 'if togglePendingPlaybackRequestIntent\(\) \{\s+return\s+\}\s+if togglePendingPlaybackRestoreIntent\(\) \{\s+return\s+\}\s+cancelMetadataRestoreForPlaybackChange\(\)' 'The newest async-load intent must be handled before an older engine settlement.'
 require_pattern "$PLAYBACK" 'deferMetadataEditPlayIfNeeded\(track\)' 'Same-track play must defer while its metadata file is being written.'
 require_pattern "$PLAYBACK" 'stageMetadataEditSupersedingTrack\(track\)' 'Different-track loading must clear the edited FullTrack before returning to normal transport.'
 require_pattern "$PLAYBACK" 'deferMetadataEditToggleIfNeeded\(\)' 'Toggle must update the suspended post-write intent.'
@@ -206,6 +206,8 @@ for required in (
     "setPlaybackActive(false)",
     "audioPlayer.resume()",
     "syncPlaybackStateWithEngine()",
+    "pendingPlaybackRestore",
+    "settling.shouldResume = shouldPlay",
 ):
     if required not in fallback:
         raise SystemExit(
@@ -222,6 +224,24 @@ if request_pause.index(
 ) > request_pause.index("guard isPlaying"):
     raise SystemExit(
         "Pause must change an async load intent even while public isPlaying is still false."
+    )
+if request_pause.index(
+    "setPendingPlaybackRequestIntent(shouldStartPlaying: false)"
+) > request_pause.index(
+    "setPendingPlaybackRestoreIntent(shouldResume: false)"
+):
+    raise SystemExit(
+        "Pause for a newer async request must also supersede an older engine settlement."
+    )
+
+request_play = body("func requestPlay() -> Bool", "func requestPause() -> Bool")
+if request_play.index(
+    "setPendingPlaybackRequestIntent(shouldStartPlaying: true)"
+) > request_play.index(
+    "setPendingPlaybackRestoreIntent(shouldResume: true)"
+):
+    raise SystemExit(
+        "Play for a newer async request must also supersede an older engine settlement."
     )
 
 deferred_play = body(
@@ -242,16 +262,16 @@ for forbidden in (
 
 toggle = body("func togglePlayPause()", "func stop()")
 if toggle.index("deferMetadataEditToggleIfNeeded()") > toggle.index(
-    "togglePendingPlaybackRestoreIntent()"
+    "togglePendingPlaybackRequestIntent()"
 ):
     raise SystemExit(
         "Toggle must update a write-window intent before consulting post-write restoration."
     )
 if toggle.index("togglePendingPlaybackRequestIntent()") > toggle.index(
-    "cancelMetadataRestoreForPlaybackChange()"
+    "togglePendingPlaybackRestoreIntent()"
 ):
     raise SystemExit(
-        "Toggle must change an async load intent before normal engine transport runs."
+        "Toggle for a newer async request must also supersede an older engine settlement."
     )
 
 stop = body("func stop()", "func stopGracefully()")
