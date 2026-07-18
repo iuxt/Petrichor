@@ -79,6 +79,7 @@ require_pattern "$PLAYBACK" 'deferMetadataEditToggleIfNeeded\(\)' 'Toggle must u
 require_pattern "$PLAYBACK" 'deferMetadataEditStopIfNeeded\(\)' 'Stop must update the suspended post-write intent.'
 require_pattern "$PLAYBACK" 'deferMetadataEditSeekIfNeeded\(time:' 'Seek must update the suspended post-write position.'
 require_pattern "$PLAYBACK" 'deferPendingPlaybackRestoreSeekIfNeeded\(time:' 'Seek must update a track whose engine is still settling.'
+require_pattern "$PLAYBACK" 'clearPendingPlaybackRestore\(matching:' 'Engine failures must clear generic pending settlement state.'
 require_pattern "$PLAYBACK" 'func requestPlay\(\) -> Bool' 'Explicit remote Play must have non-toggle semantics.'
 require_pattern "$PLAYBACK" 'func requestPause\(\) -> Bool' 'Explicit remote Pause must have non-toggle semantics.'
 require_pattern "$PLAYBACK" 'setPendingPlaybackRestoreIntent\(shouldResume: true\)' 'Explicit Play must idempotently update any in-flight engine settlement.'
@@ -329,6 +330,24 @@ if playing_restore.index("self.pendingPlaybackRestore = nil") > playing_restore.
 ):
     raise SystemExit(
         "A general async-load pending intent must clear before optional metadata completion."
+    )
+
+finish_error = source[source.index("case .error:"):
+                      source.index("func audioPlayerUnexpectedError")]
+if finish_error.index("clearPendingPlaybackRestore(matching: entryId)") > finish_error.index(
+    "if let operation = self.metadataRestoreOperation"
+):
+    raise SystemExit(
+        "A normal engine error must clear generic pending state before optional metadata failure handling."
+    )
+
+unexpected_error = body(
+    "func audioPlayerUnexpectedError",
+    "func audioPlayerDidSkipQueueEntry",
+)
+if "clearPendingPlaybackRestore(matching: originatingEntryId)" not in unexpected_error:
+    raise SystemExit(
+        "An unexpected engine error must clear matching generic pending state."
     )
 PY
 

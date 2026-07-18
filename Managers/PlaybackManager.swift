@@ -419,6 +419,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     private func stopPlaybackImmediately() {
         invalidatePlaybackRequests()
         wantsPlaybackActive = false
+        pendingPlaybackRestore = nil
         audioPlayer.stop()
         currentTrack = nil
         currentFullTrack = nil
@@ -437,6 +438,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         cancelMetadataRestoreForPlaybackChange()
         invalidatePlaybackRequests()
         wantsPlaybackActive = false
+        pendingPlaybackRestore = nil
         audioPlayer.stop()
         currentTrack = nil
         currentFullTrack = nil
@@ -1498,6 +1500,18 @@ final class PlaybackManager: NSObject, ObservableObject {
         completion(result)
     }
 
+    private func clearPendingPlaybackRestore(
+        matching entryId: AudioEntryId?
+    ) {
+        guard let pending = pendingPlaybackRestore else { return }
+        if let entryId {
+            guard pending.entryId == entryId else { return }
+        } else {
+            guard metadataRestoreOperation == nil else { return }
+        }
+        pendingPlaybackRestore = nil
+    }
+
     private func metadataRestoreOperation(
         matching originatingEntryId: AudioEntryId?
     ) -> MetadataRestoreOperation? {
@@ -2039,11 +2053,9 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                 }
 
             case .error:
+                self.clearPendingPlaybackRestore(matching: entryId)
                 if let operation = self.metadataRestoreOperation,
                    operation.entryId == entryId {
-                    if self.pendingPlaybackRestore?.entryId == operation.entryId {
-                        self.pendingPlaybackRestore = nil
-                    }
                     self.finishMetadataRestore(
                         .failure(.engine(String(appLocalized: "Playback error occurred"))),
                         generation: operation.generation,
@@ -2073,10 +2085,8 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
     ) {
         DispatchQueue.main.async {
             Logger.error("Audio player error: \(error.localizedDescription)")
+            self.clearPendingPlaybackRestore(matching: originatingEntryId)
             if let operation = self.metadataRestoreOperation(matching: originatingEntryId) {
-                if self.pendingPlaybackRestore?.entryId == operation.entryId {
-                    self.pendingPlaybackRestore = nil
-                }
                 self.finishMetadataRestore(
                     .failure(.engine(error.localizedDescription)),
                     generation: operation.generation,
