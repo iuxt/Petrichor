@@ -142,9 +142,9 @@ extension DatabaseManager {
                     }
                 }
 
-                for (track, metadata) in processResults.update {
+                for (track, _) in processResults.update {
                     do {
-                        try self.processUpdatedTrack(track, metadata: metadata, in: db, cache: cache)
+                        try self.processUpdatedTrack(track, in: db, cache: cache)
                     } catch {
                         Logger.error("Failed to update track \(track.title): \(error)")
                     }
@@ -329,7 +329,11 @@ extension DatabaseManager {
     }
     
     /// Process an updated track with normalized data
-    private func processUpdatedTrack(_ track: FullTrack, metadata: TrackMetadata, in db: Database, cache: ScanLookupCache? = nil) throws {
+    func processUpdatedTrack(
+        _ track: FullTrack,
+        in db: Database,
+        cache: ScanLookupCache? = nil
+    ) throws {
         var mutableTrack = track
 
         // Update album association
