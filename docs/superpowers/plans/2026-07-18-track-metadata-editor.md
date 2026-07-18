@@ -4,16 +4,16 @@
 
 **Goal:** Add a localized single-track and batch metadata editor that reads tags from audio files, writes only explicitly changed fields, verifies every write, refreshes Petrichor from the verified file values, and restores an edited current track to its exact playing or paused state.
 
-**Architecture:** Keep editable tag values and batch-patch semantics in Foundation-only value types. Put SFBAudioEngine file access behind an actor, then pass verified snapshots through a narrow database reindex operation. A `@MainActor` view model owns the sequential batch transaction, coordinates playback suspension/restoration, and updates library and playlist caches. Present one SwiftUI sheet from the existing main-window notification route.
+**Architecture:** Keep editable tag values and batch-patch semantics in Foundation-only value types. Put file access behind an actor, using a selective CXXTagLib bridge for verified ID3 carriers and SFBAudioEngine for native non-ID3 formats, then pass verified snapshots through a narrow database reindex operation. A `@MainActor` view model owns the sequential batch transaction, coordinates playback suspension/restoration, and updates library and playlist caches. Present one SwiftUI sheet from the existing main-window notification route.
 
-**Tech Stack:** Swift 5, SwiftUI, AppKit, SFBAudioEngine 0.13, GRDB, Bash source-regression checks, Xcode 16+
+**Tech Stack:** Swift 5, SwiftUI, AppKit, Objective-C++17, CXXTagLib 2.3, SFBAudioEngine 0.13, GRDB, Bash source-regression checks, Xcode 16+
 
 ## Global Constraints
 
-- Treat each audio file as the source of truth: load from the file, mutate the existing `AudioMetadata`, call `writeMetadata()`, reopen, and verify before changing SQLite.
-- Support metadata writing only for `mp3`, `m4a`, `flac`, `wav`, `aiff`, `aif`, `ogg`, `oga`, `opus`, `spx`, `ape`, `mpc`, `wv`, `tta`, `dsf`, and `dff`.
+- Treat each audio file as the source of truth: load from the file, apply only dirty fields with the concrete writer, reopen through SFBAudioEngine, and verify before changing SQLite.
+- Support metadata writing only for `mp3`, `m4a`, `flac`, `wav`, `aiff`, `aif`, `ogg`, `oga`, `opus`, `spx`, `ape`, `mpc`, `wv`, and `tta`; keep DSF/DSDIFF read-only until their selective ID3 paths have real-file preservation coverage.
 - Keep raw `aac`, raw `alac`, `au`, `mod`, `it`, `s3m`, and `xm` visible but read-only in the editor.
-- Never replace the entire SFBAudioEngine metadata object; doing so could erase artwork or advanced tags outside this feature's scope.
+- Never route an actual ID3 carrier through SFBAudioEngine's whole-metadata writer. Use selective ID3v2 frame mutation for verified carriers and mark unverified carriers read-only. For remaining formats, never replace the entire SFBAudioEngine metadata object.
 - An untouched mixed field produces `.unchanged`; a changed empty text/number/date/comment field produces `.remove`; compilation produces only `.unchanged` or `.set(Bool)`.
 - Write files sequentially. If the current track is part of the writable batch, process it first and restore it immediately before continuing.
 - Preserve current track identity, queue index, playback position, and playing/paused/stopped intent. A track that was paused must remain paused after the verified write.
@@ -21,7 +21,7 @@
 - Do not rescan a folder. Reindex only the successfully verified track, normalized relations, affected duplicate groups, and in-memory consumers.
 - All file-level smoke checks must use temporary fixtures or disposable copies, never a user's library file.
 - Add every user-facing string to `Resources/Localizable.xcstrings` with English source text and Simplified Chinese translation.
-- Do not edit `Petrichor.xcodeproj/project.pbxproj`; synchronized filesystem groups include the new Swift and shell files automatically.
+- Declare a direct app-target dependency on the already-resolved CXXTagLib 2.3 `taglib` product and a bridging header for explicit compile-time access to selective ID3 APIs. This is a build dependency only and adds no runtime network service.
 
 ---
 

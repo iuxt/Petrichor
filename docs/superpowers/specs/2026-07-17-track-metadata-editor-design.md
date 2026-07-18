@@ -6,7 +6,7 @@ Add a localized macOS metadata editor that opens from track context menus, reads
 
 ## Confirmed Product Decisions
 
-- The editor supports every imported format for which the bundled SFBAudioEngine 0.13.0 writer provides a real metadata-writing implementation.
+- The editor supports imported formats only when their concrete writer is both implemented and proven to preserve metadata outside the dirty patch. ID3 carriers without a verified selective path remain read-only.
 - The first release edits common tags only: title, artist, album, album artist, composer, genre, release date, track number and total, disc number and total, BPM, compilation, and comment.
 - Batch fields use three-state semantics: common value, mixed value, and explicit edit.
 - An untouched mixed field preserves every file's original value. Entering a value applies it to every writable selected file. Explicitly clearing a dirty field removes that tag from every writable selected file.
@@ -86,7 +86,7 @@ Compilation aggregates to `on`, `off`, or `mixed`, with a missing compilation ta
 
 ## Format Support
 
-The writer is a dedicated SFBAudioEngine adapter and is independent of the active playback or metadata-reading backend. Petrichor already bundles SFBAudioEngine and CXXTagLib, so this adds no dependency and no network behavior.
+The writer is independent of the active playback or metadata-reading backend. Petrichor already resolves SFBAudioEngine and CXXTagLib in its local build dependency graph. The app target declares CXXTagLib's `taglib` product directly so its Objective-C++ bridge has explicit compile-time access to selective ID3v2 APIs. This adds no runtime network service and preserves offline behavior.
 
 The writable allowlist is based on the concrete SFBAudioEngine file types whose `writeMetadata()` implementations call a real TagLib save path:
 
@@ -96,9 +96,10 @@ The writable allowlist is based on the concrete SFBAudioEngine file types whose 
 - WAVE and AIFF: `wav`, `aiff`, `aif`;
 - Ogg Vorbis, Ogg FLAC, Ogg Opus, and Ogg Speex: `ogg`, `oga`, `opus`, `spx`;
 - Monkey's Audio, Musepack, WavPack, and True Audio: `ape`, `mpc`, `wv`, `tta`;
-- DSF and DSDIFF: `dsf`, `dff`.
+- DSF and DSDIFF remain read-only until their selective ID3 save paths have
+  real-file preservation coverage.
 
-The adapter still asks SFBAudioEngine to inspect file content rather than trusting the extension alone. A URL on the allowlist can still be rejected when its contents are invalid, the concrete file type cannot be constructed, or the file is not writable.
+Writer selection inspects content rather than trusting the extension alone. Every allowlisted URL is probed for a verified selective ID3 carrier before SFB fallback: actual MPEG, WAVE, AIFF, and TrueAudio content uses the bridge regardless of extension; an `.mp3` whose content is not MPEG is rejected; and unverified ID3 carriers are read-only. Other URLs can still be rejected when their concrete file type cannot be constructed or the file is not writable.
 
 Imported formats without a corresponding writer are read-only in this editor: raw `aac`, raw `alac`, `au`, `mod`, `it`, `s3m`, and `xm`. They remain playable and scannable. A mixed selection may contain read-only files; the sheet shows how many will be skipped and why. If all selected files are read-only, `Save` remains disabled.
 
@@ -111,7 +112,7 @@ The writer exposes a small backend-neutral contract:
 - apply a `TrackMetadataPatch` to a URL; and
 - read the editable snapshot back for verification.
 
-The SFBAudioEngine implementation opens `AudioFile(readingPropertiesAndMetadataFrom:)`, mutates only the metadata properties present in the patch, and calls `writeMetadata()`. It must not create a fresh empty metadata object, because doing so could remove embedded artwork or advanced tags that are outside the editor.
+Verified ID3 carriers use a CXXTagLib Objective-C++ bridge that removes or writes only the ID3v2 frame families represented by dirty patch fields. This preserves unrelated and repeated frames such as `POPM`, `USLT`, `APIC`, `TXXX`, `PRIV`, and `UFID`. Native non-ID3 formats use SFBAudioEngine, mutating only metadata properties present in the patch before `writeMetadata()`. That path must not create a fresh empty metadata object.
 
 Patch operations distinguish:
 
@@ -119,9 +120,9 @@ Patch operations distinguish:
 - `set(value)`, which assigns a validated value; and
 - `remove`, which assigns `nil`.
 
-Compilation uses only `unchanged` and `set(Bool)` because the UI treats an absent compilation tag and an explicit false value as the same `off` state.
+Compilation uses only `unchanged` and `set(Bool)` because the UI treats an absent compilation tag and an explicit false value as the same `off` state. For ID3v2, false removes `TCMP` instead of writing `0`.
 
-Release year is stored through SFBAudioEngine's release-date field. Petrichor's existing metadata mapping derives the lightweight library year from the value read back.
+Release date is stored exactly as accepted `YYYY` or `YYYY-MM-DD` text in ID3v2 `TDRC`; native non-ID3 formats use SFBAudioEngine's release-date field. Petrichor's existing metadata mapping derives the lightweight library year from the value read back.
 
 After a successful `writeMetadata()` call, the service reopens the file and compares every dirty field with the expected normalized value. Verification ignores fields that were not part of the patch. A mismatch is a per-file failure even when the underlying writer returned success.
 
