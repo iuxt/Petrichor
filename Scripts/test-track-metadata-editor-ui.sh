@@ -59,6 +59,18 @@ require_pattern "$SHEET" 'model\.showsMixedPlaceholder\(for: field\)' \
     'Untouched mixed text fields must use the ViewModel placeholder state.'
 require_pattern "$SHEET" 'model\.unavailableResults\.count' \
     'The pre-save file summary must count unavailable or read-only items.'
+require_pattern "$SHEET" 'TextEditor\([\s\S]*\.accessibilityValue\(commentAccessibilityValue\)' \
+    'The multiline comment editor must expose its mixed state to accessibility.'
+require_pattern "$SHEET" 'private var commentAccessibilityValue: String[\s\S]*if model\.showsMixedPlaceholder\(for: \.comment\)[\s\S]*String\(appLocalized: "Multiple Values"\)[\s\S]*return model\.text\(for: \.comment\)' \
+    'Only a truly mixed comment may expose Multiple Values as its accessibility value.'
+require_pattern "$SHEET" 'model\.snapshots\.map\(\\\.file\.duration\)[\s\S]*format: HelperUtils\.formattedShortDuration' \
+    'Duration must aggregate exact raw snapshot values before display formatting.'
+require_pattern "$SHEET" 'model\.snapshots\.map\(\\\.file\.fileSize\)[\s\S]*format: Self\.formattedFileSize' \
+    'File size must aggregate exact raw snapshot values before display formatting.'
+require_pattern "$SHEET" 'private func aggregate<Value: Equatable>[\s\S]*values\.dropFirst\(\)\.allSatisfy\(\{ \$0 == first \}\)[\s\S]*format\(first\)' \
+    'Numeric aggregation must compare raw optional values before invoking the formatter.'
+reject_pattern "$SHEET" '\.duration\.map\(HelperUtils\.formattedShortDuration\)|\.fileSize\.map\(Self\.formattedFileSize\)' \
+    'Technical values must not be formatted before batch aggregation.'
 
 for field in title artist album albumArtist composer genre releaseDate \
     trackNumber trackTotal discNumber discTotal bpm comment; do

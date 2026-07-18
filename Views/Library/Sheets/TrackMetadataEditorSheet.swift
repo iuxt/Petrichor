@@ -292,19 +292,17 @@ struct TrackMetadataEditorSheet: View {
                 informationRow(
                     String(appLocalized: "Duration"),
                     value: aggregate(
-                        model.snapshots.map {
-                            $0.file.duration.map(HelperUtils.formattedShortDuration)
-                        },
-                        expectedCount: model.tracks.count
+                        model.snapshots.map(\.file.duration),
+                        expectedCount: model.tracks.count,
+                        format: HelperUtils.formattedShortDuration
                     )
                 )
                 informationRow(
                     String(appLocalized: "File Size"),
                     value: aggregate(
-                        model.snapshots.map {
-                            $0.file.fileSize.map(Self.formattedFileSize)
-                        },
-                        expectedCount: model.tracks.count
+                        model.snapshots.map(\.file.fileSize),
+                        expectedCount: model.tracks.count,
+                        format: Self.formattedFileSize
                     )
                 )
 
@@ -503,6 +501,7 @@ struct TrackMetadataEditorSheet: View {
                     .frame(minHeight: 64, idealHeight: 76)
                     .padding(2)
                     .accessibilityLabel(String(appLocalized: "Comment"))
+                    .accessibilityValue(commentAccessibilityValue)
 
                 if model.showsMixedPlaceholder(for: .comment),
                    model.text(for: .comment).isEmpty {
@@ -528,6 +527,13 @@ struct TrackMetadataEditorSheet: View {
                     )
             }
         }
+    }
+
+    private var commentAccessibilityValue: String {
+        if model.showsMixedPlaceholder(for: .comment) {
+            return String(appLocalized: "Multiple Values")
+        }
+        return model.text(for: .comment)
     }
 
     private func fieldLabel(_ label: String) -> some View {
@@ -746,6 +752,19 @@ struct TrackMetadataEditorSheet: View {
         _ values: [String?],
         expectedCount: Int
     ) -> String {
+        let result = aggregate(
+            values,
+            expectedCount: expectedCount,
+            format: { $0 }
+        )
+        return result.isEmpty ? "—" : result
+    }
+
+    private func aggregate<Value: Equatable>(
+        _ values: [Value?],
+        expectedCount: Int,
+        format: (Value) -> String
+    ) -> String {
         guard values.count == expectedCount, let first = values.first else {
             return expectedCount > 1
                 ? String(appLocalized: "Multiple Values")
@@ -756,8 +775,8 @@ struct TrackMetadataEditorSheet: View {
             return String(appLocalized: "Multiple Values")
         }
 
-        guard let first, !first.isEmpty else { return "—" }
-        return first
+        guard let first else { return "—" }
+        return format(first)
     }
 
     private static func formattedFileSize(_ bytes: Int64) -> String {
