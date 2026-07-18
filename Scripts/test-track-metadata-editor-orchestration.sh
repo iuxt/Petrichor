@@ -34,6 +34,8 @@ require_pattern 'for target in targets' 'File writes must be sequential.'
 require_pattern 'preflightWrite\(target:' 'Preflight must happen before playback suspension.'
 require_pattern 'prepareCurrentTrackForMetadataEdit' \
     'Current playback must be suspended before its write.'
+require_pattern 'if let snapshot = await playbackManager\s+\.prepareCurrentTrackForMetadataEdit\(track\)' \
+    'The editor must await artwork-reader shutdown before writing the current file.'
 require_pattern 'restoreCurrentTrackAfterMetadataEdit' \
     'Current playback must be restored after its write.'
 require_pattern 'func retryFailed\(' 'Failed-only retry is missing.'
@@ -268,8 +270,11 @@ final class PlaybackManager {
 
     func prepareCurrentTrackForMetadataEdit(
         _ track: Track
-    ) -> MetadataEditPlaybackSnapshot? {
+    ) async -> MetadataEditPlaybackSnapshot? {
         guard currentTrack?.trackId == track.trackId else { return nil }
+        recorder.append("artworkCancel:\(track.trackId!)")
+        await Task.yield()
+        recorder.append("artworkFinished:\(track.trackId!)")
         precondition(
             activeSuspensionGeneration == nil,
             "a new metadata suspension must not replace an unconsumed token"
@@ -560,8 +565,14 @@ struct Harness {
 
         let firstPreflight = recorder.events.firstIndex(of: "preflight:10")!
         let currentPreflight = recorder.events.firstIndex(of: "preflight:20")!
+        let currentArtworkFinished = recorder.events.firstIndex(of: "artworkFinished:20")!
+        let currentWrite = recorder.events.firstIndex(of: "write:20")!
         let restoreEnd = recorder.events.firstIndex(of: "restoreEnd:20")!
         expect(currentPreflight < firstPreflight, "the current track must be processed first")
+        expect(
+            currentArtworkFinished < currentWrite,
+            "the current file write must wait until its artwork reader terminates"
+        )
         expect(
             restoreEnd < firstPreflight,
             "the current track restore must reach a terminal callback before the next write"

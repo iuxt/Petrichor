@@ -338,7 +338,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                 try await fileService.preflightWrite(target: target)
 
                 if let track = track(matching: target) {
-                    if let snapshot = playbackManager
+                    if let snapshot = await playbackManager
                         .prepareCurrentTrackForMetadataEdit(track) {
                         outstandingPlaybackRestoration = OutstandingPlaybackRestoration(
                             target: target,

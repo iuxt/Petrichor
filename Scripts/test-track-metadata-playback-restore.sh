@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PLAYBACK="$ROOT_DIR/Managers/PlaybackManager.swift"
 SUSPENSION="$ROOT_DIR/Core/Playback/MetadataEditPlaybackSuspension.swift"
 NOW_PLAYING="$ROOT_DIR/Managers/NowPlayingManager.swift"
+AUTOMATION="$ROOT_DIR/Managers/Automation/AMTransport.swift"
 PLAYLIST="$ROOT_DIR/Managers/Playlist/PMTrackUpdate.swift"
 LIBRARY="$ROOT_DIR/Managers/Library/LMTrackMetadataEditing.swift"
 ENGINE="$ROOT_DIR/Core/Playback/PlaybackEngine.swift"
@@ -29,9 +30,14 @@ require_pattern "$PLAYBACK" 'private var metadataEditSuspension: MetadataEditPla
 require_pattern "$PLAYBACK" 'private var metadataEditSuspensionGeneration: UInt64' 'Metadata-write suspensions must use a monotonic generation.'
 require_pattern "$PLAYBACK" 'let queueIndex: Int' 'The snapshot must preserve queue position.'
 require_pattern "$PLAYBACK" 'func prepareCurrentTrackForMetadataEdit' 'Playback preparation is missing.'
+require_pattern "$PLAYBACK" 'func prepareCurrentTrackForMetadataEdit\(\s*_ track: Track\s*\) async' 'Playback preparation must asynchronously drain an in-flight artwork read.'
+require_pattern "$PLAYBACK" 'await cancelCurrentArtworkLoad\(\)' 'Playback preparation must await artwork task cancellation before returning.'
+require_pattern "$PLAYBACK" 'private func cancelCurrentArtworkLoad\(\) async' 'Artwork cancellation and draining must have an explicit async boundary.'
 require_pattern "$PLAYBACK" 'let wasPlaying = wantsPlaybackActive \|\| isPlaying' 'Playback restoration must snapshot the requested playing intent.'
 require_pattern "$PLAYBACK" 'func restoreCurrentTrackAfterMetadataEdit' 'Playback restoration is missing.'
+require_pattern "$PLAYBACK" 'var position: Double' 'Pending restoration position must remain mutable until restoration reaches a terminal callback.'
 require_pattern "$PLAYBACK" 'var shouldResume: Bool' 'Pending restoration intent must remain mutable until the paused callback.'
+require_pattern "$PLAYBACK" 'var didApplyPosition: Bool' 'Pending restoration must distinguish a position already applied to the loaded engine.'
 require_pattern "$PLAYBACK" 'if pending.shouldResume' 'Paused restoration must not resume.'
 require_pattern "$PLAYBACK" 'seekToPosition > 0 \|\| !resumeAfterRestore' 'A paused track at zero must remain paused.'
 require_pattern "$PLAYBACK" 'restoreQueueIndexAfterMetadataEdit\(queueIndex\)' 'An authoritative snapshot queue index must be restored through PlaylistManager.'
@@ -61,7 +67,7 @@ require_pattern "$PLAYBACK" 'guard finishedEntryIsCurrent else \{\s+Logger\.erro
 require_pattern "$PLAYBACK" 'let snapshotPosition = currentTime\.isFinite && currentTime >= 0 \? currentTime : 0' 'Metadata playback snapshots must sanitize invalid positions.'
 require_pattern "$PLAYBACK" 'position: snapshotPosition' 'The metadata snapshot must store the sanitized position.'
 require_pattern "$PLAYBACK" 'pending\.shouldResume\.toggle\(\)' 'A toggle during pending restoration must change only its requested intent.'
-require_pattern "$PLAYBACK" 'if togglePendingMetadataRestoreIntent\(\) \{\s+return\s+\}\s+cancelMetadataRestoreForPlaybackChange\(\)' 'Pending restore intent must be handled before cancellation.'
+require_pattern "$PLAYBACK" 'if togglePendingMetadataRestoreIntent\(\) \{\s+return\s+\}\s+if togglePendingPlaybackRequestIntent\(\) \{\s+return\s+\}\s+cancelMetadataRestoreForPlaybackChange\(\)' 'Pending restore and async-load intents must be handled before cancellation.'
 require_pattern "$PLAYBACK" 'deferMetadataEditPlayIfNeeded\(track\)' 'Same-track play must defer while its metadata file is being written.'
 require_pattern "$PLAYBACK" 'stageMetadataEditSupersedingTrack\(track\)' 'Different-track loading must clear the edited FullTrack before returning to normal transport.'
 require_pattern "$PLAYBACK" 'deferMetadataEditToggleIfNeeded\(\)' 'Toggle must update the suspended post-write intent.'
@@ -71,10 +77,20 @@ require_pattern "$PLAYBACK" 'func requestPlay\(\) -> Bool' 'Explicit remote Play
 require_pattern "$PLAYBACK" 'func requestPause\(\) -> Bool' 'Explicit remote Pause must have non-toggle semantics.'
 require_pattern "$PLAYBACK" 'setPendingMetadataRestoreIntent\(shouldResume: true\)' 'Explicit Play must idempotently update an in-flight restore.'
 require_pattern "$PLAYBACK" 'setPendingMetadataRestoreIntent\(shouldResume: false\)' 'Explicit Pause must idempotently update an in-flight restore.'
-require_pattern "$PLAYBACK" 'consumeMetadataEditSuspension\(for: snapshot\)' 'Restoration must consume only its matching metadata-write suspension.'
+require_pattern "$PLAYBACK" 'struct PendingPlaybackRequest' 'Async full-track loading must retain an explicit pending play intent.'
+require_pattern "$PLAYBACK" 'setPendingPlaybackRequestIntent\(shouldStartPlaying: true\)' 'Explicit Play must update an async full-track load intent.'
+require_pattern "$PLAYBACK" 'setPendingPlaybackRequestIntent\(shouldStartPlaying: false\)' 'Explicit Pause must update an async full-track load intent.'
+require_pattern "$PLAYBACK" 'togglePendingPlaybackRequestIntent\(\)' 'Toggle must update an async full-track load intent.'
+require_pattern "$PLAYBACK" 'consumePendingPlaybackRequest\(generation: requestGeneration\)' 'Async full-track completion must consume the latest pending play intent.'
+require_pattern "$PLAYBACK" 'applyPendingPlaybackFallbackIntent' 'Async-load intent changes must keep the currently loaded engine and public state consistent.'
+require_pattern "$PLAYBACK" 'metadataEditRestoration\(for: snapshot\)' 'Restoration must inspect only its matching metadata-write suspension.'
+require_pattern "$PLAYBACK" 'synchronizeActiveMetadataRestore' 'Transport changes must update an active metadata restoration.'
+require_pattern "$PLAYBACK" 'clearMetadataEditSuspension\(generation: operation\.suspensionGeneration\)' 'Only a terminal restore callback may clear its matching suspension token.'
 require_pattern "$PLAYBACK" 'if let queueIndex = restoration\.queueIndex' 'A superseding queue choice must not be rewound to the snapshot index.'
 require_pattern "$NOW_PLAYING" 'audioPlayer\.requestPlay\(\)' 'Remote Play must set an explicit playing intent.'
 require_pattern "$NOW_PLAYING" 'audioPlayer\.requestPause\(\)' 'Remote Pause must set an explicit paused intent.'
+require_pattern "$AUTOMATION" 'func play\(\) \{\s+_ = playback\?\.requestPlay\(\)\s+\}' 'Automation Play must issue an explicit play request.'
+require_pattern "$AUTOMATION" 'func pause\(\) \{\s+_ = playback\?\.requestPause\(\)\s+\}' 'Automation Pause must issue an explicit pause request.'
 
 if [[ ! -f "$SUSPENSION" ]]; then
     printf '%s\n' 'The metadata-write suspension reducer is missing.' >&2
@@ -100,10 +116,34 @@ prepare = body(
     "func prepareCurrentTrackForMetadataEdit",
     "func applyMetadataEditResult",
 )
+if prepare.index("await cancelCurrentArtworkLoad()") > prepare.index(
+    "metadataEditSuspension ="
+):
+    raise SystemExit(
+        "The current artwork reader must terminate before metadata-write suspension is published."
+    )
+if prepare.count("guard isCurrentTrack(track)") < 2:
+    raise SystemExit(
+        "Async artwork draining must revalidate that the edited track is still current."
+    )
 if prepare.index("metadataEditSuspension =") > prepare.index("audioPlayer.stop()"):
     raise SystemExit(
         "The metadata-write suspension must become active before preparation stops the engine."
     )
+
+cancel_artwork = body(
+    "private func cancelCurrentArtworkLoad() async",
+    "private func artworkIdentity",
+)
+for required in (
+    "artworkLoadTask = nil",
+    "task?.cancel()",
+    "await task?.value",
+):
+    if required not in cancel_artwork:
+        raise SystemExit(
+            f"Artwork draining must include {required} before metadata writes can begin."
+        )
 
 play = body("func playTrack(_ track: Track)", "func togglePlayPause()")
 if play.index("deferMetadataEditPlayIfNeeded(track)") > play.index(
@@ -111,6 +151,61 @@ if play.index("deferMetadataEditPlayIfNeeded(track)") > play.index(
 ):
     raise SystemExit(
         "Play requests must consult the active write suspension before normal playback starts."
+    )
+if play.index("stagePendingPlaybackRequest(generation: requestGeneration)") > play.index(
+    "track.fullTrack("
+):
+    raise SystemExit(
+        "The pending play intent must exist before asynchronous full-track loading begins."
+    )
+if play.index("consumePendingPlaybackRequest(generation: requestGeneration)") > play.index(
+    "startPlayback("
+):
+    raise SystemExit(
+        "Full-track completion must resolve the latest play/pause intent before starting."
+    )
+if play.count("discardPendingPlaybackRequest(generation: requestGeneration)") < 2:
+    raise SystemExit(
+        "Missing-data and thrown full-track loads must both discard their stale transport intent."
+    )
+
+pending_request_helpers = source[source.index("private func setPendingPlaybackRequestIntent"):
+                                 source.index("private func artworkIdentity")]
+if pending_request_helpers.count("applyPendingPlaybackFallbackIntent") < 4:
+    raise SystemExit(
+        "Explicit, toggle, and failure paths must synchronize the old engine while a new track loads."
+    )
+discard = pending_request_helpers[
+    pending_request_helpers.index("private func discardPendingPlaybackRequest"):
+]
+if "applyPendingPlaybackFallbackIntent" not in discard:
+    raise SystemExit(
+        "A failed async load must restore the final fallback intent on the engine that remains loaded."
+    )
+fallback = pending_request_helpers[
+    pending_request_helpers.index("private func applyPendingPlaybackFallbackIntent"):
+]
+for required in (
+    "audioPlayer.pause()",
+    "setPlaybackActive(false)",
+    "audioPlayer.resume()",
+    "syncPlaybackStateWithEngine()",
+):
+    if required not in fallback:
+        raise SystemExit(
+            f"Pending load intent synchronization is missing {required}."
+        )
+if "wantsPlaybackActive = false" in discard:
+    raise SystemExit(
+        "A failed async load must not force a still-playing old engine into a false intent."
+    )
+
+request_pause = body("func requestPause() -> Bool", "func togglePlayPause()")
+if request_pause.index(
+    "setPendingPlaybackRequestIntent(shouldStartPlaying: false)"
+) > request_pause.index("guard isPlaying"):
+    raise SystemExit(
+        "Pause must change an async load intent even while public isPlaying is still false."
     )
 
 deferred_play = body(
@@ -136,6 +231,12 @@ if toggle.index("deferMetadataEditToggleIfNeeded()") > toggle.index(
     raise SystemExit(
         "Toggle must update a write-window intent before consulting post-write restoration."
     )
+if toggle.index("togglePendingPlaybackRequestIntent()") > toggle.index(
+    "cancelMetadataRestoreForPlaybackChange()"
+):
+    raise SystemExit(
+        "Toggle must change an async load intent before normal engine transport runs."
+    )
 
 stop = body("func stop()", "func stopGracefully()")
 if stop.index("deferMetadataEditStopIfNeeded()") > stop.index(
@@ -157,16 +258,42 @@ restore = body(
     "func restoreCurrentTrackAfterMetadataEdit",
     "func restoreCurrentTrackAfterFailedTrashMove",
 )
-consume = restore.index("consumeMetadataEditSuspension(for: snapshot)")
+if "consumeMetadataEditSuspension(for: snapshot)" in restore:
+    raise SystemExit(
+        "Starting restoration must not consume the metadata suspension before a terminal callback."
+    )
+inspect = restore.index("metadataEditRestoration(for: snapshot)")
 for mutation in (
     "restoreQueueIndexAfterMetadataEdit",
     "currentTrack = track",
     "startPlayback(",
 ):
-    if consume > restore.index(mutation):
+    if inspect > restore.index(mutation):
         raise SystemExit(
-            f"Restoration must consume its generation before {mutation} mutates playback."
+            f"Restoration must validate its generation before {mutation} mutates playback."
         )
+
+seek_restore = source[source.index("private func deferMetadataEditSeekIfNeeded"):
+                      source.index("private func metadataEditRestoration")]
+if "synchronizeActiveMetadataRestore" not in seek_restore:
+    raise SystemExit(
+        "A seek during engine restoration must replace the pending restore position."
+    )
+
+finish = body("private func finishMetadataRestore", "private func metadataRestoreOperation")
+if "clearMetadataEditSuspension(generation: operation.suspensionGeneration)" not in finish:
+    raise SystemExit(
+        "Metadata suspension cleanup must happen in the restore terminal path."
+    )
+
+paused_restore = source[source.index("if effectiveState == .paused,"):
+                        source.index("if effectiveState == .playing,", source.index("if effectiveState == .paused,"))]
+if paused_restore.index("pendingPlaybackRestore = nil") < paused_restore.index(
+    "audioPlayer.seek(to: pending.position)"
+):
+    raise SystemExit(
+        "The pending restore must remain mutable until its final position is applied."
+    )
 PY
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/petrichor-metadata-suspension.XXXXXX")"

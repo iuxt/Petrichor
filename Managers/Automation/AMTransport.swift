@@ -3,8 +3,8 @@
 //
 // Playback transport commands (play/pause, navigation, seek, volume, shuffle,
 // repeat) used by the transport App Intents. PlaybackManager has no
-// standalone play()/pause(), so those are synthesized from togglePlayPause()
-// guarded on isPlaying.
+// explicit requestPlay()/requestPause() methods keep idempotent commands correct
+// while asynchronous playback or metadata restoration is still settling.
 //
 
 import Foundation
@@ -16,13 +16,11 @@ extension AutomationManager {
     }
 
     func play() {
-        guard let playback, !playback.isPlaying else { return }
-        playback.togglePlayPause()
+        _ = playback?.requestPlay()
     }
 
     func pause() {
-        guard let playback, playback.isPlaying else { return }
-        playback.togglePlayPause()
+        _ = playback?.requestPause()
     }
 
     func nextTrack() {
