@@ -74,12 +74,28 @@ final class PlaybackManager: NSObject, ObservableObject {
     private let playPauseToggleThrottleInterval: TimeInterval = 0.25
     private var lastPlayPauseToggleTime: TimeInterval = 0
 
-    /// Position to seek to and resume from once a restored track settles in
+    /// Position and requested play/pause intent to restore once a track settles in
     /// `.paused` (see `audioPlayerStateChanged`). Deferring to that transition
-    /// instead of a fixed delay ensures the asset is open before the resume lands,
+    /// instead of a fixed delay ensures the asset is open before the seek lands,
     /// avoiding the stuck-paused race on the async Crescendo backend. Carries the
     /// entry identity so a normal user-pause never trips the restore.
-    private var pendingRestoreResume: (entryId: AudioEntryId, position: Double)?
+    private struct PendingPlaybackRestore {
+        let entryId: AudioEntryId
+        let position: Double
+        let shouldResume: Bool
+    }
+
+    private struct MetadataRestoreOperation {
+        let entryId: AudioEntryId
+        let generation: UInt64
+    }
+
+    private var pendingPlaybackRestore: PendingPlaybackRestore?
+    private var metadataRestoreCompletion:
+        ((Result<Void, MetadataPlaybackRestoreError>) -> Void)?
+    private var metadataRestoreOperation: MetadataRestoreOperation?
+    private var metadataRestoreTimeoutTask: Task<Void, Never>?
+    private var metadataRestoreGeneration: UInt64 = 0
 
     // MARK: - Gapless lookahead (Crescendo path)
 
@@ -100,6 +116,39 @@ final class PlaybackManager: NSObject, ObservableObject {
         let track: Track
         let index: Int
         var fullTrack: FullTrack?
+    }
+
+    enum MetadataPlaybackRestoreError: LocalizedError {
+        case missingTrackData
+        case seekFailed
+        case timedOut
+        case engine(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingTrackData:
+                return String(appLocalized: "Playback could not be restored because track data is missing.")
+            case .seekFailed:
+                return String(appLocalized: "Playback resumed, but its saved position could not be restored.")
+            case .timedOut:
+                return String(appLocalized: "Playback restoration timed out.")
+            case .engine(let detail):
+                return String(
+                    format: String(appLocalized: "Playback could not be restored: %1$@"),
+                    detail
+                )
+            }
+        }
+    }
+
+    struct MetadataEditPlaybackSnapshot {
+        let track: Track
+        let fullTrack: FullTrack?
+        let position: Double
+        let wasPlaying: Bool
+        let wasEngineActive: Bool
+        let queueIndex: Int
+        let restoredPosition: Double
     }
 
     struct TrashMoveSnapshot {
@@ -216,6 +265,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     // MARK: - Playback Controls
     
     func playTrack(_ track: Track) {
+        cancelMetadataRestoreForPlaybackChange()
         let requestGeneration = beginPlaybackRequest()
         restoredUITrack = nil
         restoredPosition = 0
@@ -271,6 +321,8 @@ final class PlaybackManager: NSObject, ObservableObject {
         guard shouldAcceptPlayPauseToggle() else {
             return
         }
+
+        cancelMetadataRestoreForPlaybackChange()
         
         if isPlaying {
             wantsPlaybackActive = false
@@ -289,6 +341,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
     
     func stop() {
+        cancelMetadataRestoreForPlaybackChange()
         invalidatePlaybackRequests()
         wantsPlaybackActive = false
         audioPlayer.stop()
@@ -306,6 +359,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
 
     func stopGracefully() {
+        cancelMetadataRestoreForPlaybackChange()
         invalidatePlaybackRequests()
         wantsPlaybackActive = false
         audioPlayer.stop()
@@ -324,6 +378,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     @MainActor
     func prepareCurrentTrackForTrashMove(_ track: Track) -> TrashMoveSnapshot? {
         guard isCurrentTrack(track), let currentTrack else { return nil }
+        cancelMetadataRestoreForPlaybackChange()
 
         let snapshot = TrashMoveSnapshot(
             track: currentTrack,
@@ -335,7 +390,7 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         invalidatePlaybackRequests()
         wantsPlaybackActive = false
-        pendingRestoreResume = nil
+        pendingPlaybackRestore = nil
         audioPlayer.clearNextTrack()
         currentEntryId = nil
         trackForEntry.removeAll()
@@ -353,10 +408,126 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
 
     @MainActor
+    func prepareCurrentTrackForMetadataEdit(_ track: Track) -> MetadataEditPlaybackSnapshot? {
+        guard isCurrentTrack(track), let currentTrack else { return nil }
+        cancelMetadataRestoreForPlaybackChange()
+
+        let wasPlaying = wantsPlaybackActive || isPlaying
+        let snapshot = MetadataEditPlaybackSnapshot(
+            track: currentTrack,
+            fullTrack: currentFullTrack,
+            position: currentTime,
+            wasPlaying: wasPlaying,
+            wasEngineActive: wasPlaying || audioPlayer.state == .paused,
+            queueIndex: playlistManager.currentQueueIndex,
+            restoredPosition: restoredPosition
+        )
+
+        invalidatePlaybackRequests()
+        wantsPlaybackActive = false
+        pendingPlaybackRestore = nil
+        audioPlayer.clearNextTrack()
+        currentEntryId = nil
+        trackForEntry.removeAll()
+        pendingNext = nil
+        pendingNextWasSkipped = false
+        audioPlayer.stop()
+        currentTime = snapshot.position
+        resetProgressResolution(engineProgress: snapshot.position)
+        isPlaying = false
+        restoredPosition = snapshot.restoredPosition
+        stopStateSaveTimer()
+        updateNowPlayingInfo()
+
+        return snapshot
+    }
+
+    func applyMetadataEditResult(_ track: Track) {
+        trackForEntry = trackForEntry.mapValues { value in
+            value.trackId == track.trackId ? track : value
+        }
+
+        if currentTrack?.trackId == track.trackId {
+            currentTrack = track
+        }
+
+        if pendingNext?.track.trackId == track.trackId {
+            pendingNext = nil
+            pendingNextWasSkipped = false
+            primeNextTrack()
+        }
+    }
+
+    @MainActor
+    func restoreCurrentTrackAfterMetadataEdit(
+        _ snapshot: MetadataEditPlaybackSnapshot?,
+        track updatedTrack: Track?,
+        fullTrack updatedFullTrack: FullTrack?,
+        completion: @escaping (Result<Void, MetadataPlaybackRestoreError>) -> Void
+    ) {
+        guard let snapshot else {
+            completion(.success(()))
+            return
+        }
+        cancelMetadataRestoreForPlaybackChange()
+
+        let track = updatedTrack ?? snapshot.track
+        let fullTrack = updatedFullTrack ?? snapshot.fullTrack
+
+        pendingPlaybackRestore = nil
+        pendingNext = nil
+        pendingNextWasSkipped = false
+        trackForEntry.removeAll()
+        currentEntryId = nil
+        wantsPlaybackActive = false
+        playlistManager.restoreQueueIndexAfterMetadataEdit(snapshot.queueIndex)
+        currentArtworkIdentity = nil
+        currentTrack = track
+        currentFullTrack = fullTrack
+        let duration = HelperUtils.sanitizedDuration(fullTrack?.duration ?? 0)
+        let restoredTime = duration > 0
+            ? min(max(snapshot.position, 0), duration)
+            : max(snapshot.position, 0)
+        currentTime = restoredTime
+        resetProgressResolution(engineProgress: restoredTime)
+        restoredPosition = restoredTime
+        isPlaying = false
+        stopStateSaveTimer()
+
+        guard snapshot.wasEngineActive else {
+            updateNowPlayingInfo()
+            completion(.success(()))
+            return
+        }
+
+        guard let fullTrack else {
+            completion(.failure(.missingTrackData))
+            return
+        }
+
+        metadataRestoreGeneration &+= 1
+        let restoreGeneration = metadataRestoreGeneration
+        let restoreEntryId = AudioEntryId(id: UUID().uuidString)
+        metadataRestoreOperation = MetadataRestoreOperation(
+            entryId: restoreEntryId,
+            generation: restoreGeneration
+        )
+        metadataRestoreCompletion = completion
+        startMetadataRestoreTimeout(for: restoreGeneration)
+        startPlayback(
+            of: fullTrack,
+            lightweightTrack: track,
+            resumeAfterRestore: snapshot.wasPlaying,
+            entryId: restoreEntryId
+        )
+    }
+
+    @MainActor
     func restoreCurrentTrackAfterFailedTrashMove(_ snapshot: TrashMoveSnapshot?) {
         guard let snapshot else { return }
+        cancelMetadataRestoreForPlaybackChange()
 
-        pendingRestoreResume = nil
+        pendingPlaybackRestore = nil
         pendingNext = nil
         pendingNextWasSkipped = false
         trackForEntry.removeAll()
@@ -383,7 +554,7 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         invalidatePlaybackRequests()
         wantsPlaybackActive = false
-        pendingRestoreResume = nil
+        pendingPlaybackRestore = nil
         audioPlayer.clearNextTrack()
         audioPlayer.stop()
 
@@ -548,6 +719,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     /// track, queue, and position are kept so the progress bar stays put and the
     /// user can resume from the same spot on the new engine by pressing play.
     func reloadPlaybackEngine() {
+        cancelMetadataRestoreForPlaybackChange()
         invalidatePlaybackRequests()
         let resumePosition = currentTime
 
@@ -660,14 +832,19 @@ final class PlaybackManager: NSObject, ObservableObject {
     
     // MARK: - Private Methods
     
-    private func startPlayback(of fullTrack: FullTrack, lightweightTrack: Track) {
-        wantsPlaybackActive = true
+    private func startPlayback(
+        of fullTrack: FullTrack,
+        lightweightTrack: Track,
+        resumeAfterRestore: Bool = true,
+        entryId restoredEntryId: AudioEntryId? = nil
+    ) {
+        wantsPlaybackActive = resumeAfterRestore
         currentTrack = lightweightTrack
         currentFullTrack = fullTrack
 
         // Fresh identity for this play; play(url:) replaces the engine's queue, so
         // any previously primed gapless next is gone.
-        let entryId = AudioEntryId(id: UUID().uuidString)
+        let entryId = restoredEntryId ?? AudioEntryId(id: UUID().uuidString)
         currentEntryId = entryId
         // Fresh play replaces the engine queue, so prior entries are gone.
         trackForEntry = [entryId.id: lightweightTrack]
@@ -677,14 +854,20 @@ final class PlaybackManager: NSObject, ObservableObject {
         let seekToPosition = restoredPosition
         restoredPosition = 0
         resetProgressResolution(engineProgress: seekToPosition > 0 ? seekToPosition : 0)
+        pendingPlaybackRestore = nil
 
-        if seekToPosition > 0 {
-            // Load paused and defer the seek+resume to the `.paused` transition
+        if seekToPosition > 0 || !resumeAfterRestore {
+            // Load paused and defer the seek plus requested play/pause state to the
+            // `.paused` transition.
             // this produces (see audioPlayerStateChanged): that signal fires only
-            // once the engine has the asset open, so the resume can't race the
+            // once the engine has the asset open, so the seek can't race the
             // engine's async loading. Set the marker before play() because the
             // `.paused` callback can arrive synchronously on some backends.
-            pendingRestoreResume = (entryId, seekToPosition)
+            pendingPlaybackRestore = PendingPlaybackRestore(
+                entryId: entryId,
+                position: seekToPosition,
+                shouldResume: resumeAfterRestore
+            )
             currentTime = seekToPosition
             audioPlayer.play(url: fullTrack.url, entryId: entryId, startPaused: true)
         } else {
@@ -693,12 +876,97 @@ final class PlaybackManager: NSObject, ObservableObject {
             Logger.info("Started playback: \(lightweightTrack.title)")
         }
 
-        startStateSaveTimer()
+        if resumeAfterRestore {
+            startStateSaveTimer()
+        } else {
+            stopStateSaveTimer()
+        }
         updateNowPlayingInfo()
         // The gapless next is primed from `audioPlayerDidStartPlaying`, once the
         // engine confirms this track is actually playing - priming here (before
         // the engine's async play starts) is too early: the successor can't be
         // pre-decoded against a not-yet-established current.
+    }
+
+    private func startMetadataRestoreTimeout(for generation: UInt64) {
+        metadataRestoreTimeoutTask?.cancel()
+        metadataRestoreTimeoutTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.handleMetadataRestoreTimeout(generation: generation)
+        }
+    }
+
+    private func handleMetadataRestoreTimeout(generation: UInt64) {
+        guard let operation = metadataRestoreOperation,
+              operation.generation == generation else {
+            return
+        }
+
+        if pendingPlaybackRestore?.entryId == operation.entryId {
+            pendingPlaybackRestore = nil
+        }
+
+        if currentEntryId == operation.entryId {
+            wantsPlaybackActive = false
+            restoredPosition = currentTime
+            currentEntryId = nil
+            trackForEntry.removeValue(forKey: operation.entryId.id)
+            pendingNext = nil
+            pendingNextWasSkipped = false
+            audioPlayer.clearNextTrack()
+            audioPlayer.stop()
+            setPlaybackActive(false)
+            updateNowPlayingInfo()
+        }
+
+        finishMetadataRestore(
+            .failure(.timedOut),
+            generation: operation.generation,
+            entryId: operation.entryId
+        )
+    }
+
+    private func cancelMetadataRestoreForPlaybackChange() {
+        guard let operation = metadataRestoreOperation else { return }
+
+        if pendingPlaybackRestore?.entryId == operation.entryId {
+            pendingPlaybackRestore = nil
+        }
+
+        finishMetadataRestore(
+            .failure(
+                .engine(
+                    String(appLocalized: "Playback restoration was interrupted by another playback action.")
+                )
+            ),
+            generation: operation.generation,
+            entryId: operation.entryId
+        )
+    }
+
+    private func finishMetadataRestore(
+        _ result: Result<Void, MetadataPlaybackRestoreError>,
+        generation: UInt64? = nil,
+        entryId: AudioEntryId? = nil
+    ) {
+        guard let operation = metadataRestoreOperation,
+              operation.generation == metadataRestoreGeneration else {
+            return
+        }
+        if let generation, generation != operation.generation { return }
+        if let entryId, entryId != operation.entryId { return }
+        guard let completion = metadataRestoreCompletion else { return }
+        metadataRestoreCompletion = nil
+        metadataRestoreOperation = nil
+        metadataRestoreGeneration &+= 1
+        metadataRestoreTimeoutTask?.cancel()
+        metadataRestoreTimeoutTask = nil
+        completion(result)
     }
 
     // MARK: - Gapless lookahead
@@ -741,7 +1009,10 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         // Already primed for this exact upcoming entry - avoid a redundant swap
         // (redundant command-center/engine writes are wasteful).
-        if let pending = pendingNext, pending.track.url == next.track.url, pending.index == next.index {
+        if let pending = pendingNext,
+           pending.track == next.track,
+           pending.track.url == next.track.url,
+           pending.index == next.index {
             return
         }
 
@@ -1025,6 +1296,17 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                 }
                 self.setPlaybackActive(true)
             }
+
+            if let operation = self.metadataRestoreOperation,
+               operation.entryId == entryId,
+               self.pendingPlaybackRestore == nil,
+               self.wantsPlaybackActive {
+                self.finishMetadataRestore(
+                    .success(()),
+                    generation: operation.generation,
+                    entryId: entryId
+                )
+            }
             Logger.info("Track started playing: \(entryId.id)")
         }
     }
@@ -1049,24 +1331,63 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                 self.setPlaybackActive(false)
             }
 
-            // Finish a deferred restore-resume: the startPaused load has now
-            // settled in `.paused`, so the asset is open and the seek+resume is
+            // Finish a deferred restore: the startPaused load has now settled in
+            // `.paused`, so the asset is open and the seek plus requested state are
             // safe. Guarded by entry identity so an unrelated pause never trips it.
             if effectiveState == .paused,
-               let pending = self.pendingRestoreResume,
+               let pending = self.pendingPlaybackRestore,
                pending.entryId == self.currentEntryId {
-                self.pendingRestoreResume = nil
+                self.pendingPlaybackRestore = nil
                 if self.audioPlayer.seek(to: pending.position) {
                     self.currentTime = pending.position
-                    self.wantsPlaybackActive = true
-                    self.audioPlayer.resume()
-                    Logger.info("Resumed restored playback from \(pending.position)s")
-                } else if let url = self.currentFullTrack?.url {
-                    Logger.warning("Restore seek failed, starting from beginning")
+                    self.resetProgressResolution(engineProgress: pending.position)
+                    if pending.shouldResume {
+                        self.wantsPlaybackActive = true
+                        self.audioPlayer.resume()
+                        Logger.info("Resumed restored playback from \(pending.position)s")
+                    } else {
+                        self.wantsPlaybackActive = false
+                        self.updateNowPlayingInfo()
+                        self.finishMetadataRestore(
+                            .success(()),
+                            entryId: pending.entryId
+                        )
+                        Logger.info("Restored paused playback at \(pending.position)s")
+                    }
+                } else {
+                    Logger.warning("Restore seek failed")
                     self.currentTime = 0
-                    self.wantsPlaybackActive = true
-                    self.audioPlayer.play(url: url, entryId: pending.entryId, startPaused: false)
+                    self.resetProgressResolution(engineProgress: 0)
+                    if pending.shouldResume, let url = self.currentFullTrack?.url {
+                        self.wantsPlaybackActive = true
+                        self.audioPlayer.play(
+                            url: url,
+                            entryId: pending.entryId,
+                            startPaused: false
+                        )
+                        Logger.warning("Restore seek failed, starting from beginning")
+                    } else {
+                        self.wantsPlaybackActive = false
+                        self.updateNowPlayingInfo()
+                        Logger.warning("Restore seek failed, staying paused at beginning")
+                    }
+                    self.finishMetadataRestore(
+                        .failure(.seekFailed),
+                        entryId: pending.entryId
+                    )
                 }
+            }
+
+            if effectiveState == .playing,
+               let operation = self.metadataRestoreOperation,
+               operation.entryId == self.currentEntryId,
+               self.pendingPlaybackRestore == nil,
+               self.wantsPlaybackActive {
+                self.finishMetadataRestore(
+                    .success(()),
+                    generation: operation.generation,
+                    entryId: operation.entryId
+                )
             }
 
             // Prime the gapless next once the engine is actually playing. This
@@ -1159,6 +1480,17 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                 }
 
             case .error:
+                if let operation = self.metadataRestoreOperation,
+                   operation.entryId == entryId {
+                    if self.pendingPlaybackRestore?.entryId == operation.entryId {
+                        self.pendingPlaybackRestore = nil
+                    }
+                    self.finishMetadataRestore(
+                        .failure(.engine(String(appLocalized: "Playback error occurred"))),
+                        generation: operation.generation,
+                        entryId: operation.entryId
+                    )
+                }
                 self.currentTime = 0
                 self.resetProgressResolution(engineProgress: 0)
                 self.wantsPlaybackActive = false
@@ -1174,6 +1506,17 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
     func audioPlayerUnexpectedError(player: PlaybackEngine, error: AudioPlayerError) {
         DispatchQueue.main.async {
             Logger.error("Audio player error: \(error.localizedDescription)")
+            if let operation = self.metadataRestoreOperation,
+               operation.entryId == self.currentEntryId {
+                if self.pendingPlaybackRestore?.entryId == operation.entryId {
+                    self.pendingPlaybackRestore = nil
+                }
+                self.finishMetadataRestore(
+                    .failure(.engine(error.localizedDescription)),
+                    generation: operation.generation,
+                    entryId: operation.entryId
+                )
+            }
             Task { @MainActor in
                 NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error: \(error.localizedDescription)"))
             }

@@ -80,20 +80,29 @@ extension PlaylistManager {
         }
     }
 
-    /// Handle track property updates to refresh smart playlists and other dependent data
-    internal func handleTrackPropertyUpdate(_ track: Track) async {
-        // Update current queue if the track is in it
-        await MainActor.run {
-            if let queueIndex = self.currentQueue.firstIndex(where: { $0.trackId == track.trackId }) {
-                self.currentQueue[queueIndex] = track
+    /// Replace every in-memory copy of a track after its file metadata is reindexed.
+    func applyMetadataEditResult(_ track: Track) {
+        for index in currentQueue.indices where currentQueue[index].trackId == track.trackId {
+            currentQueue[index] = track
+        }
+
+        for playlistIndex in playlists.indices {
+            for trackIndex in playlists[playlistIndex].tracks.indices
+            where playlists[playlistIndex].tracks[trackIndex].trackId == track.trackId {
+                playlists[playlistIndex].tracks[trackIndex] = track
             }
         }
 
-        // Update current track if it's the one being updated
-        if let currentTrack = audioPlayer?.currentTrack, currentTrack.trackId == track.trackId {
-            await MainActor.run {
-                self.audioPlayer?.currentTrack = track
-            }
-        }
+        audioPlayer?.applyMetadataEditResult(track)
+    }
+
+    /// Reevaluate smart-playlist membership once after a metadata-edit batch.
+    func finishMetadataEditRefresh() {
+        updateSmartPlaylists()
+    }
+
+    /// Compatibility wrapper for existing asynchronous update call sites.
+    internal func handleTrackPropertyUpdate(_ track: Track) async {
+        applyMetadataEditResult(track)
     }
 }

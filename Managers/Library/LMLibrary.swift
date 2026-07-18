@@ -143,12 +143,12 @@ extension LibraryManager {
         }
     }
 
-    func refreshEntities() {
+    func refreshEntities(notify: Bool = true) {
         entitiesLoaded = false
         cachedArtistEntities = databaseManager.getArtistEntities()
         cachedAlbumEntities = databaseManager.getAlbumEntities()
         entitiesLoaded = true
-        updateTotalCounts()
+        updateTotalCounts(notify: notify)
         Logger.info("Refreshed entities: \(cachedArtistEntities.count) artists and \(cachedAlbumEntities.count) albums")
         objectWillChange.send()
     }

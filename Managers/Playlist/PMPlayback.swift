@@ -196,6 +196,12 @@ extension PlaylistManager {
         currentQueueIndex = index
     }
 
+    /// Restore metadata-edit playback position without moving or replaying the queue.
+    func restoreQueueIndexAfterMetadataEdit(_ index: Int) {
+        guard currentQueue.indices.contains(index) else { return }
+        currentQueueIndex = index
+    }
+
     func playPreviousTrack() {
         guard !currentQueue.isEmpty else {
             createLibraryQueue()
