@@ -82,7 +82,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     private struct PendingPlaybackRestore {
         let entryId: AudioEntryId
         let position: Double
-        let shouldResume: Bool
+        var shouldResume: Bool
     }
 
     private struct MetadataRestoreOperation {
@@ -322,6 +322,9 @@ final class PlaybackManager: NSObject, ObservableObject {
             return
         }
 
+        if togglePendingMetadataRestoreIntent() {
+            return
+        }
         cancelMetadataRestoreForPlaybackChange()
         
         if isPlaying {
@@ -413,10 +416,11 @@ final class PlaybackManager: NSObject, ObservableObject {
         cancelMetadataRestoreForPlaybackChange()
 
         let wasPlaying = wantsPlaybackActive || isPlaying
+        let snapshotPosition = currentTime.isFinite && currentTime >= 0 ? currentTime : 0
         let snapshot = MetadataEditPlaybackSnapshot(
             track: currentTrack,
             fullTrack: currentFullTrack,
-            position: currentTime,
+            position: snapshotPosition,
             wasPlaying: wasPlaying,
             wasEngineActive: wasPlaying || audioPlayer.state == .paused,
             queueIndex: playlistManager.currentQueueIndex,
@@ -687,6 +691,30 @@ final class PlaybackManager: NSObject, ObservableObject {
         }
 
         lastPlayPauseToggleTime = now
+        return true
+    }
+
+    private func togglePendingMetadataRestoreIntent() -> Bool {
+        guard var pending = pendingPlaybackRestore,
+              let operation = metadataRestoreOperation,
+              operation.entryId == pending.entryId,
+              pending.entryId == currentEntryId else {
+            return false
+        }
+
+        pending.shouldResume.toggle()
+        pendingPlaybackRestore = pending
+        wantsPlaybackActive = pending.shouldResume
+        if pending.shouldResume {
+            startStateSaveTimer()
+        } else {
+            stopStateSaveTimer()
+        }
+        updateNowPlayingInfo()
+        Logger.info(
+            "Changed pending metadata playback restore intent to "
+                + (pending.shouldResume ? "playing" : "paused")
+        )
         return true
     }
 
@@ -967,6 +995,17 @@ final class PlaybackManager: NSObject, ObservableObject {
         metadataRestoreTimeoutTask?.cancel()
         metadataRestoreTimeoutTask = nil
         completion(result)
+    }
+
+    private func metadataRestoreOperation(
+        matching originatingEntryId: AudioEntryId?
+    ) -> MetadataRestoreOperation? {
+        guard let operation = metadataRestoreOperation,
+              let originatingEntryId,
+              originatingEntryId == operation.entryId else {
+            return nil
+        }
+        return operation
     }
 
     // MARK: - Gapless lookahead
@@ -1491,6 +1530,10 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                         entryId: operation.entryId
                     )
                 }
+                guard finishedEntryIsCurrent else {
+                    Logger.error("Ignoring stale playback error for non-current entry \(entryId.id)")
+                    return
+                }
                 self.currentTime = 0
                 self.resetProgressResolution(engineProgress: 0)
                 self.wantsPlaybackActive = false
@@ -1503,11 +1546,14 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
         }
     }
     
-    func audioPlayerUnexpectedError(player: PlaybackEngine, error: AudioPlayerError) {
+    func audioPlayerUnexpectedError(
+        player: PlaybackEngine,
+        error: AudioPlayerError,
+        entryId originatingEntryId: AudioEntryId?
+    ) {
         DispatchQueue.main.async {
             Logger.error("Audio player error: \(error.localizedDescription)")
-            if let operation = self.metadataRestoreOperation,
-               operation.entryId == self.currentEntryId {
+            if let operation = self.metadataRestoreOperation(matching: originatingEntryId) {
                 if self.pendingPlaybackRestore?.entryId == operation.entryId {
                     self.pendingPlaybackRestore = nil
                 }
@@ -1516,6 +1562,8 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                     generation: operation.generation,
                     entryId: operation.entryId
                 )
+            } else if self.metadataRestoreOperation != nil, originatingEntryId == nil {
+                Logger.info("Leaving metadata restoration pending after an unidentified engine error")
             }
             Task { @MainActor in
                 NotificationManager.shared.addMessage(.error, String(appLocalized: "Playback error: \(error.localizedDescription)"))

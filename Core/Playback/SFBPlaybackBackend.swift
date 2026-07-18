@@ -211,7 +211,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
             Logger.info("Playback resumed")
         } catch {
             Logger.error("Failed to resume playback: \(error)")
-            backendDelegate?.backendUnexpectedError(error: .engineError(error))
+            backendDelegate?.backendUnexpectedError(error: .engineError(error), entryId: currentEntryId)
         }
     }
 
@@ -261,7 +261,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
             }
         } catch {
             Logger.error("Failed to toggle play/pause: \(error)")
-            backendDelegate?.backendUnexpectedError(error: .engineError(error))
+            backendDelegate?.backendUnexpectedError(error: .engineError(error), entryId: currentEntryId)
         }
     }
 
@@ -276,7 +276,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
 
         if !success {
             Logger.error("Failed to seek to time: \(time)")
-            backendDelegate?.backendUnexpectedError(error: .seekError)
+            backendDelegate?.backendUnexpectedError(error: .seekError, entryId: currentEntryId)
         }
 
         return success
@@ -521,9 +521,17 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
     }
 
     func handleError(_ error: Error) {
+        let generationAtCallback = playGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.backendDelegate?.backendUnexpectedError(error: .engineError(error))
+            guard self.playGeneration == generationAtCallback else {
+                Logger.info("Ignoring stale SFB error callback (generation changed)")
+                return
+            }
+            self.backendDelegate?.backendUnexpectedError(
+                error: .engineError(error),
+                entryId: self.currentEntryId
+            )
         }
     }
 
@@ -556,7 +564,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
         Logger.error("Failed to play audio: \(error)")
         state = .stopped
 
-        backendDelegate?.backendUnexpectedError(error: .engineError(error))
+        backendDelegate?.backendUnexpectedError(error: .engineError(error), entryId: entryId)
         backendDelegate?.backendDidFinishPlaying(
             entryId: entryId,
             stopReason: .error,

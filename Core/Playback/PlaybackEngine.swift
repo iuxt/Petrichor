@@ -75,7 +75,11 @@ public protocol AudioPlayerDelegate: AnyObject {
         progress: Double,
         duration: Double
     )
-    func audioPlayerUnexpectedError(player: PlaybackEngine, error: AudioPlayerError)
+    func audioPlayerUnexpectedError(
+        player: PlaybackEngine,
+        error: AudioPlayerError,
+        entryId: AudioEntryId?
+    )
 
     // Optional methods with default implementations
     func audioPlayerDidFinishBuffering(player: PlaybackEngine, with entryId: AudioEntryId)
@@ -156,7 +160,7 @@ protocol PlaybackBackendDelegate: AnyObject {
         progress: Double,
         duration: Double
     )
-    func backendUnexpectedError(error: AudioPlayerError)
+    func backendUnexpectedError(error: AudioPlayerError, entryId: AudioEntryId?)
     func backendDidFinishBuffering(with entryId: AudioEntryId)
     func backendDidReadMetadata(metadata: [String: String])
     func backendDidCancel(queuedItems: [AudioEntryId])
@@ -346,8 +350,8 @@ extension PlaybackEngine: PlaybackBackendDelegate {
         )
     }
 
-    func backendUnexpectedError(error: AudioPlayerError) {
-        delegate?.audioPlayerUnexpectedError(player: self, error: error)
+    func backendUnexpectedError(error: AudioPlayerError, entryId: AudioEntryId?) {
+        delegate?.audioPlayerUnexpectedError(player: self, error: error, entryId: entryId)
     }
 
     func backendDidFinishBuffering(with entryId: AudioEntryId) {

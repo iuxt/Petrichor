@@ -228,8 +228,11 @@ final class CrescendoPlaybackBackend: @preconcurrency PlaybackBackend {
         )
     }
 
-    func handleError(_ error: CrescendoError) {
-        backendDelegate?.backendUnexpectedError(error: Self.mapError(error))
+    func handleError(_ error: CrescendoError, entryId: CrescendoEntryId?) {
+        backendDelegate?.backendUnexpectedError(
+            error: Self.mapError(error),
+            entryId: entryId.map { AudioEntryId(id: $0.id) }
+        )
     }
 
     func handleFinishBuffering(entryId: CrescendoEntryId) {
@@ -315,7 +318,7 @@ private final class CrescendoDelegateBridge: CrescendoPlayerDelegate {
     }
 
     func playerDidEncounterError(_ player: CrescendoPlayer, error: CrescendoError, entryId: CrescendoEntryId?) {
-        owner?.handleError(error)
+        owner?.handleError(error, entryId: entryId)
     }
 
     func playerDidFinishBuffering(_ player: CrescendoPlayer, entryId: CrescendoEntryId) {
