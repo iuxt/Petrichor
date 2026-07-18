@@ -12,34 +12,34 @@ enum TrackMetadataFileError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .fileMissing(let name):
-            return String(
-                format: String(appLocalized: "The file “%1$@” no longer exists."),
+            return String.localizedStringWithFormat(
+                String(appLocalized: "The file “%1$@” no longer exists."),
                 name
             )
         case .unsupportedFormat(let format):
-            return String(
-                format: String(appLocalized: "The %1$@ format is read-only."),
+            return String.localizedStringWithFormat(
+                String(appLocalized: "The %1$@ format is read-only."),
                 format.uppercased()
             )
         case .fileNotWritable(let name):
-            return String(
-                format: String(appLocalized: "The file “%1$@” is not writable."),
+            return String.localizedStringWithFormat(
+                String(appLocalized: "The file “%1$@” is not writable."),
                 name
             )
         case .readFailed(let detail):
-            return String(
-                format: String(appLocalized: "Could not read tags: %1$@"),
+            return String.localizedStringWithFormat(
+                String(appLocalized: "Could not read tags: %1$@"),
                 detail
             )
         case .writeFailed(let detail):
-            return String(
-                format: String(appLocalized: "Could not save tags: %1$@"),
+            return String.localizedStringWithFormat(
+                String(appLocalized: "Could not save tags: %1$@"),
                 detail
             )
         case .verificationFailed(let fields):
             let names = fields.map(localizedMetadataFieldName).joined(separator: ", ")
-            return String(
-                format: String(appLocalized: "Saved tags could not be verified: %1$@"),
+            return String.localizedStringWithFormat(
+                String(appLocalized: "Saved tags could not be verified: %1$@"),
                 names
             )
         }

@@ -379,7 +379,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                 results.append(
                     TrackMetadataBatchResult(
                         target: target,
-                        outcome: .failed(error.localizedDescription)
+                        outcome: .failed(Self.localizedSaveFailure(error))
                     )
                 )
             }
@@ -529,5 +529,15 @@ final class TrackMetadataEditorViewModel: ObservableObject {
             return targetID == trackID
         }
         return target.url.standardizedFileURL == track.url.standardizedFileURL
+    }
+
+    private static func localizedSaveFailure(_ error: Error) -> String {
+        if error is TrackMetadataFileError {
+            return error.localizedDescription
+        }
+        return String.localizedStringWithFormat(
+            String(appLocalized: "Could not save tags: %1$@"),
+            error.localizedDescription
+        )
     }
 }

@@ -108,6 +108,10 @@ do {
     expect(false, "invalid calendar date must fail validation")
 } catch let error as TrackMetadataValidationError {
     expect(error.field == .releaseDate, "date error must identify release date")
+    expect(
+        error.message == "The release date must use YYYY or YYYY-MM-DD.",
+        "date validation must expose a localizable user-facing message"
+    )
 }
 
 form.setText("", for: .releaseDate)
@@ -117,6 +121,10 @@ do {
     expect(false, "zero BPM must fail validation")
 } catch let error as TrackMetadataValidationError {
     expect(error.field == .bpm, "integer error must identify BPM")
+    expect(
+        error.message == "BPM must be a positive integer.",
+        "integer validation must use the localized display field name"
+    )
 }
 
 var restoredMixed = TrackMetadataEditForm(tags: [first, second])

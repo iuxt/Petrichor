@@ -21,6 +21,25 @@ enum TrackMetadataEditableField: String, CaseIterable, Equatable, Sendable {
     case bpm
     case compilation
     case comment
+
+    var localizedDisplayName: String {
+        switch self {
+        case .title: return String(localized: "Title")
+        case .artist: return String(localized: "Artist")
+        case .album: return String(localized: "Album")
+        case .albumArtist: return String(localized: "Album Artist")
+        case .composer: return String(localized: "Composer")
+        case .genre: return String(localized: "Genre")
+        case .releaseDate: return String(localized: "Release Date")
+        case .trackNumber: return String(localized: "Track Number")
+        case .trackTotal: return String(localized: "Total Tracks")
+        case .discNumber: return String(localized: "Disc Number")
+        case .discTotal: return String(localized: "Total Discs")
+        case .bpm: return String(localized: "BPM")
+        case .compilation: return String(localized: "Compilation")
+        case .comment: return String(localized: "Comment")
+        }
+    }
 }
 
 struct TrackMetadataEditTarget: Hashable, Sendable {
@@ -429,7 +448,10 @@ struct TrackMetadataEditForm: Equatable, Sendable {
             guard let value = Int(text), value > 0 else {
                 throw TrackMetadataValidationError(
                     field: field,
-                    message: "\(field.rawValue) must be a positive integer."
+                    message: String.localizedStringWithFormat(
+                        String(localized: "%1$@ must be a positive integer."),
+                        field.localizedDisplayName
+                    )
                 )
             }
             return .set(value)
@@ -448,7 +470,9 @@ struct TrackMetadataEditForm: Equatable, Sendable {
             guard Self.isValidReleaseDate(value) else {
                 throw TrackMetadataValidationError(
                     field: .releaseDate,
-                    message: "releaseDate must be a four-digit year or an ISO date."
+                    message: String(
+                        localized: "The release date must use YYYY or YYYY-MM-DD."
+                    )
                 )
             }
             return .set(value)

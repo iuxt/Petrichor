@@ -133,8 +133,8 @@ final class PlaybackManager: NSObject, ObservableObject {
             case .timedOut:
                 return String(appLocalized: "Playback restoration timed out.")
             case .engine(let detail):
-                return String(
-                    format: String(appLocalized: "Playback could not be restored: %1$@"),
+                return String.localizedStringWithFormat(
+                    String(appLocalized: "Playback could not be restored: %1$@"),
                     detail
                 )
             }

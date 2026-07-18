@@ -8259,6 +8259,336 @@
         }
       }
     },
+    "%1$@ must be a positive integer.": {
+      "comment": "Metadata editor validation error. The argument is the localized field name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 必须是正整数。"
+          }
+        }
+      }
+    },
+    "Comment": {
+      "comment": "Metadata editor field label.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备注"
+          }
+        }
+      }
+    },
+    "Could not read tags: %1$@": {
+      "comment": "Metadata editor read failure. The argument is the underlying error.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取标签：%1$@"
+          }
+        }
+      }
+    },
+    "Could not save tags: %1$@": {
+      "comment": "Metadata editor save failure. The argument is the underlying error.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存标签：%1$@"
+          }
+        }
+      }
+    },
+    "Edit Track Info...": {
+      "comment": "Context-menu command that opens the audio tag editor.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改歌曲信息…"
+          }
+        }
+      }
+    },
+    "Failed": {
+      "comment": "Metadata editor result status.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败"
+          }
+        }
+      }
+    },
+    "File Information": {
+      "comment": "Metadata editor section containing read-only file details.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件信息"
+          }
+        }
+      }
+    },
+    "Multiple Values": {
+      "comment": "Placeholder shown when selected tracks have differing values.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多个值"
+          }
+        }
+      }
+    },
+    "Playback could not be restored because track data is missing.": {
+      "comment": "Metadata editor error shown when playback state cannot be restored.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由于歌曲数据缺失，无法恢复播放。"
+          }
+        }
+      }
+    },
+    "Playback could not be restored: %1$@": {
+      "comment": "Metadata editor playback restoration failure. The argument is the underlying engine error.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法恢复播放：%1$@"
+          }
+        }
+      }
+    },
+    "Playback restoration timed out.": {
+      "comment": "Metadata editor playback restoration timeout.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复播放超时。"
+          }
+        }
+      }
+    },
+    "Playback restoration was interrupted by another playback action.": {
+      "comment": "Metadata editor playback restoration interruption.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另一项播放操作中断了播放恢复。"
+          }
+        }
+      }
+    },
+    "Playback resumed, but its saved position could not be restored.": {
+      "comment": "Metadata editor warning shown when playback resumes without its saved seek position.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放已恢复，但无法恢复到保存前的位置。"
+          }
+        }
+      }
+    },
+    "Reading Tags...": {
+      "comment": "Metadata editor loading status.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取标签…"
+          }
+        }
+      }
+    },
+    "Retry Failed": {
+      "comment": "Metadata editor button that retries only failed files.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试失败项"
+          }
+        }
+      }
+    },
+    "Saved": {
+      "comment": "Metadata editor result status.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存"
+          }
+        }
+      }
+    },
+    "Saved tags could not be verified: %1$@": {
+      "comment": "Metadata editor verification failure. The argument lists fields that did not match.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证已保存的标签：%1$@"
+          }
+        }
+      }
+    },
+    "Saving %1$lld of %2$lld": {
+      "comment": "Metadata editor save progress. The arguments are current and total file counts.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在保存第 %1$lld 首，共 %2$lld 首"
+          }
+        }
+      }
+    },
+    "Selected Tracks": {
+      "comment": "Metadata editor label for the number of selected tracks.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选歌曲"
+          }
+        }
+      }
+    },
+    "Skipped": {
+      "comment": "Metadata editor result status.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过"
+          }
+        }
+      }
+    },
+    "Tag Information": {
+      "comment": "Metadata editor section containing editable audio tags.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签信息"
+          }
+        }
+      }
+    },
+    "The %1$@ format is read-only.": {
+      "comment": "Metadata editor preflight message. The argument is the audio format.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 格式为只读。"
+          }
+        }
+      }
+    },
+    "The file “%1$@” is not writable.": {
+      "comment": "Metadata editor preflight message. The argument is a filename.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件“%1$@”不可写。"
+          }
+        }
+      }
+    },
+    "The file “%1$@” no longer exists.": {
+      "comment": "Metadata editor message for a missing file. The argument is a filename.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件“%1$@”已不存在。"
+          }
+        }
+      }
+    },
+    "The release date must use YYYY or YYYY-MM-DD.": {
+      "comment": "Metadata editor release-date validation error.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发行日期必须使用 YYYY 或 YYYY-MM-DD 格式。"
+          }
+        }
+      }
+    },
+    "This file is read-only.": {
+      "comment": "Metadata editor fallback reason for a read-only file.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件为只读。"
+          }
+        }
+      }
+    },
+    "Total Discs": {
+      "comment": "Metadata editor accessibility label for the total disc count.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总碟片数"
+          }
+        }
+      }
+    },
+    "Total Tracks": {
+      "comment": "Metadata editor accessibility label for the total track count.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总曲目数"
+          }
+        }
+      }
+    },
+    "Track Info (%1$lld Tracks)": {
+      "comment": "Metadata editor title for a batch. The argument is the selected track count.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌曲信息（%1$lld 首）"
+          }
+        }
+      }
+    },
+    "YYYY or YYYY-MM-DD": {
+      "comment": "Metadata editor release-date field prompt.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "YYYY 或 YYYY-MM-DD"
+          }
+        }
+      }
+    },
     "The files no longer exist": {
       "comment": "Bulk trash notification when all selected audio files are missing.",
       "localizations": {

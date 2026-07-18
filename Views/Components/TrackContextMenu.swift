@@ -19,6 +19,7 @@ enum TrackContextMenu {
         
         // Add info item
         items.append(createShowInfoItem(for: track))
+        items.append(createEditInfoItem(for: [track]))
         
         items.append(createRevealInFinderItem(for: track))
 
@@ -52,6 +53,8 @@ enum TrackContextMenu {
         playlistManager: PlaylistManager,
         currentContext: MenuContext
     ) -> [ContextMenuItem] {
+        guard !tracks.isEmpty else { return [] }
+
         if tracks.count == 1, let track = tracks.first {
             return createMenuItems(
                 for: track,
@@ -66,6 +69,10 @@ enum TrackContextMenu {
             for: tracks,
             playlistManager: playlistManager
         ))
+
+        items.append(.divider)
+
+        items.append(createEditInfoItem(for: tracks))
 
         items.append(.divider)
 
@@ -90,6 +97,7 @@ enum TrackContextMenu {
         
         // Add info item
         items.append(createShowInfoItem(for: track))
+        items.append(createEditInfoItem(for: [track]))
         
         items.append(createRevealInFinderItem(for: track))
 
@@ -183,6 +191,20 @@ enum TrackContextMenu {
                 name: NSNotification.Name("ShowTrackInfo"),
                 object: nil,
                 userInfo: ["track": track]
+            )
+        }
+    }
+
+    private static func createEditInfoItem(for tracks: [Track]) -> ContextMenuItem {
+        .button(
+            title: String(appLocalized: "Edit Track Info..."),
+            icon: Icons.edit
+        ) {
+            guard !tracks.isEmpty else { return }
+            NotificationCenter.default.post(
+                name: .editTrackMetadata,
+                object: nil,
+                userInfo: ["tracks": tracks]
             )
         }
     }

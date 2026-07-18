@@ -83,6 +83,7 @@ struct ContentView: View {
     // Toolbar state captured before immersive hides it, so closing restores it.
     @State private var immersiveToolbarWasVisible = true
     @State private var pendingLibraryFilter: LibraryFilterRequest?
+    @State private var trackMetadataEditorRequest: TrackMetadataEditorRequest?
     @State private var windowDelegate = WindowDelegate()
     @State private var shouldFocusSearch = false
 
@@ -159,6 +160,7 @@ struct ContentView: View {
             showingSettings: $showingSettings,
             selectedTab: $selectedTab,
             pendingLibraryFilter: $pendingLibraryFilter,
+            trackMetadataEditorRequest: $trackMetadataEditorRequest,
             showTrackDetail: showTrackDetail
         )
         .onChange(of: playbackManager.currentTrack?.id) { oldId, _ in
@@ -222,6 +224,12 @@ struct ContentView: View {
         .sheet(item: $libraryManager.pendingMergeRequest) { request in
             MergeEntitySheet(request: request)
                 .environmentObject(libraryManager)
+        }
+        .sheet(item: $trackMetadataEditorRequest) { request in
+            TrackMetadataEditorSheet(request: request)
+                .environmentObject(libraryManager)
+                .environmentObject(playlistManager)
+                .environmentObject(playbackManager)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleImmersivePlayer)) { _ in
             guard playbackManager.currentTrack != nil || isImmersiveActive else { return }
@@ -504,6 +512,7 @@ extension View {
         showingSettings: Binding<Bool>,
         selectedTab: Binding<Sections>,
         pendingLibraryFilter: Binding<LibraryFilterRequest?>,
+        trackMetadataEditorRequest: Binding<TrackMetadataEditorRequest?>,
         showTrackDetail: @escaping (Track) -> Void
     ) -> some View {
         self
@@ -523,6 +532,16 @@ extension View {
                 if let track = notification.userInfo?["track"] as? Track {
                     showTrackDetail(track)
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .editTrackMetadata)) { notification in
+                guard let tracks = notification.userInfo?["tracks"] as? [Track],
+                      !tracks.isEmpty,
+                      trackMetadataEditorRequest.wrappedValue == nil else {
+                    return
+                }
+                trackMetadataEditorRequest.wrappedValue = TrackMetadataEditorRequest(
+                    tracks: tracks
+                )
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenSettings"))) { _ in
                 showingSettings.wrappedValue = true
