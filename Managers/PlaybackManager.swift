@@ -799,7 +799,6 @@ final class PlaybackManager: NSObject, ObservableObject {
             if !wasShowingEditedTrack {
                 currentFullTrack = nil
             }
-            currentTrack = track
             currentTime = 0
             resetProgressResolution(engineProgress: 0)
             restoredPosition = 0
