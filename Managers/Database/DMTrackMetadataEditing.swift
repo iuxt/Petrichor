@@ -4,6 +4,7 @@ import GRDB
 struct TrackMetadataReindexResult {
     let track: Track
     let fullTrack: FullTrack
+    let affectedTracks: [Track]
 }
 
 extension DatabaseManager {
@@ -19,7 +20,9 @@ extension DatabaseManager {
                 request = FullTrack.filter(FullTrack.Columns.path == target.url.path)
             }
 
-            guard var track = try request.fetchOne(db) else {
+            guard var track = try request.fetchOne(db),
+                  verified.target == target,
+                  target.url.standardizedFileURL == track.url.standardizedFileURL else {
                 throw DatabaseError.invalidTrackId
             }
 
@@ -62,16 +65,29 @@ extension DatabaseManager {
                 throw DatabaseError.invalidTrackId
             }
 
-            try refreshDuplicateGroups(
+            let affectedAlbumIDs = Set(
+                [oldAlbumID, updated.albumId].compactMap { $0 }
+            )
+            let affectedAlbumArtistIDs = try AlbumArtist
+                .filter(affectedAlbumIDs.contains(AlbumArtist.Columns.albumId))
+                .select(AlbumArtist.Columns.artistId, as: Int64.self)
+                .fetchSet(db)
+
+            try rebuildAlbumArtists(
+                albumIDs: affectedAlbumIDs,
+                in: db
+            )
+            let affectedTracks = try refreshDuplicateGroups(
                 keys: Set([oldDuplicateKey, updated.duplicateKey]),
                 in: db
             )
             try pruneOrphanedMetadata(
                 albumIDs: Set([oldAlbumID].compactMap { $0 }),
-                artistIDs: oldArtistIDs,
+                artistIDs: oldArtistIDs.union(affectedAlbumArtistIDs),
                 genreIDs: oldGenreIDs,
                 in: db
             )
+            try updateEntityStats(in: db)
 
             guard let finalTrack = try Track
                     .select(Track.lightweightSelection)
@@ -85,7 +101,8 @@ extension DatabaseManager {
 
             return TrackMetadataReindexResult(
                 track: finalTrack,
-                fullTrack: finalFullTrack
+                fullTrack: finalFullTrack,
+                affectedTracks: affectedTracks
             )
         }
     }
@@ -118,16 +135,16 @@ extension DatabaseManager {
     private func refreshDuplicateGroups(
         keys: Set<String>,
         in db: Database
-    ) throws {
-        guard !keys.isEmpty else { return }
+    ) throws -> [Track] {
+        guard !keys.isEmpty else { return [] }
 
         let allTracks = try Track
             .select(Track.lightweightSelection)
             .fetchAll(db)
-        let affectedTracks = allTracks.filter { keys.contains($0.duplicateKey) }
-        let affectedTrackIDs = affectedTracks.compactMap(\.trackId)
+        let candidateTracks = allTracks.filter { keys.contains($0.duplicateKey) }
+        let affectedTrackIDs = candidateTracks.compactMap(\.trackId)
 
-        guard !affectedTrackIDs.isEmpty else { return }
+        guard !affectedTrackIDs.isEmpty else { return [] }
 
         try FullTrack
             .filter(affectedTrackIDs.contains(FullTrack.Columns.trackId))
@@ -138,57 +155,142 @@ extension DatabaseManager {
                 FullTrack.Columns.duplicateGroupId.set(to: nil)
             )
 
-        let groups = Dictionary(grouping: affectedTracks, by: \.duplicateKey)
+        let groups = Dictionary(grouping: candidateTracks, by: \.duplicateKey)
         let duplicateTrackIDs = groups.values
             .filter { $0.count > 1 }
             .flatMap { $0.compactMap(\.trackId) }
 
-        guard !duplicateTrackIDs.isEmpty else { return }
+        if !duplicateTrackIDs.isEmpty {
+            let fullTrackByID = try FullTrack
+                .filter(duplicateTrackIDs.contains(FullTrack.Columns.trackId))
+                .fetchAll(db)
+                .reduce(into: [Int64: FullTrack]()) { result, track in
+                    if let trackID = track.trackId {
+                        result[trackID] = track
+                    }
+                }
 
-        let fullTrackByID = try FullTrack
-            .filter(duplicateTrackIDs.contains(FullTrack.Columns.trackId))
-            .fetchAll(db)
-            .reduce(into: [Int64: FullTrack]()) { result, track in
-                if let trackID = track.trackId {
-                    result[trackID] = track
+            for group in groups.values where group.count > 1 {
+                let sortedTracks = group
+                    .compactMap { lightweight -> FullTrack? in
+                        guard let trackID = lightweight.trackId else { return nil }
+                        return fullTrackByID[trackID]
+                    }
+                    .sorted { $0.qualityScore > $1.qualityScore }
+
+                guard let primaryTrack = sortedTracks.first,
+                      let primaryID = primaryTrack.trackId else {
+                    continue
+                }
+
+                let groupID = UUID().uuidString
+                for track in sortedTracks {
+                    guard let trackID = track.trackId else { continue }
+
+                    if trackID == primaryID {
+                        try FullTrack
+                            .filter(FullTrack.Columns.trackId == trackID)
+                            .updateAll(
+                                db,
+                                FullTrack.Columns.isDuplicate.set(to: false),
+                                FullTrack.Columns.primaryTrackId.set(to: nil),
+                                FullTrack.Columns.duplicateGroupId.set(to: groupID)
+                            )
+                    } else {
+                        try FullTrack
+                            .filter(FullTrack.Columns.trackId == trackID)
+                            .updateAll(
+                                db,
+                                FullTrack.Columns.isDuplicate.set(to: true),
+                                FullTrack.Columns.primaryTrackId.set(to: primaryID),
+                                FullTrack.Columns.duplicateGroupId.set(to: groupID)
+                            )
+                    }
                 }
             }
+        }
 
-        for group in groups.values where group.count > 1 {
-            let sortedTracks = group
-                .compactMap { lightweight -> FullTrack? in
-                    guard let trackID = lightweight.trackId else { return nil }
-                    return fullTrackByID[trackID]
-                }
-                .sorted { $0.qualityScore > $1.qualityScore }
+        return try Track
+            .select(Track.lightweightSelection)
+            .filter(affectedTrackIDs.contains(Track.Columns.trackId))
+            .order(Track.Columns.trackId)
+            .fetchAll(db)
+    }
 
-            guard let primaryTrack = sortedTracks.first,
-                  let primaryID = primaryTrack.trackId else {
+    private func rebuildAlbumArtists(
+        albumIDs: Set<Int64>,
+        in db: Database
+    ) throws {
+        guard !albumIDs.isEmpty else { return }
+
+        try AlbumArtist
+            .filter(albumIDs.contains(AlbumArtist.Columns.albumId))
+            .deleteAll(db)
+
+        let affectedAlbumTracks = try FullTrack
+            .filter(albumIDs.contains(FullTrack.Columns.albumId))
+            .order(FullTrack.Columns.trackId)
+            .fetchAll(db)
+        var tracksByAlbumID: [Int64: [FullTrack]] = [:]
+        for track in affectedAlbumTracks {
+            if let albumID = track.albumId {
+                tracksByAlbumID[albumID, default: []].append(track)
+            }
+        }
+        let cache = ScanLookupCache()
+
+        for albumID in albumIDs.sorted() {
+            guard let albumTracks = tracksByAlbumID[albumID], !albumTracks.isEmpty else {
                 continue
             }
 
-            let groupID = UUID().uuidString
-            for track in sortedTracks {
-                guard let trackID = track.trackId else { continue }
+            var insertedArtistIDs: Set<Int64> = []
+            var position = 0
 
-                if trackID == primaryID {
-                    try FullTrack
-                        .filter(FullTrack.Columns.trackId == trackID)
-                        .updateAll(
-                            db,
-                            FullTrack.Columns.isDuplicate.set(to: false),
-                            FullTrack.Columns.primaryTrackId.set(to: nil),
-                            FullTrack.Columns.duplicateGroupId.set(to: groupID)
-                        )
-                } else {
-                    try FullTrack
-                        .filter(FullTrack.Columns.trackId == trackID)
-                        .updateAll(
-                            db,
-                            FullTrack.Columns.isDuplicate.set(to: true),
-                            FullTrack.Columns.primaryTrackId.set(to: primaryID),
-                            FullTrack.Columns.duplicateGroupId.set(to: groupID)
-                        )
+            func insertArtist(named name: String, role: String) throws {
+                let artist = try findOrCreateArtist(name, in: db, cache: cache)
+                guard let artistID = artist.id,
+                      insertedArtistIDs.insert(artistID).inserted else {
+                    return
+                }
+                try AlbumArtist(
+                    albumId: albumID,
+                    artistId: artistID,
+                    role: role,
+                    position: position
+                ).insert(db)
+                position += 1
+            }
+
+            let primaryArtistName = albumTracks.lazy.compactMap { track -> String? in
+                if let albumArtist = track.albumArtist, !albumArtist.isEmpty {
+                    return albumArtist
+                }
+                if track.compilation {
+                    return "Various Artists"
+                }
+                guard !track.artist.isEmpty, track.artist != "Unknown Artist" else {
+                    return nil
+                }
+                return ArtistParser.parse(track.artist).first
+            }.first
+
+            if let primaryArtistName {
+                try insertArtist(
+                    named: primaryArtistName,
+                    role: AlbumArtist.Role.primary
+                )
+            }
+
+            for track in albumTracks
+            where !track.artist.isEmpty && track.artist != "Unknown Artist" {
+                for artistName in ArtistParser.parse(track.artist) {
+                    try insertArtist(
+                        named: artistName,
+                        role: insertedArtistIDs.isEmpty
+                            ? AlbumArtist.Role.primary
+                            : AlbumArtist.Role.featured
+                    )
                 }
             }
         }

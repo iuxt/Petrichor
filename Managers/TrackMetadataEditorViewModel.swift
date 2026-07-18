@@ -356,8 +356,10 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                 let reindexed = try await libraryManager.databaseManager
                     .reindexEditedTrack(target: target, verified: verified)
 
-                libraryManager.applyMetadataEditResult(reindexed.track)
-                playlistManager.applyMetadataEditResult(reindexed.track)
+                for affectedTrack in reindexed.affectedTracks {
+                    libraryManager.applyMetadataEditResult(affectedTrack)
+                    playlistManager.applyMetadataEditResult(affectedTrack)
+                }
 
                 if let pendingRestoration = outstandingPlaybackRestoration {
                     await restorePlayback(
@@ -449,7 +451,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
             }
         }
 
-        libraryManager.finishMetadataEditRefresh()
+        await libraryManager.finishMetadataEditRefresh()
         playlistManager.finishMetadataEditRefresh()
 
         snapshots = snapshots.map { snapshot in

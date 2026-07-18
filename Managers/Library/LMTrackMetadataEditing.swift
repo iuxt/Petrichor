@@ -5,11 +5,17 @@ extension LibraryManager {
     func applyMetadataEditResult(_ track: Track) {
         tracks = Self.replacingTrack(track, in: tracks)
         discoverTracks = Self.replacingTrack(track, in: discoverTracks)
+            .filter { !$0.isDuplicate }
         searchResults = Self.replacingTrack(track, in: searchResults)
     }
 
     @MainActor
-    func finishMetadataEditRefresh() {
+    func finishMetadataEditRefresh() async {
+        let databaseManager = databaseManager
+        let reloadedTracks = await Task.detached {
+            databaseManager.getAllTracks()
+        }.value
+        tracks = reloadedTracks
         updateSearchResults()
         refreshLibraryCategories()
         refreshEntities(notify: false)

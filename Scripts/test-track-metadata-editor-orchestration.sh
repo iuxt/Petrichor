@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MODEL="$ROOT_DIR/Managers/TrackMetadataEditorViewModel.swift"
+PLAYBACK="$ROOT_DIR/Managers/PlaybackManager.swift"
 
 require_pattern() {
     local pattern="$1"
@@ -40,8 +41,12 @@ require_pattern 'TrackMetadataBatchResult\.retryTargets' \
     'Retry targets must be derived from failed outcomes.'
 require_pattern 'applyMetadataEditResult' \
     'Successful writes must update in-memory consumers.'
+require_pattern 'for affectedTrack in reindexed\.affectedTracks' \
+    'Every duplicate peer changed by reindexing must reach playlist and playback caches.'
 require_pattern 'finishMetadataEditRefresh' \
     'Batch cache refresh must be coalesced.'
+require_pattern 'await libraryManager\.finishMetadataEditRefresh\(\)' \
+    'Completion must await duplicate-filtered library membership reload.'
 require_pattern 'finalizeBatchIfPossible' \
     'Completion must wait for playback restoration.'
 require_pattern 'var validationMessage: String\?' \
@@ -52,6 +57,11 @@ require_pattern 'String\(appLocalized: "The release date must use YYYY or YYYY-M
     'Release-date validation must follow the selected app language.'
 reject_pattern 'withTaskGroup|TaskGroup|async let' \
     'Audio files must not be written concurrently.'
+if ! rg -n 'let suspensionGeneration: UInt64' "$PLAYBACK" >/dev/null 2>&1; then
+    printf '%s\n' \
+        'The editor restoration contract must carry its metadata-write suspension generation.' >&2
+    exit 1
+fi
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/petrichor-metadata-orchestration.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -89,6 +99,17 @@ struct FullTrack: Equatable, Sendable {
 struct TrackMetadataReindexResult: Sendable {
     let track: Track
     let fullTrack: FullTrack
+    let affectedTracks: [Track]
+
+    init(
+        track: Track,
+        fullTrack: FullTrack,
+        affectedTracks: [Track]? = nil
+    ) {
+        self.track = track
+        self.fullTrack = fullTrack
+        self.affectedTracks = affectedTracks ?? [track]
+    }
 }
 
 enum HarnessError: LocalizedError {
@@ -193,7 +214,7 @@ final class LibraryManager {
         recorder.append("library:\(track.trackId!)")
     }
 
-    func finishMetadataEditRefresh() {
+    func finishMetadataEditRefresh() async {
         recorder.append("libraryFinish")
     }
 }
@@ -229,10 +250,15 @@ final class PlaybackManager {
 
     struct MetadataEditPlaybackSnapshot {
         let track: Track
+        let suspensionGeneration: UInt64
     }
 
     var currentTrack: Track?
     var failRestoration = false
+    private(set) var activeSuspensionGeneration: UInt64?
+    private(set) var prepareCount = 0
+    private(set) var restoreCount = 0
+    private var nextSuspensionGeneration: UInt64 = 0
     let recorder: EventRecorder
 
     init(currentTrack: Track?, recorder: EventRecorder) {
@@ -244,8 +270,18 @@ final class PlaybackManager {
         _ track: Track
     ) -> MetadataEditPlaybackSnapshot? {
         guard currentTrack?.trackId == track.trackId else { return nil }
+        precondition(
+            activeSuspensionGeneration == nil,
+            "a new metadata suspension must not replace an unconsumed token"
+        )
+        nextSuspensionGeneration &+= 1
+        activeSuspensionGeneration = nextSuspensionGeneration
+        prepareCount += 1
         recorder.append("prepare:\(track.trackId!)")
-        return MetadataEditPlaybackSnapshot(track: track)
+        return MetadataEditPlaybackSnapshot(
+            track: track,
+            suspensionGeneration: nextSuspensionGeneration
+        )
     }
 
     func restoreCurrentTrackAfterMetadataEdit(
@@ -258,6 +294,12 @@ final class PlaybackManager {
             completion(.success(()))
             return
         }
+        precondition(
+            activeSuspensionGeneration == snapshot.suspensionGeneration,
+            "restore must consume the generation created by prepare"
+        )
+        activeSuspensionGeneration = nil
+        restoreCount += 1
         let id = snapshot.track.trackId!
         recorder.append("restoreBegin:\(id):\(updatedTrack == nil ? "original" : "updated")")
         Task { @MainActor in
@@ -495,6 +537,14 @@ struct Harness {
                 fullTrack: .init(trackId: track.trackId!)
             )
         }
+        let duplicatePeer = Track(id: 99, name: "duplicate-peer")
+        if let currentResult = database.results[current.trackId!] {
+            database.results[current.trackId!] = .init(
+                track: currentResult.track,
+                fullTrack: currentResult.fullTrack,
+                affectedTracks: [currentResult.track, duplicatePeer]
+            )
+        }
         let viewModel = TrackMetadataEditorViewModel(tracks: initial, fileService: service)
         viewModel.load()
         await waitUntil("load before save") { viewModel.phase == .editing }
@@ -517,6 +567,10 @@ struct Harness {
             "the current track restore must reach a terminal callback before the next write"
         )
         expect(
+            recorder.events.contains("playlist:99"),
+            "duplicate peers returned by reindexing must refresh playlist caches"
+        )
+        expect(
             recorder.events.filter { $0 == "libraryFinish" }.count == 1 &&
                 recorder.events.filter { $0 == "playlistFinish" }.count == 1,
             "each manager must finish-refresh once per batch"
@@ -526,6 +580,12 @@ struct Harness {
         expect(viewModel.hasFailuresToRetry, "failed files must be retryable")
         expect(viewModel.form?.isDirty == false, "partial results must rebuild a clean baseline")
         expect(!viewModel.allSelectedItemsSaved, "partial results must stay open")
+        expect(
+            playback.prepareCount == 1 &&
+                playback.restoreCount == 1 &&
+                playback.activeSuspensionGeneration == nil,
+            "successful current-track work must consume its suspension exactly once"
+        )
 
         viewModel.setText("Do not retry this newer form value", for: .title)
         recorder.reset()
@@ -582,6 +642,12 @@ struct Harness {
         expect(viewModel.skippedCount == 1, "a missing preflight target must be skipped")
         expect(!recorder.events.contains(where: { $0.hasPrefix("prepare:") }), "preflight skip must not suspend playback")
         expect(!recorder.events.contains(where: { $0.hasPrefix("restoreBegin:") }), "preflight skip must not restore playback")
+        expect(
+            playback.prepareCount == 0 &&
+                playback.restoreCount == 0 &&
+                playback.activeSuspensionGeneration == nil,
+            "preflight skips must not create a suspension token"
+        )
     }
 
     @MainActor
@@ -626,6 +692,12 @@ struct Harness {
         let nextPreflight = recorder.events.firstIndex(of: "preflight:60")!
         expect(restoreOriginal < restoreEnd && restoreEnd < nextPreflight, "failed current write must restore before continuing")
         expect(viewModel.failedCount == 1 && viewModel.savedCount == 1, "a current failure must not block later files")
+        expect(
+            playback.prepareCount == 1 &&
+                playback.restoreCount == 1 &&
+                playback.activeSuspensionGeneration == nil,
+            "reindex failure cleanup must consume its suspension exactly once"
+        )
     }
 
     @MainActor
@@ -678,6 +750,12 @@ struct Harness {
         expect(viewModel.failedCount == 1, "the unrelated file failure must remain retryable")
         expect(viewModel.playbackRestorationError != nil, "playback failure must be presented")
         expect(!viewModel.allSelectedItemsSaved, "playback failure must block automatic dismissal")
+        expect(
+            playback.prepareCount == 1 &&
+                playback.restoreCount == 1 &&
+                playback.activeSuspensionGeneration == nil,
+            "a failed engine restoration must still consume the write suspension exactly once"
+        )
 
         playback.failRestoration = false
         recorder.reset()
@@ -756,6 +834,12 @@ struct Harness {
         expect(
             !viewModel.isAwaitingPlaybackRestoration,
             "cancelled cleanup must reach a terminal playback state"
+        )
+        expect(
+            playback.prepareCount == 1 &&
+                playback.restoreCount == 1 &&
+                playback.activeSuspensionGeneration == nil,
+            "cancellation cleanup must consume its suspension exactly once"
         )
         expect(
             viewModel.saveResults.compactMap { result -> Int64? in

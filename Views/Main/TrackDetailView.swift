@@ -8,6 +8,8 @@ struct TrackDetailView: View {
     @State private var isLoading = true
     @State private var gradientColors: [Color] = []
     @State private var resolvedArtworkData: Data?
+    @State private var fullTrackLoadTask: Task<Void, Never>?
+    @State private var fullTrackLoadGeneration: UInt64 = 0
 
     @AppStorage("useArtworkColors")
     private var useArtworkColors = true
@@ -107,6 +109,15 @@ struct TrackDetailView: View {
         .onChange(of: useArtworkColors) {
             updateGradientColors()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
+            guard let stableTrackID = track.trackId else { return }
+            reloadFullTrack(for: stableTrackID)
+        }
+        .onDisappear {
+            fullTrackLoadGeneration &+= 1
+            fullTrackLoadTask?.cancel()
+            fullTrackLoadTask = nil
+        }
     }
 
     private func updateGradientColors() {
@@ -127,26 +138,47 @@ struct TrackDetailView: View {
 
     // MARK: - Load Full Track
     
+    @MainActor
     private func loadFullTrack() {
-        Task {
+        fullTrackLoadTask?.cancel()
+        fullTrackLoadGeneration &+= 1
+        let requestGeneration = fullTrackLoadGeneration
+        let requestedTrackID = track.trackId
+
+        fullTrackLoadTask = Task { @MainActor in
             do {
-                if let loaded = try await track.fullTrack(using: libraryManager.databaseManager.dbQueue) {
-                    await MainActor.run {
-                        self.fullTrack = loaded
-                        self.isLoading = false
-                    }
-                } else {
-                    await MainActor.run {
-                        self.isLoading = false
-                    }
+                let loaded = try await track.fullTrack(
+                    using: libraryManager.databaseManager.dbQueue
+                )
+                try Task.checkCancellation()
+                guard requestGeneration == fullTrackLoadGeneration,
+                      requestedTrackID == track.trackId else {
+                    return
                 }
+                fullTrack = loaded
+                isLoading = false
+                fullTrackLoadTask = nil
+                updateGradientColors()
+            } catch is CancellationError {
+                return
             } catch {
-                Logger.error("Failed to load full track: \(error)")
-                await MainActor.run {
-                    self.isLoading = false
+                guard requestGeneration == fullTrackLoadGeneration,
+                      requestedTrackID == track.trackId else {
+                    return
                 }
+                Logger.error("Failed to load full track: \(error)")
+                isLoading = false
+                fullTrackLoadTask = nil
             }
         }
+    }
+
+    @MainActor
+    private func reloadFullTrack(for stableTrackID: Int64) {
+        guard track.trackId == stableTrackID else { return }
+        isLoading = true
+        resolvedArtworkData = nil
+        loadFullTrack()
     }
 
     // MARK: - Header Section
