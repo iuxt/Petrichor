@@ -705,6 +705,9 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditSeekIfNeeded(time: time) {
             return
         }
+        if deferPendingPlaybackRestoreSeekIfNeeded(time: time) {
+            return
+        }
         // Clamp seek position to the engine's actual duration to prevent seek
         // errors when the DB-stored duration differs from the actual track
         // duration, this happens in edge-cases for MP3, although it is fixed
@@ -1170,6 +1173,42 @@ final class PlaybackManager: NSObject, ObservableObject {
             "Set pending metadata playback restore intent to "
                 + (shouldResume ? "playing" : "paused")
         )
+        return true
+    }
+
+    private func deferPendingPlaybackRestoreSeekIfNeeded(
+        time: Double
+    ) -> Bool {
+        guard var pending = pendingPlaybackRestore,
+              pending.entryId == currentEntryId else {
+            return false
+        }
+
+        let finiteTime = time.isFinite ? max(time, 0) : 0
+        let duration = HelperUtils.sanitizedDuration(
+            currentFullTrack?.duration ?? 0
+        )
+        let clampedTime = duration > 0
+            ? min(finiteTime, duration)
+            : finiteTime
+        pending.position = clampedTime
+
+        if pending.didApplyPosition {
+            if audioPlayer.seek(to: clampedTime) {
+                resetProgressResolution(engineProgress: clampedTime)
+            } else {
+                pending.didApplyPosition = false
+            }
+        }
+        pendingPlaybackRestore = pending
+        currentTime = clampedTime
+        restoredPosition = clampedTime
+        NotificationCenter.default.post(
+            name: NSNotification.Name("PlayerDidSeek"),
+            object: nil,
+            userInfo: ["time": clampedTime]
+        )
+        updateNowPlayingInfo()
         return true
     }
 

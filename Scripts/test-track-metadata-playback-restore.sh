@@ -78,6 +78,7 @@ require_pattern "$PLAYBACK" 'stageMetadataEditSupersedingTrack\(track\)' 'Differ
 require_pattern "$PLAYBACK" 'deferMetadataEditToggleIfNeeded\(\)' 'Toggle must update the suspended post-write intent.'
 require_pattern "$PLAYBACK" 'deferMetadataEditStopIfNeeded\(\)' 'Stop must update the suspended post-write intent.'
 require_pattern "$PLAYBACK" 'deferMetadataEditSeekIfNeeded\(time:' 'Seek must update the suspended post-write position.'
+require_pattern "$PLAYBACK" 'deferPendingPlaybackRestoreSeekIfNeeded\(time:' 'Seek must update a track whose engine is still settling.'
 require_pattern "$PLAYBACK" 'func requestPlay\(\) -> Bool' 'Explicit remote Play must have non-toggle semantics.'
 require_pattern "$PLAYBACK" 'func requestPause\(\) -> Bool' 'Explicit remote Pause must have non-toggle semantics.'
 require_pattern "$PLAYBACK" 'setPendingPlaybackRestoreIntent\(shouldResume: true\)' 'Explicit Play must idempotently update any in-flight engine settlement.'
@@ -290,6 +291,14 @@ seek_restore = source[source.index("private func deferMetadataEditSeekIfNeeded")
 if "synchronizeActiveMetadataRestore" not in seek_restore:
     raise SystemExit(
         "A seek during engine restoration must replace the pending restore position."
+    )
+
+seek = body("func seekTo(time: Double)", "func setVolume")
+if seek.index("deferPendingPlaybackRestoreSeekIfNeeded(time: time)") > seek.index(
+    "audioPlayer.seek(to: clampedTime)"
+):
+    raise SystemExit(
+        "A seek during generic engine settlement must replace its pending position before touching the engine."
     )
 
 finish = body("private func finishMetadataRestore", "private func metadataRestoreOperation")
