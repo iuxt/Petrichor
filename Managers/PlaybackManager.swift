@@ -96,6 +96,8 @@ final class PlaybackManager: NSObject, ObservableObject {
     private var metadataRestoreOperation: MetadataRestoreOperation?
     private var metadataRestoreTimeoutTask: Task<Void, Never>?
     private var metadataRestoreGeneration: UInt64 = 0
+    private var metadataEditSuspension: MetadataEditPlaybackSuspension?
+    private var metadataEditSuspensionGeneration: UInt64 = 0
 
     // MARK: - Gapless lookahead (Crescendo path)
 
@@ -149,6 +151,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         let wasEngineActive: Bool
         let queueIndex: Int
         let restoredPosition: Double
+        let suspensionGeneration: UInt64
     }
 
     struct TrashMoveSnapshot {
@@ -265,6 +268,9 @@ final class PlaybackManager: NSObject, ObservableObject {
     // MARK: - Playback Controls
     
     func playTrack(_ track: Track) {
+        if deferMetadataEditPlayIfNeeded(track) {
+            return
+        }
         cancelMetadataRestoreForPlaybackChange()
         let requestGeneration = beginPlaybackRequest()
         restoredUITrack = nil
@@ -309,6 +315,32 @@ final class PlaybackManager: NSObject, ObservableObject {
             }
         }
     }
+
+    @discardableResult
+    func requestPlay() -> Bool {
+        if deferMetadataEditPlayingIfNeeded() {
+            return true
+        }
+        if setPendingMetadataRestoreIntent(shouldResume: true) {
+            return true
+        }
+        guard !isPlaying else { return false }
+        togglePlayPause()
+        return true
+    }
+
+    @discardableResult
+    func requestPause() -> Bool {
+        if deferMetadataEditPausedIfNeeded() {
+            return true
+        }
+        if setPendingMetadataRestoreIntent(shouldResume: false) {
+            return true
+        }
+        guard isPlaying else { return false }
+        togglePlayPause()
+        return true
+    }
     
     func togglePlayPause() {
         guard Thread.isMainThread else {
@@ -322,6 +354,9 @@ final class PlaybackManager: NSObject, ObservableObject {
             return
         }
 
+        if deferMetadataEditToggleIfNeeded() {
+            return
+        }
         if togglePendingMetadataRestoreIntent() {
             return
         }
@@ -344,6 +379,9 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
     
     func stop() {
+        if deferMetadataEditStopIfNeeded() {
+            return
+        }
         cancelMetadataRestoreForPlaybackChange()
         invalidatePlaybackRequests()
         wantsPlaybackActive = false
@@ -417,6 +455,8 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         let wasPlaying = wantsPlaybackActive || isPlaying
         let snapshotPosition = currentTime.isFinite && currentTime >= 0 ? currentTime : 0
+        metadataEditSuspensionGeneration &+= 1
+        let suspensionGeneration = metadataEditSuspensionGeneration
         let snapshot = MetadataEditPlaybackSnapshot(
             track: currentTrack,
             fullTrack: currentFullTrack,
@@ -424,7 +464,17 @@ final class PlaybackManager: NSObject, ObservableObject {
             wasPlaying: wasPlaying,
             wasEngineActive: wasPlaying || audioPlayer.state == .paused,
             queueIndex: playlistManager.currentQueueIndex,
-            restoredPosition: restoredPosition
+            restoredPosition: restoredPosition,
+            suspensionGeneration: suspensionGeneration
+        )
+        metadataEditSuspension = MetadataEditPlaybackSuspension(
+            generation: suspensionGeneration,
+            trackID: currentTrack.trackId,
+            url: currentTrack.url,
+            position: snapshot.position,
+            wasPlaying: snapshot.wasPlaying,
+            wasEngineActive: snapshot.wasEngineActive,
+            queueIndex: snapshot.queueIndex
         )
 
         invalidatePlaybackRequests()
@@ -473,8 +523,28 @@ final class PlaybackManager: NSObject, ObservableObject {
             completion(.success(()))
             return
         }
+        guard let restoration = consumeMetadataEditSuspension(for: snapshot) else {
+            completion(.success(()))
+            return
+        }
         cancelMetadataRestoreForPlaybackChange()
 
+        switch restoration {
+        case .superseded:
+            completion(.success(()))
+            return
+        case .stop:
+            stop()
+            completion(.success(()))
+            return
+        case .restore:
+            break
+        }
+
+        guard case .restore(let mode, let requestedPosition, _) = restoration else {
+            completion(.success(()))
+            return
+        }
         let track = updatedTrack ?? snapshot.track
         let fullTrack = updatedFullTrack ?? snapshot.fullTrack
 
@@ -484,21 +554,23 @@ final class PlaybackManager: NSObject, ObservableObject {
         trackForEntry.removeAll()
         currentEntryId = nil
         wantsPlaybackActive = false
-        playlistManager.restoreQueueIndexAfterMetadataEdit(snapshot.queueIndex)
+        if let queueIndex = restoration.queueIndex {
+            playlistManager.restoreQueueIndexAfterMetadataEdit(queueIndex)
+        }
         currentArtworkIdentity = nil
         currentTrack = track
         currentFullTrack = fullTrack
         let duration = HelperUtils.sanitizedDuration(fullTrack?.duration ?? 0)
         let restoredTime = duration > 0
-            ? min(max(snapshot.position, 0), duration)
-            : max(snapshot.position, 0)
+            ? min(max(requestedPosition, 0), duration)
+            : max(requestedPosition, 0)
         currentTime = restoredTime
         resetProgressResolution(engineProgress: restoredTime)
         restoredPosition = restoredTime
         isPlaying = false
         stopStateSaveTimer()
 
-        guard snapshot.wasEngineActive else {
+        guard mode != .idle else {
             updateNowPlayingInfo()
             completion(.success(()))
             return
@@ -521,7 +593,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         startPlayback(
             of: fullTrack,
             lightweightTrack: track,
-            resumeAfterRestore: snapshot.wasPlaying,
+            resumeAfterRestore: mode == .playing,
             entryId: restoreEntryId
         )
     }
@@ -587,6 +659,9 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
     
     func seekTo(time: Double) {
+        if deferMetadataEditSeekIfNeeded(time: time) {
+            return
+        }
         // Clamp seek position to the engine's actual duration to prevent seek
         // errors when the DB-stored duration differs from the actual track
         // duration, this happens in edge-cases for MP3, although it is fixed
@@ -694,6 +769,166 @@ final class PlaybackManager: NSObject, ObservableObject {
         return true
     }
 
+    private func deferMetadataEditPlayIfNeeded(_ track: Track) -> Bool {
+        guard var suspension = metadataEditSuspension else {
+            return false
+        }
+
+        let wasShowingEditedTrack = currentTrack.map {
+            suspension.matches(trackID: $0.trackId, url: $0.url)
+        } ?? false
+
+        switch suspension.requestPlay(trackID: track.trackId, url: track.url) {
+        case .playDifferentTrack:
+            metadataEditSuspension = suspension
+            stageMetadataEditSupersedingTrack(track)
+            Logger.info("Different-track playback superseded metadata restoration")
+            return false
+
+        case .deferEditedTrack:
+            metadataEditSuspension = suspension
+            invalidatePlaybackRequests()
+            wantsPlaybackActive = false
+            pendingPlaybackRestore = nil
+            audioPlayer.clearNextTrack()
+            currentEntryId = nil
+            trackForEntry.removeAll()
+            pendingNext = nil
+            pendingNextWasSkipped = false
+            audioPlayer.stop()
+            if !wasShowingEditedTrack {
+                currentFullTrack = nil
+            }
+            currentTrack = track
+            currentTime = 0
+            resetProgressResolution(engineProgress: 0)
+            restoredPosition = 0
+            isPlaying = false
+            stopStateSaveTimer()
+            updateNowPlayingInfo()
+            Logger.info("Deferred edited-track playback until metadata writing finishes")
+            return true
+        }
+    }
+
+    private func stageMetadataEditSupersedingTrack(_ track: Track) {
+        invalidatePlaybackRequests()
+        wantsPlaybackActive = false
+        pendingPlaybackRestore = nil
+        audioPlayer.clearNextTrack()
+        currentEntryId = nil
+        trackForEntry.removeAll()
+        pendingNext = nil
+        pendingNextWasSkipped = false
+        audioPlayer.stop()
+        currentFullTrack = nil
+        currentTrack = track
+        currentTime = 0
+        resetProgressResolution(engineProgress: 0)
+        restoredPosition = 0
+        isPlaying = false
+        stopStateSaveTimer()
+        updateNowPlayingInfo()
+    }
+
+    private func deferMetadataEditToggleIfNeeded() -> Bool {
+        guard var suspension = metadataEditSuspension,
+              suspension.toggle() else {
+            return false
+        }
+
+        metadataEditSuspension = suspension
+        wantsPlaybackActive = false
+        isPlaying = false
+        stopStateSaveTimer()
+        updateNowPlayingInfo()
+        Logger.info("Deferred play/pause intent until metadata writing finishes")
+        return true
+    }
+
+    private func deferMetadataEditPlayingIfNeeded() -> Bool {
+        guard var suspension = metadataEditSuspension,
+              suspension.requestPlaying() else {
+            return false
+        }
+
+        metadataEditSuspension = suspension
+        wantsPlaybackActive = false
+        isPlaying = false
+        stopStateSaveTimer()
+        updateNowPlayingInfo()
+        Logger.info("Deferred explicit play intent until metadata writing finishes")
+        return true
+    }
+
+    private func deferMetadataEditPausedIfNeeded() -> Bool {
+        guard var suspension = metadataEditSuspension,
+              suspension.requestPaused() else {
+            return false
+        }
+
+        metadataEditSuspension = suspension
+        wantsPlaybackActive = false
+        isPlaying = false
+        stopStateSaveTimer()
+        updateNowPlayingInfo()
+        Logger.info("Deferred explicit pause intent until metadata writing finishes")
+        return true
+    }
+
+    private func deferMetadataEditStopIfNeeded() -> Bool {
+        guard var suspension = metadataEditSuspension,
+              suspension.requestStop() else {
+            return false
+        }
+
+        metadataEditSuspension = suspension
+        wantsPlaybackActive = false
+        isPlaying = false
+        stopStateSaveTimer()
+        updateNowPlayingInfo()
+        Logger.info("Deferred stop intent until metadata writing finishes")
+        return true
+    }
+
+    private func deferMetadataEditSeekIfNeeded(time: Double) -> Bool {
+        guard var suspension = metadataEditSuspension else {
+            return false
+        }
+
+        let finiteTime = time.isFinite ? max(time, 0) : 0
+        let duration = HelperUtils.sanitizedDuration(currentFullTrack?.duration ?? 0)
+        let clampedTime = duration > 0 ? min(finiteTime, duration) : finiteTime
+        guard let deferredTime = suspension.seek(to: clampedTime) else {
+            return false
+        }
+
+        metadataEditSuspension = suspension
+        currentTime = deferredTime
+        resetProgressResolution(engineProgress: deferredTime)
+        restoredPosition = deferredTime
+        NotificationCenter.default.post(
+            name: NSNotification.Name("PlayerDidSeek"),
+            object: nil,
+            userInfo: ["time": deferredTime]
+        )
+        updateNowPlayingInfo()
+        Logger.info("Deferred seek until metadata writing finishes")
+        return true
+    }
+
+    private func consumeMetadataEditSuspension(
+        for snapshot: MetadataEditPlaybackSnapshot
+    ) -> MetadataEditPlaybackSuspension.Restoration? {
+        guard let suspension = metadataEditSuspension,
+              suspension.generation == snapshot.suspensionGeneration else {
+            return nil
+        }
+
+        metadataEditSuspension = nil
+        return suspension.restoration
+    }
+
     private func togglePendingMetadataRestoreIntent() -> Bool {
         guard var pending = pendingPlaybackRestore,
               let operation = metadataRestoreOperation,
@@ -714,6 +949,30 @@ final class PlaybackManager: NSObject, ObservableObject {
         Logger.info(
             "Changed pending metadata playback restore intent to "
                 + (pending.shouldResume ? "playing" : "paused")
+        )
+        return true
+    }
+
+    private func setPendingMetadataRestoreIntent(shouldResume: Bool) -> Bool {
+        guard var pending = pendingPlaybackRestore,
+              let operation = metadataRestoreOperation,
+              operation.entryId == pending.entryId,
+              pending.entryId == currentEntryId else {
+            return false
+        }
+
+        pending.shouldResume = shouldResume
+        pendingPlaybackRestore = pending
+        wantsPlaybackActive = shouldResume
+        if shouldResume {
+            startStateSaveTimer()
+        } else {
+            stopStateSaveTimer()
+        }
+        updateNowPlayingInfo()
+        Logger.info(
+            "Set pending metadata playback restore intent to "
+                + (shouldResume ? "playing" : "paused")
         )
         return true
     }

@@ -110,22 +110,13 @@ final class NowPlayingManager {
         // Add handler for play command
         commandCenter.playCommand.addTarget { [weak audioPlayer] _ in
             guard let audioPlayer = audioPlayer else { return .commandFailed }
-
-            if !audioPlayer.isPlaying {
-                audioPlayer.togglePlayPause()
-                return .success
-            }
-            return .commandFailed
+            return audioPlayer.requestPlay() ? .success : .commandFailed
         }
 
         // Add handler for pause command
         commandCenter.pauseCommand.addTarget { [weak audioPlayer] _ in
-            guard let audioPlayer = audioPlayer, audioPlayer.isPlaying else {
-                return .commandFailed
-            }
-
-            audioPlayer.togglePlayPause()
-            return .success
+            guard let audioPlayer = audioPlayer else { return .commandFailed }
+            return audioPlayer.requestPause() ? .success : .commandFailed
         }
 
         // Add handler for toggle play/pause command
