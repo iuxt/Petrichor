@@ -26,6 +26,11 @@ extension SFBTrackMetadataFileService: TrackMetadataFileServicing {}
 
 @MainActor
 final class TrackMetadataEditorViewModel: ObservableObject {
+    private struct OutstandingPlaybackRestoration {
+        let target: TrackMetadataEditTarget
+        let snapshot: PlaybackManager.MetadataEditPlaybackSnapshot
+    }
+
     @Published private(set) var phase: TrackMetadataEditorPhase = .loading
     @Published private(set) var snapshots: [TrackMetadataSnapshot] = []
     @Published private(set) var unavailableResults: [TrackMetadataBatchResult] = []
@@ -44,6 +49,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     private var loadTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var retryPatch: TrackMetadataPatch?
+    private var playbackRestorationErrorTarget: TrackMetadataEditTarget?
 
     init(
         tracks: [Track],
@@ -163,6 +169,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
             self.form = TrackMetadataEditForm(tags: loadedSnapshots.map(\.tags))
             self.validationError = nil
             self.playbackRestorationError = nil
+            self.playbackRestorationErrorTarget = nil
             self.allSelectedItemsSaved = false
             self.phase = .editing
         }
@@ -179,6 +186,8 @@ final class TrackMetadataEditorViewModel: ObservableObject {
             let patch = try form.makePatch()
             validationError = nil
             retryPatch = patch
+            playbackRestorationError = nil
+            playbackRestorationErrorTarget = nil
             let writableTargets = snapshots
                 .filter(\.isWritable)
                 .map(\.target)
@@ -256,7 +265,6 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         saveResults = retainedResults
         currentProgress = 0
         totalProgress = targets.count
-        playbackRestorationError = nil
         isAwaitingPlaybackRestoration = false
         allSelectedItemsSaved = false
 
@@ -283,35 +291,48 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     ) async {
         var results = retainedResults
         var verifiedByTarget: [TrackMetadataEditTarget: TrackMetadataSnapshot] = [:]
+        var outstandingPlaybackRestoration: OutstandingPlaybackRestoration?
+        var shouldStop = false
 
         for target in targets {
-            var playbackSnapshot: PlaybackManager.MetadataEditPlaybackSnapshot?
+            if Task.isCancelled {
+                break
+            }
 
             do {
                 try await fileService.preflightWrite(target: target)
 
                 if let track = track(matching: target) {
-                    playbackSnapshot = playbackManager
-                        .prepareCurrentTrackForMetadataEdit(track)
+                    if let snapshot = playbackManager
+                        .prepareCurrentTrackForMetadataEdit(track) {
+                        outstandingPlaybackRestoration = OutstandingPlaybackRestoration(
+                            target: target,
+                            snapshot: snapshot
+                        )
+                    }
                 }
+                try Task.checkCancellation()
 
                 let verified = try await fileService.write(
                     target: target,
                     patch: patch
                 )
+                try Task.checkCancellation()
                 let reindexed = try await libraryManager.databaseManager
                     .reindexEditedTrack(target: target, verified: verified)
 
                 libraryManager.applyMetadataEditResult(reindexed.track)
                 playlistManager.applyMetadataEditResult(reindexed.track)
 
-                if let playbackSnapshot {
+                if let pendingRestoration = outstandingPlaybackRestoration {
                     await restorePlayback(
-                        playbackSnapshot,
+                        pendingRestoration.snapshot,
+                        target: pendingRestoration.target,
                         track: reindexed.track,
                         fullTrack: reindexed.fullTrack,
                         playbackManager: playbackManager
                     )
+                    outstandingPlaybackRestoration = nil
                 }
 
                 verifiedByTarget[target] = verified
@@ -320,13 +341,15 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                 )
             } catch let error as TrackMetadataFileError
             where error.isPreflightSkip {
-                if let playbackSnapshot {
+                if let pendingRestoration = outstandingPlaybackRestoration {
                     await restorePlayback(
-                        playbackSnapshot,
+                        pendingRestoration.snapshot,
+                        target: pendingRestoration.target,
                         track: nil,
                         fullTrack: nil,
                         playbackManager: playbackManager
                     )
+                    outstandingPlaybackRestoration = nil
                 }
                 results.append(
                     TrackMetadataBatchResult(
@@ -334,14 +357,24 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                         outcome: .skipped(error.localizedDescription)
                     )
                 )
+            } catch is CancellationError {
+                results.append(
+                    TrackMetadataBatchResult(
+                        target: target,
+                        outcome: .failed(CancellationError().localizedDescription)
+                    )
+                )
+                shouldStop = true
             } catch {
-                if let playbackSnapshot {
+                if let pendingRestoration = outstandingPlaybackRestoration {
                     await restorePlayback(
-                        playbackSnapshot,
+                        pendingRestoration.snapshot,
+                        target: pendingRestoration.target,
                         track: nil,
                         fullTrack: nil,
                         playbackManager: playbackManager
                     )
+                    outstandingPlaybackRestoration = nil
                 }
                 results.append(
                     TrackMetadataBatchResult(
@@ -352,6 +385,33 @@ final class TrackMetadataEditorViewModel: ObservableObject {
             }
 
             currentProgress += 1
+            if shouldStop || Task.isCancelled {
+                break
+            }
+        }
+
+        if let pendingRestoration = outstandingPlaybackRestoration {
+            await restorePlayback(
+                pendingRestoration.snapshot,
+                target: pendingRestoration.target,
+                track: nil,
+                fullTrack: nil,
+                playbackManager: playbackManager
+            )
+            outstandingPlaybackRestoration = nil
+        }
+
+        if shouldStop || Task.isCancelled {
+            let completedTargets = Set(results.map(\.target))
+            let cancellationReason = CancellationError().localizedDescription
+            for target in targets where !completedTargets.contains(target) {
+                results.append(
+                    TrackMetadataBatchResult(
+                        target: target,
+                        outcome: .failed(cancellationReason)
+                    )
+                )
+            }
         }
 
         libraryManager.finishMetadataEditRefresh()
@@ -373,6 +433,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
 
     private func restorePlayback(
         _ snapshot: PlaybackManager.MetadataEditPlaybackSnapshot,
+        target: TrackMetadataEditTarget,
         track: Track?,
         fullTrack: FullTrack?,
         playbackManager: PlaybackManager
@@ -391,9 +452,17 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                         return
                     }
 
-                    if case .failure(let error) = result,
-                       self.playbackRestorationError == nil {
-                        self.playbackRestorationError = error.localizedDescription
+                    switch result {
+                    case .success:
+                        if self.playbackRestorationErrorTarget == target {
+                            self.playbackRestorationError = nil
+                            self.playbackRestorationErrorTarget = nil
+                        }
+                    case .failure(let error):
+                        if self.playbackRestorationError == nil {
+                            self.playbackRestorationError = error.localizedDescription
+                            self.playbackRestorationErrorTarget = target
+                        }
                     }
                     self.isAwaitingPlaybackRestoration = false
                     continuation.resume()

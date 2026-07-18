@@ -277,19 +277,23 @@ actor ScriptedFileService: TrackMetadataFileServicing {
     private var writes: [Int64: TrackMetadataSnapshot]
     private var preflightFailures: [Int64: TrackMetadataFileError]
     private var writeFailuresRemaining: [Int64: Int]
+    private var cancellingWriteIDs: Set<Int64>
+    private var receivedTitlePatches: [Int64: [MetadataPatchValue<String>]] = [:]
 
     init(
         recorder: EventRecorder,
         loads: [Int64: TrackMetadataLoadResult],
         writes: [Int64: TrackMetadataSnapshot] = [:],
         preflightFailures: [Int64: TrackMetadataFileError] = [:],
-        writeFailuresRemaining: [Int64: Int] = [:]
+        writeFailuresRemaining: [Int64: Int] = [:],
+        cancellingWriteIDs: Set<Int64> = []
     ) {
         self.recorder = recorder
         self.loads = loads
         self.writes = writes
         self.preflightFailures = preflightFailures
         self.writeFailuresRemaining = writeFailuresRemaining
+        self.cancellingWriteIDs = cancellingWriteIDs
     }
 
     func load(target: TrackMetadataEditTarget) async -> TrackMetadataLoadResult {
@@ -312,11 +316,22 @@ actor ScriptedFileService: TrackMetadataFileServicing {
     ) async throws -> TrackMetadataSnapshot {
         let id = target.trackID!
         await recorder.append("write:\(id)")
+        receivedTitlePatches[id, default: []].append(patch.title)
+        if cancellingWriteIDs.remove(id) != nil {
+            withUnsafeCurrentTask { task in
+                task?.cancel()
+            }
+            throw CancellationError()
+        }
         if let remaining = writeFailuresRemaining[id], remaining > 0 {
             writeFailuresRemaining[id] = remaining - 1
             throw HarnessError.write(id)
         }
         return writes[id]!
+    }
+
+    func writtenTitles(for id: Int64) -> [MetadataPatchValue<String>] {
+        receivedTitlePatches[id] ?? []
     }
 }
 
@@ -406,6 +421,7 @@ struct Harness {
         await testCurrentPreflightSkipDoesNotSuspend()
         await testCurrentFailureRestoresBeforeContinuing()
         await testPlaybackRestoreFailureBlocksDismissal()
+        await testCancellationRestoresCurrentBeforeStopping()
         print("Track metadata editor orchestration checks passed")
     }
 
@@ -505,6 +521,7 @@ struct Harness {
         expect(viewModel.form?.isDirty == false, "partial results must rebuild a clean baseline")
         expect(!viewModel.allSelectedItemsSaved, "partial results must stay open")
 
+        viewModel.setText("Do not retry this newer form value", for: .title)
         recorder.reset()
         viewModel.retryFailed(
             libraryManager: library,
@@ -520,6 +537,11 @@ struct Harness {
         expect(
             recorder.events.filter { $0.hasPrefix("write:") } == ["write:30"],
             "retry must write failed files only"
+        )
+        let retriedTitles = await service.writtenTitles(for: 30)
+        expect(
+            retriedTitles == [.set("Shared"), .set("Shared")],
+            "retry must reuse the original immutable patch"
         )
         expect(viewModel.phase == .editing, "an all-success batch must return to clean editing")
         expect(viewModel.savedCount == 3 && viewModel.failedCount == 0, "retry must merge outcomes")
@@ -604,20 +626,36 @@ struct Harness {
     private static func testPlaybackRestoreFailureBlocksDismissal() async {
         let recorder = EventRecorder()
         let current = Track(id: 70, name: "restore-fails")
+        let unrelated = Track(id: 71, name: "unrelated-fails")
         let service = ScriptedFileService(
             recorder: recorder,
-            loads: [70: .loaded(snapshot(current, title: "Old"))],
-            writes: [70: snapshot(current, title: "New")]
+            loads: [
+                70: .loaded(snapshot(current, title: "Old")),
+                71: .loaded(snapshot(unrelated, title: "Old"))
+            ],
+            writes: [
+                70: snapshot(current, title: "New"),
+                71: snapshot(unrelated, title: "New")
+            ],
+            writeFailuresRemaining: [71: 1]
         )
         let (library, playlist, playback, database) = makeManagers(
             recorder: recorder,
             currentTrack: current
         )
-        var updated = current
-        updated.title = "New"
-        database.results[70] = .init(track: updated, fullTrack: .init(trackId: 70))
+        for track in [current, unrelated] {
+            var updated = track
+            updated.title = "New"
+            database.results[track.trackId!] = .init(
+                track: updated,
+                fullTrack: .init(trackId: track.trackId!)
+            )
+        }
         playback.failRestoration = true
-        let viewModel = TrackMetadataEditorViewModel(tracks: [current], fileService: service)
+        let viewModel = TrackMetadataEditorViewModel(
+            tracks: [unrelated, current],
+            fileService: service
+        )
         viewModel.load()
         await waitUntil("load playback failure case") { viewModel.phase == .editing }
         viewModel.setText("New", for: .title)
@@ -631,8 +669,97 @@ struct Harness {
         }
 
         expect(viewModel.savedCount == 1, "playback failure must not rewrite the file outcome")
+        expect(viewModel.failedCount == 1, "the unrelated file failure must remain retryable")
         expect(viewModel.playbackRestorationError != nil, "playback failure must be presented")
         expect(!viewModel.allSelectedItemsSaved, "playback failure must block automatic dismissal")
+
+        playback.failRestoration = false
+        recorder.reset()
+        viewModel.retryFailed(
+            libraryManager: library,
+            playlistManager: playlist,
+            playbackManager: playback
+        )
+        await waitUntil("unrelated retry after playback failure") { !viewModel.isBusy }
+
+        expect(
+            viewModel.playbackRestorationError != nil,
+            "an unrelated retry must preserve the unresolved playback restoration error"
+        )
+        expect(
+            !viewModel.allSelectedItemsSaved && viewModel.phase == .results,
+            "an unrelated retry must not auto-dismiss after an unresolved playback error"
+        )
+        expect(
+            !recorder.events.contains(where: { $0.hasPrefix("restoreBegin:") }),
+            "an unrelated retry must not claim a replacement playback restoration"
+        )
+    }
+
+    @MainActor
+    private static func testCancellationRestoresCurrentBeforeStopping() async {
+        let recorder = EventRecorder()
+        let current = Track(id: 80, name: "cancel-current")
+        let later = Track(id: 81, name: "must-not-write")
+        let service = ScriptedFileService(
+            recorder: recorder,
+            loads: [
+                80: .loaded(snapshot(current, title: "Old")),
+                81: .loaded(snapshot(later, title: "Old"))
+            ],
+            writes: [
+                80: snapshot(current, title: "New"),
+                81: snapshot(later, title: "New")
+            ],
+            cancellingWriteIDs: [80]
+        )
+        let (library, playlist, playback, database) = makeManagers(
+            recorder: recorder,
+            currentTrack: current
+        )
+        var updatedLater = later
+        updatedLater.title = "New"
+        database.results[81] = .init(
+            track: updatedLater,
+            fullTrack: .init(trackId: 81)
+        )
+        let viewModel = TrackMetadataEditorViewModel(
+            tracks: [later, current],
+            fileService: service
+        )
+        viewModel.load()
+        await waitUntil("load cancellation case") { viewModel.phase == .editing }
+        viewModel.setText("New", for: .title)
+        recorder.reset()
+        viewModel.save(
+            libraryManager: library,
+            playlistManager: playlist,
+            playbackManager: playback
+        )
+        await waitUntil("cancelled save cleanup") { !viewModel.isBusy }
+
+        expect(
+            !recorder.events.contains("preflight:81"),
+            "cancellation must stop before writing later targets"
+        )
+        expect(
+            recorder.events.filter { $0 == "restoreBegin:80:original" }.count == 1 &&
+                recorder.events.filter { $0 == "restoreEnd:80" }.count == 1,
+            "cancelled current-track work must restore exactly once"
+        )
+        expect(
+            !viewModel.isAwaitingPlaybackRestoration,
+            "cancelled cleanup must reach a terminal playback state"
+        )
+        expect(
+            viewModel.saveResults.compactMap { result -> Int64? in
+                if case .failed = result.outcome {
+                    return result.target.trackID
+                }
+                return nil
+            }.sorted() == [80, 81],
+            "cancelled and unprocessed targets must remain available for retry"
+        )
     }
 }
 SWIFT
