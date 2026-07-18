@@ -211,7 +211,9 @@ struct PlayerView: View {
 
     private var playPauseButton: some View {
         Button(action: {
-            playbackManager.togglePlayPause()
+            _ = playbackManager.isPlaying
+                ? playbackManager.requestPause()
+                : playbackManager.requestPlay()
         }, label: {
             PlayPauseIcon(isPlaying: playbackManager.isPlaying)
                 .frame(width: 42, height: 42)

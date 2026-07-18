@@ -232,7 +232,9 @@ class MenuBarManager: NSObject {
 
     @objc
     private func togglePlayPause() {
-        playbackManager.togglePlayPause()
+        _ = playbackManager.isPlaying
+            ? playbackManager.requestPause()
+            : playbackManager.requestPlay()
         updateMenu()
     }
 

@@ -318,10 +318,12 @@ final class PlaybackManager: NSObject, ObservableObject {
                           let request = self.consumePendingPlaybackRequest(generation: requestGeneration) else {
                         return
                     }
+                    let entryId = AudioEntryId(id: UUID().uuidString)
                     self.startPlayback(
                         of: fullTrack,
                         lightweightTrack: track,
-                        resumeAfterRestore: request.shouldStartPlaying
+                        resumeAfterRestore: request.shouldStartPlaying,
+                        entryId: entryId
                     )
                 }
             } catch {
@@ -340,7 +342,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditPlayingIfNeeded() {
             return true
         }
-        if setPendingMetadataRestoreIntent(shouldResume: true) {
+        if setPendingPlaybackRestoreIntent(shouldResume: true) {
             return true
         }
         if setPendingPlaybackRequestIntent(shouldStartPlaying: true) {
@@ -356,7 +358,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditPausedIfNeeded() {
             return true
         }
-        if setPendingMetadataRestoreIntent(shouldResume: false) {
+        if setPendingPlaybackRestoreIntent(shouldResume: false) {
             return true
         }
         if setPendingPlaybackRequestIntent(shouldStartPlaying: false) {
@@ -382,7 +384,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditToggleIfNeeded() {
             return
         }
-        if togglePendingMetadataRestoreIntent() {
+        if togglePendingPlaybackRestoreIntent() {
             return
         }
         if togglePendingPlaybackRequestIntent() {
@@ -763,10 +765,11 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
 
     private func cancelCurrentArtworkLoad() async {
-        let task = artworkLoadTask
-        artworkLoadTask = nil
-        task?.cancel()
-        await task?.value
+        while let task = artworkLoadTask {
+            artworkLoadTask = nil
+            task.cancel()
+            await task.value
+        }
     }
 
     private func stagePendingPlaybackRequest(generation: UInt64) {
@@ -1124,10 +1127,8 @@ final class PlaybackManager: NSObject, ObservableObject {
         return true
     }
 
-    private func togglePendingMetadataRestoreIntent() -> Bool {
+    private func togglePendingPlaybackRestoreIntent() -> Bool {
         guard var pending = pendingPlaybackRestore,
-              let operation = metadataRestoreOperation,
-              operation.entryId == pending.entryId,
               pending.entryId == currentEntryId else {
             return false
         }
@@ -1148,10 +1149,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         return true
     }
 
-    private func setPendingMetadataRestoreIntent(shouldResume: Bool) -> Bool {
+    private func setPendingPlaybackRestoreIntent(
+        shouldResume: Bool
+    ) -> Bool {
         guard var pending = pendingPlaybackRestore,
-              let operation = metadataRestoreOperation,
-              operation.entryId == pending.entryId,
               pending.entryId == currentEntryId else {
             return false
         }
@@ -1338,7 +1339,9 @@ final class PlaybackManager: NSObject, ObservableObject {
         resetProgressResolution(engineProgress: seekToPosition > 0 ? seekToPosition : 0)
         pendingPlaybackRestore = nil
 
-        if seekToPosition > 0 || !resumeAfterRestore {
+        if restoredEntryId != nil
+            || seekToPosition > 0
+            || !resumeAfterRestore {
             // Load paused and defer the seek plus requested play/pause state to the
             // `.paused` transition.
             // this produces (see audioPlayerStateChanged): that signal fires only
@@ -1889,17 +1892,18 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
             }
 
             if effectiveState == .playing,
-               let operation = self.metadataRestoreOperation,
-               operation.entryId == self.currentEntryId,
                let pending = self.pendingPlaybackRestore,
-               pending.entryId == operation.entryId {
+               pending.entryId == self.currentEntryId {
                 if pending.shouldResume {
                     self.pendingPlaybackRestore = nil
-                    self.finishMetadataRestore(
-                        .success(()),
-                        generation: operation.generation,
-                        entryId: operation.entryId
-                    )
+                    if let operation = self.metadataRestoreOperation,
+                       operation.entryId == pending.entryId {
+                        self.finishMetadataRestore(
+                            .success(()),
+                            generation: operation.generation,
+                            entryId: operation.entryId
+                        )
+                    }
                 } else {
                     self.wantsPlaybackActive = false
                     self.audioPlayer.pause()

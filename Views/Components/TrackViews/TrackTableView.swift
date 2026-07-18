@@ -181,7 +181,11 @@ struct TrackTableView: View {
                         isPlaying: isPlaying(track),
                         isSelected: selection.contains(track.id),
                         handlePlayTrack: handlePlayTrack
-                    ) { playbackManager.togglePlayPause() }
+                    ) {
+                        _ = playbackManager.isPlaying
+                            ? playbackManager.requestPause()
+                            : playbackManager.requestPlay()
+                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .width(min: 200)
