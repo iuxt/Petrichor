@@ -22,22 +22,22 @@ enum TrackMetadataEditableField: String, CaseIterable, Equatable, Sendable {
     case compilation
     case comment
 
-    var localizedDisplayName: String {
+    var englishDisplayName: String {
         switch self {
-        case .title: return String(localized: "Title")
-        case .artist: return String(localized: "Artist")
-        case .album: return String(localized: "Album")
-        case .albumArtist: return String(localized: "Album Artist")
-        case .composer: return String(localized: "Composer")
-        case .genre: return String(localized: "Genre")
-        case .releaseDate: return String(localized: "Release Date")
-        case .trackNumber: return String(localized: "Track Number")
-        case .trackTotal: return String(localized: "Total Tracks")
-        case .discNumber: return String(localized: "Disc Number")
-        case .discTotal: return String(localized: "Total Discs")
-        case .bpm: return String(localized: "BPM")
-        case .compilation: return String(localized: "Compilation")
-        case .comment: return String(localized: "Comment")
+        case .title: return "Title"
+        case .artist: return "Artist"
+        case .album: return "Album"
+        case .albumArtist: return "Album Artist"
+        case .composer: return "Composer"
+        case .genre: return "Genre"
+        case .releaseDate: return "Release Date"
+        case .trackNumber: return "Track Number"
+        case .trackTotal: return "Total Tracks"
+        case .discNumber: return "Disc Number"
+        case .discTotal: return "Total Discs"
+        case .bpm: return "BPM"
+        case .compilation: return "Compilation"
+        case .comment: return "Comment"
         }
     }
 }
@@ -131,9 +131,23 @@ struct TrackMetadataBatchResult: Identifiable, Equatable, Sendable {
     }
 }
 
+enum TrackMetadataValidationKind: Equatable, Sendable {
+    case positiveInteger
+    case invalidReleaseDate
+}
+
 struct TrackMetadataValidationError: LocalizedError, Equatable {
     let field: TrackMetadataEditableField
-    let message: String
+    let kind: TrackMetadataValidationKind
+
+    var message: String {
+        switch kind {
+        case .positiveInteger:
+            return "\(field.englishDisplayName) must be a positive integer."
+        case .invalidReleaseDate:
+            return "The release date must use YYYY or YYYY-MM-DD."
+        }
+    }
 
     var errorDescription: String? {
         message
@@ -448,10 +462,7 @@ struct TrackMetadataEditForm: Equatable, Sendable {
             guard let value = Int(text), value > 0 else {
                 throw TrackMetadataValidationError(
                     field: field,
-                    message: String.localizedStringWithFormat(
-                        String(localized: "%1$@ must be a positive integer."),
-                        field.localizedDisplayName
-                    )
+                    kind: .positiveInteger
                 )
             }
             return .set(value)
@@ -470,9 +481,7 @@ struct TrackMetadataEditForm: Equatable, Sendable {
             guard Self.isValidReleaseDate(value) else {
                 throw TrackMetadataValidationError(
                     field: .releaseDate,
-                    message: String(
-                        localized: "The release date must use YYYY or YYYY-MM-DD."
-                    )
+                    kind: .invalidReleaseDate
                 )
             }
             return .set(value)

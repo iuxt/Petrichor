@@ -88,8 +88,10 @@ require_pattern "$SHEET" 'MixedStateCheckbox\([\s\S]*value: model\.compilationVa
 
 require_pattern "$SHEET" 'model\.validationError\?\.field == field' \
     'Validation highlighting must target only the invalid field.'
-require_pattern "$SHEET" 'model\.validationError\?\.message' \
-    'The validation message must be presented verbatim.'
+require_pattern "$SHEET" 'model\.validationMessage' \
+    'The app-localized validation message must be presented verbatim.'
+reject_pattern "$SHEET" 'model\.validationError\?\.message' \
+    'The sheet must not display the model fallback instead of the selected app language.'
 
 require_pattern "$SHEET" 'ProgressView\(\s*value: Double\(model\.currentProgress\)[\s\S]*total: Double\(max\(model\.totalProgress, 1\)\)' \
     'Batch saving must show deterministic current/total progress.'

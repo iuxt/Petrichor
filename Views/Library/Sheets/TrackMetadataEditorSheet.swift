@@ -395,7 +395,7 @@ struct TrackMetadataEditorSheet: View {
                     commentRow
                 }
 
-                if let validationMessage = model.validationError?.message {
+                if let validationMessage = model.validationMessage {
                     Text(verbatim: validationMessage)
                         .font(.caption)
                         .foregroundStyle(.red)

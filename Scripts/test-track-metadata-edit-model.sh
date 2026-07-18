@@ -109,8 +109,12 @@ do {
 } catch let error as TrackMetadataValidationError {
     expect(error.field == .releaseDate, "date error must identify release date")
     expect(
+        error.kind == .invalidReleaseDate,
+        "date validation must expose a structured failure kind"
+    )
+    expect(
         error.message == "The release date must use YYYY or YYYY-MM-DD.",
-        "date validation must expose a localizable user-facing message"
+        "date validation must retain an English standalone fallback"
     )
 }
 
@@ -122,8 +126,12 @@ do {
 } catch let error as TrackMetadataValidationError {
     expect(error.field == .bpm, "integer error must identify BPM")
     expect(
+        error.kind == .positiveInteger,
+        "integer validation must expose a structured failure kind"
+    )
+    expect(
         error.message == "BPM must be a positive integer.",
-        "integer validation must use the localized display field name"
+        "integer validation must retain an English standalone fallback"
     )
 }
 

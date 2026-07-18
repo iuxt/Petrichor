@@ -104,6 +104,20 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         form?.compilation.value
     }
 
+    var validationMessage: String? {
+        guard let validationError else { return nil }
+
+        switch validationError.kind {
+        case .positiveInteger:
+            return String.localizedStringWithFormat(
+                String(appLocalized: "%1$@ must be a positive integer."),
+                Self.localizedName(for: validationError.field)
+            )
+        case .invalidReleaseDate:
+            return String(appLocalized: "The release date must use YYYY or YYYY-MM-DD.")
+        }
+    }
+
     func text(for field: TrackMetadataEditableField) -> String {
         form?.text(for: field) ?? ""
     }
@@ -244,6 +258,27 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         } catch {
             validationError = nil
             Logger.error("Unexpected metadata validation error: \(error)")
+        }
+    }
+
+    private static func localizedName(
+        for field: TrackMetadataEditableField
+    ) -> String {
+        switch field {
+        case .title: return String(appLocalized: "Title")
+        case .artist: return String(appLocalized: "Artist")
+        case .album: return String(appLocalized: "Album")
+        case .albumArtist: return String(appLocalized: "Album Artist")
+        case .composer: return String(appLocalized: "Composer")
+        case .genre: return String(appLocalized: "Genre")
+        case .releaseDate: return String(appLocalized: "Release Date")
+        case .trackNumber: return String(appLocalized: "Track Number")
+        case .trackTotal: return String(appLocalized: "Total Tracks")
+        case .discNumber: return String(appLocalized: "Disc Number")
+        case .discTotal: return String(appLocalized: "Total Discs")
+        case .bpm: return String(appLocalized: "BPM")
+        case .compilation: return String(appLocalized: "Compilation")
+        case .comment: return String(appLocalized: "Comment")
         }
     }
 

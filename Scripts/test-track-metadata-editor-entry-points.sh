@@ -172,6 +172,8 @@ source_requirements = {
     view_model_path: [
         "This file is read-only.",
         "Could not save tags: %1$@",
+        "%1$@ must be a positive integer.",
+        "The release date must use YYYY or YYYY-MM-DD.",
     ],
     sheet_path: [
         "File Information",
@@ -206,17 +208,21 @@ for path, keys in source_requirements.items():
         if literal not in texts[path] and multiline_literal not in texts[path]:
             raise SystemExit(f"{path.name} does not localize user-visible source key: {key}")
 
-for key in [
-    "%1$@ must be a positive integer.",
-    "The release date must use YYYY or YYYY-MM-DD.",
+for fragment in [
+    "enum TrackMetadataValidationKind",
+    "case positiveInteger",
+    "case invalidReleaseDate",
+    "let kind: TrackMetadataValidationKind",
 ]:
-    if f'String(localized: "{key}")' not in model and f'localized: "{key}"' not in model:
+    if fragment not in model:
         raise SystemExit(
-            f"{model_path.name} must use Foundation localization for user-visible key: {key}"
+            f"{model_path.name} must expose structured validation failures: {fragment}"
         )
 
 if "appLocalized:" in model:
     raise SystemExit("The pure metadata edit model must not depend on the app localization extension.")
+if "String(localized:" in model or re.search(r"String\(\s*localized:", model):
+    raise SystemExit("The pure metadata edit model must not resolve app-facing localized strings.")
 if "field.rawValue" in model:
     raise SystemExit("Validation errors must not expose internal metadata field raw values.")
 if "String.localizedStringWithFormat" not in service:

@@ -44,6 +44,12 @@ require_pattern 'finishMetadataEditRefresh' \
     'Batch cache refresh must be coalesced.'
 require_pattern 'finalizeBatchIfPossible' \
     'Completion must wait for playback restoration.'
+require_pattern 'var validationMessage: String\?' \
+    'The app-facing view model must expose a localized validation message.'
+require_pattern 'String\(appLocalized: "%1\$@ must be a positive integer\."\)' \
+    'Positive-integer validation must follow the selected app language.'
+require_pattern 'String\(appLocalized: "The release date must use YYYY or YYYY-MM-DD\."\)' \
+    'Release-date validation must follow the selected app language.'
 reject_pattern 'withTaskGroup|TaskGroup|async let' \
     'Audio files must not be written concurrently.'
 
