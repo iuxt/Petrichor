@@ -59,8 +59,9 @@ enum ID3TrackMetadataWriter {
         let pending = operations(for: patch)
         guard !pending.isEmpty else { return }
 
-        let allocatedValues = pending.map { operation in
-            operation.value.map(strdup)
+        let allocatedValues: [UnsafeMutablePointer<CChar>?] = pending.map { operation in
+            guard let value = operation.value else { return nil }
+            return value.withCString { strdup($0) }
         }
         defer {
             for value in allocatedValues {
@@ -72,7 +73,7 @@ enum ID3TrackMetadataWriter {
             PTID3MetadataOperation(
                 field: $0.0.field,
                 action: $0.0.action,
-                value: $0.1.map(UnsafePointer.init)
+                value: $0.1.map { UnsafePointer<CChar>($0) }
             )
         }
         var errorBuffer = [CChar](repeating: 0, count: 1_024)
@@ -106,20 +107,20 @@ enum ID3TrackMetadataWriter {
         for patch: TrackMetadataPatch
     ) -> [Operation] {
         var result: [Operation] = []
-        append(patch.title, field: .title, to: &result)
-        append(patch.artist, field: .artist, to: &result)
-        append(patch.album, field: .album, to: &result)
-        append(patch.albumArtist, field: .albumArtist, to: &result)
-        append(patch.composer, field: .composer, to: &result)
-        append(patch.genre, field: .genre, to: &result)
-        append(patch.releaseDate, field: .releaseDate, to: &result)
-        append(patch.trackNumber, field: .trackNumber, to: &result)
-        append(patch.trackTotal, field: .trackTotal, to: &result)
-        append(patch.discNumber, field: .discNumber, to: &result)
-        append(patch.discTotal, field: .discTotal, to: &result)
-        append(patch.bpm, field: .bpm, to: &result)
+        append(patch.title, field: PTID3MetadataFieldTitle, to: &result)
+        append(patch.artist, field: PTID3MetadataFieldArtist, to: &result)
+        append(patch.album, field: PTID3MetadataFieldAlbum, to: &result)
+        append(patch.albumArtist, field: PTID3MetadataFieldAlbumArtist, to: &result)
+        append(patch.composer, field: PTID3MetadataFieldComposer, to: &result)
+        append(patch.genre, field: PTID3MetadataFieldGenre, to: &result)
+        append(patch.releaseDate, field: PTID3MetadataFieldReleaseDate, to: &result)
+        append(patch.trackNumber, field: PTID3MetadataFieldTrackNumber, to: &result)
+        append(patch.trackTotal, field: PTID3MetadataFieldTrackTotal, to: &result)
+        append(patch.discNumber, field: PTID3MetadataFieldDiscNumber, to: &result)
+        append(patch.discTotal, field: PTID3MetadataFieldDiscTotal, to: &result)
+        append(patch.bpm, field: PTID3MetadataFieldBPM, to: &result)
         appendCompilation(patch.compilation, to: &result)
-        append(patch.comment, field: .comment, to: &result)
+        append(patch.comment, field: PTID3MetadataFieldComment, to: &result)
         return result
     }
 
@@ -133,11 +134,19 @@ enum ID3TrackMetadataWriter {
             break
         case .set(let value):
             operations.append(
-                Operation(field: field, action: .set, value: value)
+                Operation(
+                    field: field,
+                    action: PTID3PatchActionSet,
+                    value: value
+                )
             )
         case .remove:
             operations.append(
-                Operation(field: field, action: .remove, value: nil)
+                Operation(
+                    field: field,
+                    action: PTID3PatchActionRemove,
+                    value: nil
+                )
             )
         }
     }
@@ -154,13 +163,17 @@ enum ID3TrackMetadataWriter {
             operations.append(
                 Operation(
                     field: field,
-                    action: .set,
+                    action: PTID3PatchActionSet,
                     value: String(value)
                 )
             )
         case .remove:
             operations.append(
-                Operation(field: field, action: .remove, value: nil)
+                Operation(
+                    field: field,
+                    action: PTID3PatchActionRemove,
+                    value: nil
+                )
             )
         }
     }
@@ -174,11 +187,19 @@ enum ID3TrackMetadataWriter {
             break
         case .set(true):
             operations.append(
-                Operation(field: .compilation, action: .set, value: "1")
+                Operation(
+                    field: PTID3MetadataFieldCompilation,
+                    action: PTID3PatchActionSet,
+                    value: "1"
+                )
             )
         case .set(false), .remove:
             operations.append(
-                Operation(field: .compilation, action: .remove, value: nil)
+                Operation(
+                    field: PTID3MetadataFieldCompilation,
+                    action: PTID3PatchActionRemove,
+                    value: nil
+                )
             )
         }
     }

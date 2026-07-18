@@ -212,6 +212,7 @@ actor SFBTrackMetadataFileService {
 
         let resourceValues = try? target.url.resourceValues(forKeys: [.fileSizeKey])
         let fileSize = resourceValues?.fileSize.map(Int64.init)
+        let format = target.url.pathExtension.lowercased()
 
         return TrackMetadataSnapshot(
             target: target,
