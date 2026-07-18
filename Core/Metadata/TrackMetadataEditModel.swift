@@ -236,10 +236,30 @@ struct BatchTextFieldState: Equatable, Sendable {
 
     func stringPatch(multiline: Bool = false) -> MetadataPatchValue<String> {
         guard isDirty else { return .unchanged }
-        let trimmed = text.trimmingCharacters(
+        let patchText = multiline ? text : Self.flattenedSingleLineText(text)
+        let trimmed = patchText.trimmingCharacters(
             in: multiline ? .whitespacesAndNewlines : .whitespaces
         )
         return trimmed.isEmpty ? .remove : .set(trimmed)
+    }
+
+    private static func flattenedSingleLineText(_ value: String) -> String {
+        var result = ""
+        var isInNewlineSequence = false
+
+        for scalar in value.unicodeScalars {
+            if CharacterSet.newlines.contains(scalar) {
+                if !isInNewlineSequence {
+                    result.append(" ")
+                }
+                isInNewlineSequence = true
+            } else {
+                result.append(contentsOf: String(scalar))
+                isInNewlineSequence = false
+            }
+        }
+
+        return result
     }
 }
 

@@ -76,6 +76,22 @@ expect(
     "empty stored strings must compare as absent tags"
 )
 
+var newlineForm = TrackMetadataEditForm(tags: [first])
+newlineForm.setText(
+    "  A\nB\r\nC\u{000B}D\u{000C}E\u{0085}F\u{2028}G\u{2029}H  ",
+    for: .title
+)
+newlineForm.setText("  First line\nSecond line\r\nThird line  ", for: .comment)
+let newlinePatch = try newlineForm.makePatch()
+expect(
+    newlinePatch.title == .set("A B C D E F G H"),
+    "single-line fields must flatten every Foundation newline sequence to one space"
+)
+expect(
+    newlinePatch.comment == .set("First line\nSecond line\r\nThird line"),
+    "comments must preserve internal newlines"
+)
+
 let retryResults = [
     TrackMetadataBatchResult(target: .init(trackID: 1, url: URL(fileURLWithPath: "/tmp/one.flac")), outcome: .saved),
     TrackMetadataBatchResult(target: .init(trackID: 2, url: URL(fileURLWithPath: "/tmp/two.flac")), outcome: .failed("write")),
