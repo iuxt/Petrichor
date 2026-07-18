@@ -31,6 +31,8 @@ require_pattern "$REINDEX" 'track.albumId = nil' 'Old album association must be 
 require_pattern "$REINDEX" 'try processUpdatedTrack\(' 'Normalized relations must use the existing update path.'
 require_pattern "$REINDEX" 'refreshDuplicateGroups\(' 'Only affected duplicate groups must be refreshed.'
 require_pattern "$REINDEX" 'pruneOrphanedMetadata\(' 'Old normalized parents must be pruned.'
+require_pattern "$REINDEX" 'oldAlbumArtistIDs = try AlbumArtist' 'Old album-only artists must be captured before album mutation.'
+require_pattern "$REINDEX" 'oldTrackArtistIDs\.union\(oldAlbumArtistIDs\)' 'Old track and album artist IDs must be pruned together.'
 reject_pattern "$REINDEX" 'scan|processFilesInBatches|refreshFolder' 'Metadata saving must not rescan a folder.'
 reject_pattern "$PROCESSING" 'processUpdatedTrack\([^\n]*metadata:' 'The unused metadata parameter must be removed.'
 

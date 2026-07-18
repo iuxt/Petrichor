@@ -25,10 +25,20 @@ extension DatabaseManager {
 
             let oldDuplicateKey = track.duplicateKey
             let oldAlbumID = track.albumId
-            let oldArtistIDs = try TrackArtist
+            let oldTrackArtistIDs = try TrackArtist
                 .filter(TrackArtist.Columns.trackId == track.trackId)
                 .select(TrackArtist.Columns.artistId, as: Int64.self)
                 .fetchSet(db)
+            let oldAlbumArtistIDs: Set<Int64>
+            if let oldAlbumID {
+                oldAlbumArtistIDs = try AlbumArtist
+                    .filter(AlbumArtist.Columns.albumId == oldAlbumID)
+                    .select(AlbumArtist.Columns.artistId, as: Int64.self)
+                    .fetchSet(db)
+            } else {
+                oldAlbumArtistIDs = []
+            }
+            let oldArtistIDs = oldTrackArtistIDs.union(oldAlbumArtistIDs)
             let oldGenreIDs = try TrackGenre
                 .filter(TrackGenre.Columns.trackId == track.trackId)
                 .select(TrackGenre.Columns.genreId, as: Int64.self)
