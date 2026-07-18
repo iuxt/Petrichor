@@ -70,7 +70,15 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 cp "$TMP_DIR/sample.mp3" "$TMP_DIR/misnamed-mpeg.flac"
 cp "$TMP_DIR/not-an-mp3.flac" "$TMP_DIR/renamed-flac.mp3"
-printf 'ajkg\002shorten-signature-fixture' >"$TMP_DIR/renamed-shorten.mp3"
+printf 'ajkg\002shorten-signature-fixture' >"$TMP_DIR/shorten-signature.shn"
+
+SHORTEN_PATHS=()
+for extension in mp3 m4a flac wav aiff aif ogg oga opus spx ape mpc wv tta
+do
+    path="$TMP_DIR/renamed-shorten.$extension"
+    cp "$TMP_DIR/shorten-signature.shn" "$path"
+    SHORTEN_PATHS+=("$path")
+done
 
 HARNESS="$TMP_DIR/id3_selective_harness.mm"
 cat >"$HARNESS" <<'HARNESS_EOF'
@@ -274,9 +282,12 @@ static void verifySecondWrite(Tag *tag)
 template <typename Adapter>
 static void exercise(const char *path, PTID3ContainerKind expected)
 {
+    const auto actual = PTID3ProbeContainerAtPath(path);
     require(
-        PTID3ProbeContainerAtPath(path) == expected,
-        std::string("Wrong content probe for ") + path
+        actual == expected,
+        std::string("Wrong content probe for ") + path +
+            ": expected " + std::to_string(expected) +
+            ", got " + std::to_string(actual)
     );
 
     {
@@ -357,20 +368,23 @@ struct TrueAudioAdapter {
 
 int main(int argc, char **argv)
 {
-    require(argc == 8, "Expected MP3, WAV, AIFF, TTA, misnamed MPEG, FLAC-as-MP3, and Shorten-as-MP3 paths");
+    require(argc >= 8, "Expected ID3 fixtures followed by renamed Shorten fixtures");
     exercise<MPEGAdapter>(argv[1], PTID3ContainerKindMPEG);
     exercise<WAVEAdapter>(argv[2], PTID3ContainerKindWAVE);
     exercise<AIFFAdapter>(argv[3], PTID3ContainerKindAIFF);
     exercise<TrueAudioAdapter>(argv[4], PTID3ContainerKindTrueAudio);
     exercise<MPEGAdapter>(argv[5], PTID3ContainerKindMPEG);
     require(
-        PTID3ProbeContainerAtPath(argv[6]) != PTID3ContainerKindMPEG,
-        "A FLAC renamed to .mp3 was detected as MPEG"
+        PTID3ProbeContainerAtPath(argv[6]) == PTID3ContainerKindNativeMetadata,
+        "A FLAC renamed to .mp3 was not identified as native non-ID3 content"
     );
-    require(
-        PTID3ProbeContainerAtPath(argv[7]) != PTID3ContainerKindMPEG,
-        "A Shorten-signature file renamed to .mp3 was detected as MPEG"
-    );
+    for(int index = 7; index < argc; ++index) {
+        require(
+            PTID3ProbeContainerAtPath(argv[index]) == PTID3ContainerKindNone,
+            std::string("Shorten-signature content was accepted for allowlisted path ") +
+                argv[index]
+        );
+    }
     std::cout << "Selective ID3 real-file checks passed\n";
 }
 HARNESS_EOF
@@ -388,4 +402,4 @@ xcrun clang++ -std=c++17 -fobjc-arc \
     "$TMP_DIR/sample.tta" \
     "$TMP_DIR/misnamed-mpeg.flac" \
     "$TMP_DIR/renamed-flac.mp3" \
-    "$TMP_DIR/renamed-shorten.mp3"
+    "${SHORTEN_PATHS[@]}"

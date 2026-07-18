@@ -114,6 +114,12 @@ allows selecting it. MPEG writes ID3v2 only, strips nothing, and does not
 duplicate tags. Frames with all other IDs stay in TagLib's existing frame list
 and are not recreated.
 
+TagLib's TrueAudio API exposes only `save()` and renders ID3v2 as v2.4; it
+cannot explicitly retain a v2.3 major version. The real TrueAudio harness
+therefore verifies the semantic and rendered payload stability of every
+untouched advanced/multi-value frame across that save. MPEG, WAVE, and AIFF
+use their version-selectable save overloads.
+
 ## Service Routing
 
 For every allowlisted target:
@@ -124,7 +130,10 @@ For every allowlisted target:
    even when the allowlisted extension is wrong.
 4. An `.mp3` extension whose content fails the MPEG probe is rejected.
 5. Any detected unverified ID3 carrier is read-only.
-6. Remaining allowlisted native-tag content uses SFBAudioEngine.
+6. Remaining content uses SFBAudioEngine only after the bridge positively
+   identifies MP4, native FLAC, Ogg Vorbis/FLAC/Opus/Speex, Monkey's Audio,
+   Musepack, or WavPack.
+7. Unknown content is read-only for every extension.
 
 This ordering prevents a real MPEG file with the wrong allowlisted extension
 from falling back to whole-ID3 writing. All successful writes then reopen the
@@ -151,4 +160,4 @@ routing for all verified carriers, content-based writer selection, safe
 rejection of unverified carriers, the retained native non-ID3 SFBAudioEngine
 path, and reopen verification. Probe coverage includes a real MPEG under a
 non-MP3 allowlisted extension, a FLAC renamed `.mp3`, and a Shorten-signature
-fixture renamed `.mp3`.
+fixture copied to every writable extension.

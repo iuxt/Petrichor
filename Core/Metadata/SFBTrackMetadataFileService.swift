@@ -95,7 +95,7 @@ actor SFBTrackMetadataFileService {
     static let writableExtensions: Set<String> = [
         "mp3", "m4a", "flac", "wav", "aiff", "aif",
         "ogg", "oga", "opus", "spx", "ape", "mpc",
-        "wv", "tta", "dsf", "dff"
+        "wv", "tta"
     ]
 
     private let fileManager = FileManager.default
@@ -119,7 +119,7 @@ actor SFBTrackMetadataFileService {
             }
         }
 
-        try validateWritable(target)
+        _ = try validateWritable(target)
         do {
             _ = try AudioFile(readingPropertiesAndMetadataFrom: target.url)
         } catch {
@@ -142,35 +142,23 @@ actor SFBTrackMetadataFileService {
             }
         }
 
-        try validateWritable(target)
+        let id3Container = try validateWritable(target)
 
-        let audioFile: AudioFile
-        do {
-            audioFile = try AudioFile(readingPropertiesAndMetadataFrom: target.url)
-        } catch {
-            throw TrackMetadataFileError.readFailed(error.localizedDescription)
-        }
-
-        let metadata = audioFile.metadata
-        apply(patch.title, to: \.title, on: metadata)
-        apply(patch.artist, to: \.artist, on: metadata)
-        apply(patch.album, to: \.albumTitle, on: metadata)
-        apply(patch.albumArtist, to: \.albumArtist, on: metadata)
-        apply(patch.composer, to: \.composer, on: metadata)
-        apply(patch.genre, to: \.genre, on: metadata)
-        apply(patch.releaseDate, to: \.releaseDate, on: metadata)
-        apply(patch.trackNumber, to: \.trackNumber, on: metadata)
-        apply(patch.trackTotal, to: \.trackTotal, on: metadata)
-        apply(patch.discNumber, to: \.discNumber, on: metadata)
-        apply(patch.discTotal, to: \.discTotal, on: metadata)
-        apply(patch.bpm, to: \.bpm, on: metadata)
-        apply(patch.compilation, to: \.isCompilation, on: metadata)
-        apply(patch.comment, to: \.comment, on: metadata)
-
-        do {
-            try audioFile.writeMetadata()
-        } catch {
-            throw TrackMetadataFileError.writeFailed(error.localizedDescription)
+        switch id3Container {
+        case .mpeg, .wave, .aiff, .trueAudio:
+            do {
+                try ID3TrackMetadataWriter.write(patch, to: target.url)
+            } catch {
+                throw TrackMetadataFileError.writeFailed(
+                    error.localizedDescription
+                )
+            }
+        case .nativeMetadata:
+            try writeNonID3Metadata(target: target, patch: patch)
+        case .none, .unsafeID3Carrier:
+            throw TrackMetadataFileError.unsupportedFormat(
+                target.url.pathExtension.lowercased()
+            )
         }
 
         let verified = try loadSnapshot(target: target)
@@ -220,21 +208,7 @@ actor SFBTrackMetadataFileService {
             comment: metadata.comment
         ).normalized()
 
-        let format = target.url.pathExtension.lowercased()
-        let isSupported = Self.writableExtensions.contains(format)
-        let hasWritePermission = fileManager.isWritableFile(atPath: target.url.path)
-        let restrictionReason: String?
-        if !isSupported {
-            restrictionReason = TrackMetadataFileError
-                .unsupportedFormat(format)
-                .localizedDescription
-        } else if !hasWritePermission {
-            restrictionReason = TrackMetadataFileError
-                .fileNotWritable(target.displayName)
-                .localizedDescription
-        } else {
-            restrictionReason = nil
-        }
+        let restrictionReason = writeRestriction(for: target)
 
         let resourceValues = try? target.url.resourceValues(forKeys: [.fileSizeKey])
         let fileSize = resourceValues?.fileSize.map(Int64.init)
@@ -249,12 +223,61 @@ actor SFBTrackMetadataFileService {
                 duration: audioFile.properties.duration,
                 fileSize: fileSize
             ),
-            isWritable: isSupported && hasWritePermission,
+            isWritable: restrictionReason == nil,
             restrictionReason: restrictionReason
         )
     }
 
-    private func validateWritable(_ target: TrackMetadataEditTarget) throws {
+    private func writeNonID3Metadata(
+        target: TrackMetadataEditTarget,
+        patch: TrackMetadataPatch
+    ) throws {
+        let audioFile: AudioFile
+        do {
+            audioFile = try AudioFile(
+                readingPropertiesAndMetadataFrom: target.url
+            )
+        } catch {
+            throw TrackMetadataFileError.readFailed(error.localizedDescription)
+        }
+
+        let metadata = audioFile.metadata
+        apply(patch.title, to: \.title, on: metadata)
+        apply(patch.artist, to: \.artist, on: metadata)
+        apply(patch.album, to: \.albumTitle, on: metadata)
+        apply(patch.albumArtist, to: \.albumArtist, on: metadata)
+        apply(patch.composer, to: \.composer, on: metadata)
+        apply(patch.genre, to: \.genre, on: metadata)
+        apply(patch.releaseDate, to: \.releaseDate, on: metadata)
+        apply(patch.trackNumber, to: \.trackNumber, on: metadata)
+        apply(patch.trackTotal, to: \.trackTotal, on: metadata)
+        apply(patch.discNumber, to: \.discNumber, on: metadata)
+        apply(patch.discTotal, to: \.discTotal, on: metadata)
+        apply(patch.bpm, to: \.bpm, on: metadata)
+        apply(patch.compilation, to: \.isCompilation, on: metadata)
+        apply(patch.comment, to: \.comment, on: metadata)
+
+        do {
+            try audioFile.writeMetadata()
+        } catch {
+            throw TrackMetadataFileError.writeFailed(error.localizedDescription)
+        }
+    }
+
+    private func writeRestriction(
+        for target: TrackMetadataEditTarget
+    ) -> String? {
+        do {
+            _ = try validateWritable(target)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func validateWritable(
+        _ target: TrackMetadataEditTarget
+    ) throws -> ID3TrackMetadataContainer {
         guard fileManager.fileExists(atPath: target.url.path) else {
             throw TrackMetadataFileError.fileMissing(target.displayName)
         }
@@ -265,5 +288,13 @@ actor SFBTrackMetadataFileService {
         guard fileManager.isWritableFile(atPath: target.url.path) else {
             throw TrackMetadataFileError.fileNotWritable(target.displayName)
         }
+        let id3Container = ID3TrackMetadataWriter.probe(target.url)
+        if id3Container == .none || id3Container == .unsafeID3Carrier {
+            throw TrackMetadataFileError.unsupportedFormat(format)
+        }
+        if format == "mp3", id3Container != .mpeg {
+            throw TrackMetadataFileError.unsupportedFormat(format)
+        }
+        return id3Container
     }
 }

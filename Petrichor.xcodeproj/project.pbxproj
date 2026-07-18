@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		552A58402EC0629A00F6D8C0 /* SFBAudioEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 552A583F2EC0629A00F6D8C0 /* SFBAudioEngine */; };
 		552CE3E52FE3263900A5C93D /* Crescendo in Frameworks */ = {isa = PBXBuildFile; productRef = 552CE3E42FE3263900A5C93D /* Crescendo */; };
+		55D31D002FE4F00000A1D303 /* taglib in Frameworks */ = {isa = PBXBuildFile; productRef = 55D31D002FE4F00000A1D302 /* taglib */; };
 		5590877F2DE0C078009E7719 /* PetrichorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5590877E2DE0C078009E7719 /* PetrichorApp.swift */; };
 		55B0DEC12DE3A58400A41ED9 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 55B0DEC02DE3A58400A41ED9 /* GRDB */; };
 /* End PBXBuildFile section */
@@ -107,6 +108,7 @@
 				55B0DEC12DE3A58400A41ED9 /* GRDB in Frameworks */,
 				552A58402EC0629A00F6D8C0 /* SFBAudioEngine in Frameworks */,
 				552CE3E52FE3263900A5C93D /* Crescendo in Frameworks */,
+				55D31D002FE4F00000A1D303 /* taglib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -164,6 +166,7 @@
 				55B0DEC02DE3A58400A41ED9 /* GRDB */,
 				552A583F2EC0629A00F6D8C0 /* SFBAudioEngine */,
 				552CE3E42FE3263900A5C93D /* Crescendo */,
+				55D31D002FE4F00000A1D302 /* taglib */,
 			);
 			productName = Petrichor;
 			productReference = 550F4A0E2DB45B1A005F794E /* Petrichor Dev.app */;
@@ -197,6 +200,7 @@
 				55B0DEBF2DE3A58400A41ED9 /* XCRemoteSwiftPackageReference "GRDB" */,
 				552A583E2EC0629A00F6D8C0 /* XCRemoteSwiftPackageReference "SFBAudioEngine" */,
 				552CE3E32FE3263900A5C93D /* XCRemoteSwiftPackageReference "CrescendoKit" */,
+				55D31D002FE4F00000A1D301 /* XCRemoteSwiftPackageReference "CXXTagLib" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 550F4A052DB45B1A005F794E;
@@ -358,6 +362,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CODE_SIGN_ENTITLEMENTS = Configuration/Petrichor.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -394,6 +399,7 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = Core/Metadata/PetrichorMetadataBridge.h;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -406,6 +412,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CODE_SIGN_ENTITLEMENTS = Configuration/Petrichor.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
@@ -443,6 +450,7 @@
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = Core/Metadata/PetrichorMetadataBridge.h;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -495,6 +503,14 @@
 				minimumVersion = 7.5.0;
 			};
 		};
+		55D31D002FE4F00000A1D301 /* XCRemoteSwiftPackageReference "CXXTagLib" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sbooth/CXXTagLib";
+			requirement = {
+				kind = exactVersion;
+				version = 2.3.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -512,6 +528,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 55B0DEBF2DE3A58400A41ED9 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
+		};
+		55D31D002FE4F00000A1D302 /* taglib */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 55D31D002FE4F00000A1D301 /* XCRemoteSwiftPackageReference "CXXTagLib" */;
+			productName = taglib;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
