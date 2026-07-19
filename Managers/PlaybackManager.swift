@@ -46,7 +46,7 @@ final class PlaybackManager: NSObject, ObservableObject {
     @Published var restoredUITrack: Track?
 
     // MARK: - Computed Properties
-    
+
     /// Alias for currentTime for backwards compatibility
     var actualCurrentTime: Double {
         currentTime
@@ -197,7 +197,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         self.playlistManager = playlistManager
         self.nowPlayingManager = NowPlayingManager()
         self.audioPlayer = PlaybackEngine()
-        
+
         super.init()
         
         self.audioPlayer.delegate = self
@@ -217,9 +217,9 @@ final class PlaybackManager: NSObject, ObservableObject {
         // process exit; if lifetime ever changes, add a `prepareForDeinit()` that
         // the owner calls on the main actor before release.
     }
-    
+
     // MARK: - Player State Management
-    
+
     func restoreUIState(_ uiState: PlaybackUIState) {
         var tempTrack = Track(url: URL(fileURLWithPath: "/restored"))
         tempTrack.title = uiState.trackTitle
@@ -953,7 +953,7 @@ final class PlaybackManager: NSObject, ObservableObject {
             Logger.info("Moved trashed current track out of playback; no next track available")
         }
     }
-    
+
     func seekTo(time: Double) {
         if deferMetadataEditSeekIfNeeded(time: time) {
             return
@@ -971,7 +971,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         currentTime = clampedTime
         resetProgressResolution(engineProgress: clampedTime)
         restoredPosition = clampedTime
-        
+
         NotificationCenter.default.post(
             name: NSNotification.Name("PlayerDidSeek"),
             object: nil,
@@ -983,11 +983,11 @@ final class PlaybackManager: NSObject, ObservableObject {
                 track: track, currentTime: clampedTime, isPlaying: isPlaying)
         }
     }
-    
+
     func setVolume(_ newVolume: Float) {
         volume = max(0, min(1, newVolume))
     }
-    
+
     func updateNowPlayingInfo() {
         guard let track = currentTrack else { return }
         nowPlayingManager.updateNowPlayingInfo(
