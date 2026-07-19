@@ -196,10 +196,30 @@ extension PlaylistManager {
         currentQueueIndex = index
     }
 
-    /// Restore metadata-edit playback position without moving or replaying the queue.
-    func restoreQueueIndexAfterMetadataEdit(_ index: Int) {
-        guard currentQueue.indices.contains(index) else { return }
-        currentQueueIndex = index
+    /// Re-anchor metadata-edit playback without undoing a queue reorder that
+    /// happened while the audio file was closed for writing.
+    func restoreQueueIndexAfterMetadataEdit(
+        _ preferredIndex: Int,
+        matching track: Track
+    ) {
+        let matchesTrack: (Track) -> Bool = { queueTrack in
+            if let trackId = track.trackId,
+               queueTrack.trackId == trackId {
+                return true
+            }
+            return queueTrack.url.standardizedFileURL ==
+                track.url.standardizedFileURL
+        }
+
+        if currentQueue.indices.contains(preferredIndex),
+           matchesTrack(currentQueue[preferredIndex]) {
+            currentQueueIndex = preferredIndex
+            return
+        }
+
+        if let relocatedIndex = currentQueue.firstIndex(where: matchesTrack) {
+            currentQueueIndex = relocatedIndex
+        }
     }
 
     func playPreviousTrack() {

@@ -115,6 +115,7 @@ protocol PlaybackBackend: AnyObject {
     var state: AudioPlayerState { get }
     var currentPlaybackProgress: Double { get }
     var duration: Double { get }
+    var currentEntryId: AudioEntryId? { get }
 
     /// Whether this backend can pre-decode a queued next track for gapless
     /// transitions. When true, the app feeds it the upcoming track via
@@ -191,6 +192,10 @@ public class PlaybackEngine: NSObject {
     /// Total duration of current file in seconds
     public var duration: Double {
         backend.duration
+    }
+
+    public var currentEntryId: AudioEntryId? {
+        backend.currentEntryId
     }
 
     /// Legacy property name for backwards compatibility

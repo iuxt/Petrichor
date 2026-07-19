@@ -59,7 +59,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
     // MARK: - Private Properties
 
     private let sfbPlayer: SFBPlayer
-    private var currentEntryId: AudioEntryId?
+    private(set) var currentEntryId: AudioEntryId?
     private var currentURL: URL?
     private var playGeneration: UInt64 = 0
     private var delegateBridge: SFBAudioPlayerDelegateBridge?

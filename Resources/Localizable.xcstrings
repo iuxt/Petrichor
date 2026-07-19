@@ -8512,6 +8512,28 @@
         }
       }
     },
+    "The file “%1$@” has multiple hard links and cannot be edited safely.": {
+      "comment": "Metadata editor preflight message. The argument is a filename.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件“%1$@”具有多个硬链接，无法安全编辑。"
+          }
+        }
+      }
+    },
+    "The volume containing “%1$@” does not support safe metadata replacement.": {
+      "comment": "Metadata editor preflight message. The argument is a filename.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含“%1$@”的卷不支持安全的元数据替换。"
+          }
+        }
+      }
+    },
     "The file “%1$@” no longer exists.": {
       "comment": "Metadata editor message for a missing file. The argument is a filename.",
       "localizations": {

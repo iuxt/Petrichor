@@ -75,7 +75,12 @@ struct MetadataEditPlaybackSuspension: Equatable, Sendable {
 
     var restoration: Restoration {
         guard !isSuperseded else { return .superseded }
+        return fallbackRestoration
+    }
 
+    /// The edited track's latest desired state even while another track has
+    /// superseded it. This is used only if that replacement later fails.
+    var fallbackRestoration: Restoration {
         switch desiredMode {
         case .playing:
             return restoration(mode: .playing)
@@ -86,6 +91,46 @@ struct MetadataEditPlaybackSuspension: Equatable, Sendable {
         case .stopRequested:
             return .stop
         }
+    }
+
+    var fallbackPosition: Double {
+        desiredPosition
+    }
+
+    func fallbackRestoration(
+        overridingShouldPlay shouldPlay: Bool?
+    ) -> Restoration {
+        var fallback = self
+        fallback.isSuperseded = false
+        if let shouldPlay {
+            if shouldPlay {
+                _ = fallback.requestPlaying()
+            } else {
+                _ = fallback.requestPaused()
+            }
+        }
+        return fallback.restoration
+    }
+
+    mutating func updateFallbackPlayback(shouldPlay: Bool) -> Bool {
+        guard isSuperseded else { return false }
+        if shouldPlay {
+            desiredMode = .playing
+        } else {
+            switch desiredMode {
+            case .playing, .paused:
+                desiredMode = .paused
+            case .idle, .stopRequested:
+                break
+            }
+        }
+        return true
+    }
+
+    mutating func requestFallbackStop() -> Bool {
+        guard isSuperseded else { return false }
+        desiredMode = .stopRequested
+        return true
     }
 
     func matches(trackID candidateID: Int64?, url candidateURL: URL) -> Bool {
@@ -156,6 +201,22 @@ struct MetadataEditPlaybackSuspension: Equatable, Sendable {
 
         isSuperseded = true
         return .playDifferentTrack
+    }
+
+    mutating func restoreAfterFailedSupersession(
+        shouldPlay: Bool?
+    ) -> Bool {
+        guard isSuperseded else { return false }
+        isSuperseded = false
+
+        if let shouldPlay {
+            if shouldPlay {
+                _ = requestPlaying()
+            } else {
+                _ = requestPaused()
+            }
+        }
+        return true
     }
 
     private func restoration(mode: RestorableMode) -> Restoration {

@@ -49,6 +49,10 @@ final class CrescendoPlaybackBackend: @preconcurrency PlaybackBackend {
         player.duration
     }
 
+    var currentEntryId: AudioEntryId? {
+        player.currentEntryId.map { AudioEntryId(id: $0.id) }
+    }
+
     // MARK: - Private Properties
 
     private let player: CrescendoPlayer

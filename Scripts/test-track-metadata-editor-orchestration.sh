@@ -32,6 +32,10 @@ require_pattern 'func save\(' 'The save entry point is missing.'
 require_pattern 'prioritizedTargets' 'The current track must be processed first.'
 require_pattern 'for target in targets' 'File writes must be sequential.'
 require_pattern 'preflightWrite\(target:' 'Preflight must happen before playback suspension.'
+require_pattern 'await playbackManager\.beginMetadataWriteAccess\(\s*for:' \
+    'Every writable batch target must acquire a playback file-access guard.'
+require_pattern 'endMetadataWriteAccess\(' \
+    'Every acquired playback file-access guard must be released.'
 require_pattern 'prepareCurrentTrackForMetadataEdit' \
     'Current playback must be suspended before its write.'
 require_pattern 'if let snapshot = await playbackManager\s+\.prepareCurrentTrackForMetadataEdit\(track\)' \
@@ -255,17 +259,54 @@ final class PlaybackManager {
         let suspensionGeneration: UInt64
     }
 
+    struct MetadataWriteAccessToken {
+        let generation: UInt64
+        let trackID: Int64
+    }
+
     var currentTrack: Track?
     var failRestoration = false
     private(set) var activeSuspensionGeneration: UInt64?
+    private(set) var activeWriteAccessGeneration: UInt64?
     private(set) var prepareCount = 0
     private(set) var restoreCount = 0
     private var nextSuspensionGeneration: UInt64 = 0
+    private var nextWriteAccessGeneration: UInt64 = 0
     let recorder: EventRecorder
 
     init(currentTrack: Track?, recorder: EventRecorder) {
         self.currentTrack = currentTrack
         self.recorder = recorder
+    }
+
+    func beginMetadataWriteAccess(
+        for track: Track
+    ) async -> MetadataWriteAccessToken {
+        precondition(
+            activeWriteAccessGeneration == nil,
+            "metadata write access must be sequential"
+        )
+        nextWriteAccessGeneration &+= 1
+        activeWriteAccessGeneration = nextWriteAccessGeneration
+        recorder.append("writeAccessBegin:\(track.trackId!)")
+        await Task.yield()
+        recorder.append("writeAccessDrained:\(track.trackId!)")
+        return MetadataWriteAccessToken(
+            generation: nextWriteAccessGeneration,
+            trackID: track.trackId!
+        )
+    }
+
+    func endMetadataWriteAccess(
+        _ token: MetadataWriteAccessToken,
+        updatedTrack: Track?
+    ) async {
+        precondition(
+            activeWriteAccessGeneration == token.generation,
+            "metadata write access must release its matching generation"
+        )
+        recorder.append("writeAccessEnd:\(token.trackID)")
+        activeWriteAccessGeneration = nil
     }
 
     func prepareCurrentTrackForMetadataEdit(
@@ -567,11 +608,28 @@ struct Harness {
         let currentPreflight = recorder.events.firstIndex(of: "preflight:20")!
         let currentArtworkFinished = recorder.events.firstIndex(of: "artworkFinished:20")!
         let currentWrite = recorder.events.firstIndex(of: "write:20")!
+        let currentWriteAccessBegin = recorder.events.firstIndex(
+            of: "writeAccessBegin:20"
+        )!
+        let currentWriteAccessEnd = recorder.events.firstIndex(
+            of: "writeAccessEnd:20"
+        )!
+        let currentWriteAccessDrained = recorder.events.firstIndex(
+            of: "writeAccessDrained:20"
+        )!
         let restoreEnd = recorder.events.firstIndex(of: "restoreEnd:20")!
         expect(currentPreflight < firstPreflight, "the current track must be processed first")
         expect(
             currentArtworkFinished < currentWrite,
             "the current file write must wait until its artwork reader terminates"
+        )
+        expect(
+            currentWriteAccessBegin < currentPreflight &&
+                currentWriteAccessBegin < currentWriteAccessDrained &&
+                currentWriteAccessDrained < currentPreflight &&
+                currentPreflight < currentWrite &&
+                currentWrite < currentWriteAccessEnd,
+            "the current target must stay guarded for its complete write path"
         )
         expect(
             restoreEnd < firstPreflight,
@@ -594,9 +652,17 @@ struct Harness {
         expect(
             playback.prepareCount == 1 &&
                 playback.restoreCount == 1 &&
-                playback.activeSuspensionGeneration == nil,
+                playback.activeSuspensionGeneration == nil &&
+                playback.activeWriteAccessGeneration == nil,
             "successful current-track work must consume its suspension exactly once"
         )
+        for id: Int64 in [10, 20, 30] {
+            expect(
+                recorder.events.filter { $0 == "writeAccessBegin:\(id)" }.count ==
+                    recorder.events.filter { $0 == "writeAccessEnd:\(id)" }.count,
+                "every attempted batch target must release its file-access guard"
+            )
+        }
 
         viewModel.setText("Do not retry this newer form value", for: .title)
         recorder.reset()
@@ -656,7 +722,8 @@ struct Harness {
         expect(
             playback.prepareCount == 0 &&
                 playback.restoreCount == 0 &&
-                playback.activeSuspensionGeneration == nil,
+                playback.activeSuspensionGeneration == nil &&
+                playback.activeWriteAccessGeneration == nil,
             "preflight skips must not create a suspension token"
         )
     }
@@ -706,7 +773,8 @@ struct Harness {
         expect(
             playback.prepareCount == 1 &&
                 playback.restoreCount == 1 &&
-                playback.activeSuspensionGeneration == nil,
+                playback.activeSuspensionGeneration == nil &&
+                playback.activeWriteAccessGeneration == nil,
             "reindex failure cleanup must consume its suspension exactly once"
         )
     }
@@ -764,7 +832,8 @@ struct Harness {
         expect(
             playback.prepareCount == 1 &&
                 playback.restoreCount == 1 &&
-                playback.activeSuspensionGeneration == nil,
+                playback.activeSuspensionGeneration == nil &&
+                playback.activeWriteAccessGeneration == nil,
             "a failed engine restoration must still consume the write suspension exactly once"
         )
 
@@ -849,7 +918,8 @@ struct Harness {
         expect(
             playback.prepareCount == 1 &&
                 playback.restoreCount == 1 &&
-                playback.activeSuspensionGeneration == nil,
+                playback.activeSuspensionGeneration == nil &&
+                playback.activeWriteAccessGeneration == nil,
             "cancellation cleanup must consume its suspension exactly once"
         )
         expect(

@@ -334,17 +334,24 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                 break
             }
 
+            var writeAccess: PlaybackManager.MetadataWriteAccessToken?
+            var updatedTrackForWriteAccess: Track?
+
             do {
+                guard let track = track(matching: target) else {
+                    throw TrackMetadataFileError.readFailed(target.url.path)
+                }
+                writeAccess = await playbackManager.beginMetadataWriteAccess(
+                    for: track
+                )
                 try await fileService.preflightWrite(target: target)
 
-                if let track = track(matching: target) {
-                    if let snapshot = await playbackManager
-                        .prepareCurrentTrackForMetadataEdit(track) {
-                        outstandingPlaybackRestoration = OutstandingPlaybackRestoration(
-                            target: target,
-                            snapshot: snapshot
-                        )
-                    }
+                if let snapshot = await playbackManager
+                    .prepareCurrentTrackForMetadataEdit(track) {
+                    outstandingPlaybackRestoration = OutstandingPlaybackRestoration(
+                        target: target,
+                        snapshot: snapshot
+                    )
                 }
                 try Task.checkCancellation()
 
@@ -355,6 +362,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                 try Task.checkCancellation()
                 let reindexed = try await libraryManager.databaseManager
                     .reindexEditedTrack(target: target, verified: verified)
+                updatedTrackForWriteAccess = reindexed.track
 
                 for affectedTrack in reindexed.affectedTracks {
                     libraryManager.applyMetadataEditResult(affectedTrack)
@@ -418,6 +426,13 @@ final class TrackMetadataEditorViewModel: ObservableObject {
                         target: target,
                         outcome: .failed(Self.localizedSaveFailure(error))
                     )
+                )
+            }
+
+            if let writeAccess {
+                await playbackManager.endMetadataWriteAccess(
+                    writeAccess,
+                    updatedTrack: updatedTrackForWriteAccess
                 )
             }
 

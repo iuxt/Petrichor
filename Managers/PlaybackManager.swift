@@ -88,8 +88,10 @@ final class PlaybackManager: NSObject, ObservableObject {
 
     private struct PendingPlaybackRequest {
         let generation: UInt64
+        let track: Track
         var shouldStartPlaying: Bool
         var fallbackShouldPlay: Bool
+        var fallbackIntentWasExplicitlySet: Bool
     }
 
     private struct MetadataRestoreOperation {
@@ -107,6 +109,9 @@ final class PlaybackManager: NSObject, ObservableObject {
     private var metadataRestoreGeneration: UInt64 = 0
     private var metadataEditSuspension: MetadataEditPlaybackSuspension?
     private var metadataEditSuspensionGeneration: UInt64 = 0
+    private var metadataWriteAccessGuard: MetadataWriteAccessGuard?
+    private var metadataWriteAccessGeneration: UInt64 = 0
+    private var deferredMetadataWriteTrack: Track?
 
     // MARK: - Gapless lookahead (Crescendo path)
 
@@ -161,6 +166,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         let queueIndex: Int
         let restoredPosition: Double
         let suspensionGeneration: UInt64
+    }
+
+    struct MetadataWriteAccessToken {
+        fileprivate let generation: UInt64
     }
 
     struct TrashMoveSnapshot {
@@ -277,28 +286,40 @@ final class PlaybackManager: NSObject, ObservableObject {
     // MARK: - Playback Controls
     
     func playTrack(_ track: Track) {
+        guard FileManager.default.fileExists(atPath: track.url.path) else {
+            Logger.warning("Track file does not exist: \(track.url.path)")
+            Task { @MainActor in
+                NotificationManager.shared.addMessage(
+                    .error,
+                    String(
+                        appLocalized:
+                            "Cannot play '\(track.title)': File not found"
+                    )
+                )
+            }
+
+            if playlistManager.currentQueue.count > 1 {
+                Logger.info(
+                    "File not found, skipping to next track in queue"
+                )
+                playlistManager.playNextTrack()
+            }
+            return
+        }
         if deferMetadataEditPlayIfNeeded(track) {
+            return
+        }
+        if deferMetadataWritePlayIfNeeded(track) {
             return
         }
         cancelMetadataRestoreForPlaybackChange()
         let requestGeneration = beginPlaybackRequest()
         restoredUITrack = nil
         restoredPosition = 0
-        
-        guard FileManager.default.fileExists(atPath: track.url.path) else {
-            Logger.warning("Track file does not exist: \(track.url.path)")
-            Task { @MainActor in
-                NotificationManager.shared.addMessage(.error, String(appLocalized: "Cannot play '\(track.title)': File not found"))
-            }
-            
-            // Auto-skip to next track if in queue
-            if playlistManager.currentQueue.count > 1 {
-                Logger.info("File not found, skipping to next track in queue")
-                playlistManager.playNextTrack()
-            }
-            return
-        }
-        stagePendingPlaybackRequest(generation: requestGeneration)
+        stagePendingPlaybackRequest(
+            generation: requestGeneration,
+            track: track
+        )
                 
         Task { [weak self, track, requestGeneration] in
             guard let self else { return }
@@ -318,6 +339,20 @@ final class PlaybackManager: NSObject, ObservableObject {
                           let request = self.consumePendingPlaybackRequest(generation: requestGeneration) else {
                         return
                     }
+                    if self.deferMetadataEditPlayIfNeeded(track) {
+                        if !request.shouldStartPlaying {
+                            _ = self.deferMetadataEditPausedIfNeeded()
+                        }
+                        return
+                    }
+                    self.completeMetadataSupersessionForPlaybackStart(track)
+                    if self.deferMetadataWritePlayIfNeeded(track) {
+                        if !request.shouldStartPlaying {
+                            _ = self.deferMetadataWritePausedIfNeeded()
+                        }
+                        return
+                    }
+                    self.cancelMetadataRestoreForPlaybackChange()
                     let entryId = AudioEntryId(id: UUID().uuidString)
                     self.startPlayback(
                         of: fullTrack,
@@ -342,6 +377,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditPlayingIfNeeded() {
             return true
         }
+        recordSupersededMetadataFallback(shouldPlay: true)
+        if deferMetadataWritePlayingIfNeeded() {
+            return true
+        }
         if setPendingPlaybackRequestIntent(shouldStartPlaying: true) {
             return true
         }
@@ -356,6 +395,10 @@ final class PlaybackManager: NSObject, ObservableObject {
     @discardableResult
     func requestPause() -> Bool {
         if deferMetadataEditPausedIfNeeded() {
+            return true
+        }
+        recordSupersededMetadataFallback(shouldPlay: false)
+        if deferMetadataWritePausedIfNeeded() {
             return true
         }
         if setPendingPlaybackRequestIntent(shouldStartPlaying: false) {
@@ -384,12 +427,16 @@ final class PlaybackManager: NSObject, ObservableObject {
         if deferMetadataEditToggleIfNeeded() {
             return
         }
+        if deferMetadataWriteToggleIfNeeded() {
+            return
+        }
         if togglePendingPlaybackRequestIntent() {
             return
         }
         if togglePendingPlaybackRestoreIntent() {
             return
         }
+        recordSupersededMetadataFallback(shouldPlay: !isPlaying)
         cancelMetadataRestoreForPlaybackChange()
         
         if isPlaying {
@@ -410,6 +457,10 @@ final class PlaybackManager: NSObject, ObservableObject {
     
     func stop() {
         if deferMetadataEditStopIfNeeded() {
+            return
+        }
+        recordSupersededMetadataFallbackStop()
+        if deferMetadataWriteStopIfNeeded() {
             return
         }
         cancelMetadataRestoreForPlaybackChange()
@@ -484,12 +535,106 @@ final class PlaybackManager: NSObject, ObservableObject {
         return snapshot
     }
 
+    func beginMetadataWriteAccess(
+        for track: Track
+    ) async -> MetadataWriteAccessToken {
+        precondition(
+            metadataWriteAccessGuard == nil,
+            "Metadata file writes must remain sequential"
+        )
+
+        metadataWriteAccessGeneration &+= 1
+        let generation = metadataWriteAccessGeneration
+        var guardState = MetadataWriteAccessGuard(
+            generation: generation,
+            trackID: track.trackId,
+            url: track.url
+        )
+
+        if let pending = pendingPlaybackRequest,
+           pending.generation == playbackRequestGeneration,
+           guardState.adoptPendingPlayback(
+               trackID: pending.track.trackId,
+               url: pending.track.url,
+               shouldStartPlaying: pending.shouldStartPlaying
+           ) {
+            deferredMetadataWriteTrack = pending.track
+            playbackRequestGeneration &+= 1
+            pendingPlaybackRequest = nil
+        }
+
+        metadataWriteAccessGuard = guardState
+
+        if let pending = pendingNext,
+           guardState.matches(
+               trackID: pending.track.trackId,
+               url: pending.track.url
+           ) {
+            if audioPlayer.currentEntryId == pending.entryId {
+                handleGaplessAdvance(to: pending)
+            } else {
+                audioPlayer.clearNextTrack()
+                pendingNext = nil
+                pendingNextWasSkipped = true
+            }
+        }
+
+        return MetadataWriteAccessToken(generation: generation)
+    }
+
+    func endMetadataWriteAccess(
+        _ token: MetadataWriteAccessToken,
+        updatedTrack: Track?
+    ) async {
+        guard let guardState = metadataWriteAccessGuard,
+              guardState.generation == token.generation else {
+            return
+        }
+
+        let deferredTrack = deferredMetadataWriteTrack
+        let shouldStartPlaying = guardState.deferredShouldStartPlaying
+        metadataWriteAccessGuard = nil
+        deferredMetadataWriteTrack = nil
+
+        if let deferredTrack, let shouldStartPlaying {
+            let trackToPlay: Track
+            if let updatedTrack,
+               guardState.matches(
+                   trackID: updatedTrack.trackId,
+                   url: updatedTrack.url
+               ) {
+                trackToPlay = updatedTrack
+            } else {
+                trackToPlay = deferredTrack
+            }
+
+            playTrack(trackToPlay)
+            if !shouldStartPlaying {
+                _ = requestPause()
+            }
+            return
+        }
+
+        if let shouldStartPlaying {
+            if shouldStartPlaying {
+                _ = requestPlay()
+            } else {
+                _ = requestPause()
+            }
+        }
+
+        let state = audioPlayer.state
+        if state == .playing || state == .paused {
+            primeNextTrack()
+        }
+    }
+
     @MainActor
     func prepareCurrentTrackForMetadataEdit(
         _ track: Track
     ) async -> MetadataEditPlaybackSnapshot? {
         guard isCurrentTrack(track) else { return nil }
-        await cancelCurrentArtworkLoad()
+        cancelCurrentArtworkLoad()
         guard isCurrentTrack(track), let currentTrack else { return nil }
         cancelMetadataRestoreForPlaybackChange()
 
@@ -507,7 +652,7 @@ final class PlaybackManager: NSObject, ObservableObject {
             restoredPosition: restoredPosition,
             suspensionGeneration: suspensionGeneration
         )
-        metadataEditSuspension = MetadataEditPlaybackSuspension(
+        var suspension = MetadataEditPlaybackSuspension(
             generation: suspensionGeneration,
             trackID: currentTrack.trackId,
             url: currentTrack.url,
@@ -516,8 +661,38 @@ final class PlaybackManager: NSObject, ObservableObject {
             wasEngineActive: snapshot.wasEngineActive,
             queueIndex: snapshot.queueIndex
         )
+        if var guardState = metadataWriteAccessGuard,
+           guardState.matches(
+               trackID: currentTrack.trackId,
+               url: currentTrack.url
+           ),
+           let shouldStartPlaying = guardState.takeDeferredPlayback() {
+            if deferredMetadataWriteTrack != nil {
+                _ = suspension.requestPlay(
+                    trackID: currentTrack.trackId,
+                    url: currentTrack.url
+                )
+                if !shouldStartPlaying {
+                    _ = suspension.requestPaused()
+                }
+            } else if shouldStartPlaying {
+                _ = suspension.requestPlaying()
+            } else {
+                _ = suspension.requestPaused()
+            }
+            metadataWriteAccessGuard = guardState
+            deferredMetadataWriteTrack = nil
+        }
+        if let pending = pendingPlaybackRequest,
+           pending.generation == playbackRequestGeneration {
+            _ = suspension.requestPlay(
+                trackID: pending.track.trackId,
+                url: pending.track.url
+            )
+        }
+        metadataEditSuspension = suspension
 
-        invalidatePlaybackRequests()
+        invalidatePlaybackRequestsForMetadataPreparation(of: track)
         wantsPlaybackActive = false
         pendingPlaybackRestore = nil
         audioPlayer.clearNextTrack()
@@ -571,6 +746,11 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         switch restoration {
         case .superseded:
+            restoreSupersededPendingPlaybackFallback(
+                snapshot,
+                track: updatedTrack,
+                fullTrack: updatedFullTrack
+            )
             clearMetadataEditSuspension(generation: snapshot.suspensionGeneration)
             completion(.success(()))
             return
@@ -597,7 +777,10 @@ final class PlaybackManager: NSObject, ObservableObject {
         currentEntryId = nil
         wantsPlaybackActive = false
         if let queueIndex = restoration.queueIndex {
-            playlistManager.restoreQueueIndexAfterMetadataEdit(queueIndex)
+            playlistManager.restoreQueueIndexAfterMetadataEdit(
+                queueIndex,
+                matching: snapshot.track
+            )
         }
         currentArtworkIdentity = nil
         currentTrack = track
@@ -640,6 +823,74 @@ final class PlaybackManager: NSObject, ObservableObject {
             lightweightTrack: track,
             resumeAfterRestore: mode == .playing,
             entryId: restoreEntryId
+        )
+    }
+
+    private func restoreSupersededPendingPlaybackFallback(
+        _ snapshot: MetadataEditPlaybackSnapshot,
+        track updatedTrack: Track?,
+        fullTrack updatedFullTrack: FullTrack?
+    ) {
+        guard let pending = pendingPlaybackRequest,
+              pending.generation == playbackRequestGeneration else {
+            return
+        }
+
+        let fallbackOverride = pending.fallbackIntentWasExplicitlySet
+            ? pending.fallbackShouldPlay
+            : nil
+        guard let fallbackRestoration =
+            metadataEditFallbackRestoration(
+                for: snapshot,
+                overridingShouldPlay: fallbackOverride
+            ) else {
+            return
+        }
+        let track = updatedTrack ?? snapshot.track
+        let fullTrack = updatedFullTrack ?? snapshot.fullTrack
+        let fallbackPosition =
+            metadataEditSuspension?.fallbackPosition ?? 0
+        let fallbackMode: MetadataEditPlaybackSuspension.RestorableMode?
+        switch fallbackRestoration {
+        case .restore(let mode, _, _):
+            fallbackMode = mode
+        case .stop:
+            fallbackMode = nil
+        case .superseded:
+            return
+        }
+        let duration = HelperUtils.sanitizedDuration(fullTrack?.duration ?? 0)
+        let restoredFallbackPosition = duration > 0
+            ? min(max(fallbackPosition, 0), duration)
+            : max(fallbackPosition, 0)
+
+        pendingPlaybackRestore = nil
+        pendingNext = nil
+        pendingNextWasSkipped = false
+        trackForEntry.removeAll()
+        currentEntryId = nil
+        currentArtworkIdentity = nil
+        currentTrack = fallbackMode == nil ? nil : track
+        currentFullTrack = fallbackMode == nil ? nil : fullTrack
+        currentTime = fallbackMode == nil ? 0 : restoredFallbackPosition
+        resetProgressResolution(engineProgress: currentTime)
+        restoredPosition = currentTime
+        wantsPlaybackActive = false
+        isPlaying = false
+        stopStateSaveTimer()
+
+        guard let fallbackMode,
+              fallbackMode != .idle,
+              let fullTrack else {
+            updateNowPlayingInfo()
+            return
+        }
+
+        startPlayback(
+            of: fullTrack,
+            lightweightTrack: track,
+            resumeAfterRestore: fallbackMode == .playing,
+            entryId: AudioEntryId(id: UUID().uuidString)
         )
     }
 
@@ -765,24 +1016,62 @@ final class PlaybackManager: NSObject, ObservableObject {
         pendingPlaybackRequest = nil
     }
 
+    private func invalidatePlaybackRequestsForMetadataPreparation(
+        of track: Track
+    ) {
+        if let pending = pendingPlaybackRequest,
+           pending.generation == playbackRequestGeneration {
+            let isSameTrack: Bool
+            if let trackID = track.trackId,
+               pending.track.trackId == trackID {
+                isSameTrack = true
+            } else {
+                isSameTrack = pending.track.url.standardizedFileURL ==
+                    track.url.standardizedFileURL
+            }
+
+            if !isSameTrack {
+                Logger.info(
+                    "Preserving a different-track playback request during metadata preparation"
+                )
+                return
+            }
+        }
+
+        invalidatePlaybackRequests()
+    }
+
     private func isCurrentPlaybackRequest(_ generation: UInt64) -> Bool {
         playbackRequestGeneration == generation
     }
 
-    private func cancelCurrentArtworkLoad() async {
-        while let task = artworkLoadTask {
-            artworkLoadTask = nil
-            task.cancel()
-            await task.value
-        }
+    private func cancelCurrentArtworkLoad() {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
     }
 
-    private func stagePendingPlaybackRequest(generation: UInt64) {
+    private func stagePendingPlaybackRequest(
+        generation: UInt64,
+        track: Track
+    ) {
         guard isCurrentPlaybackRequest(generation) else { return }
+        let fallbackShouldPlay: Bool
+        if let suspension = metadataEditSuspension {
+            if case .restore(let mode, _, _) =
+                suspension.fallbackRestoration {
+                fallbackShouldPlay = mode == .playing
+            } else {
+                fallbackShouldPlay = false
+            }
+        } else {
+            fallbackShouldPlay = wantsPlaybackActive || isPlaying
+        }
         pendingPlaybackRequest = PendingPlaybackRequest(
             generation: generation,
+            track: track,
             shouldStartPlaying: true,
-            fallbackShouldPlay: wantsPlaybackActive || isPlaying
+            fallbackShouldPlay: fallbackShouldPlay,
+            fallbackIntentWasExplicitlySet: false
         )
     }
 
@@ -795,7 +1084,11 @@ final class PlaybackManager: NSObject, ObservableObject {
         }
         pending.shouldStartPlaying = shouldStartPlaying
         pending.fallbackShouldPlay = shouldStartPlaying
+        pending.fallbackIntentWasExplicitlySet = true
         pendingPlaybackRequest = pending
+        recordSupersededMetadataFallback(
+            shouldPlay: pending.fallbackShouldPlay
+        )
         applyPendingPlaybackFallbackIntent(
             shouldPlay: pending.fallbackShouldPlay
         )
@@ -809,7 +1102,11 @@ final class PlaybackManager: NSObject, ObservableObject {
         }
         pending.shouldStartPlaying.toggle()
         pending.fallbackShouldPlay = pending.shouldStartPlaying
+        pending.fallbackIntentWasExplicitlySet = true
         pendingPlaybackRequest = pending
+        recordSupersededMetadataFallback(
+            shouldPlay: pending.fallbackShouldPlay
+        )
         applyPendingPlaybackFallbackIntent(
             shouldPlay: pending.fallbackShouldPlay
         )
@@ -832,10 +1129,59 @@ final class PlaybackManager: NSObject, ObservableObject {
               pending.generation == generation else {
             return
         }
+        restoreMetadataSuspensionAfterFailedPlaybackRequest(pending)
         pendingPlaybackRequest = nil
         applyPendingPlaybackFallbackIntent(
             shouldPlay: pending.fallbackShouldPlay
         )
+    }
+
+    private func restoreMetadataSuspensionAfterFailedPlaybackRequest(
+        _ pending: PendingPlaybackRequest
+    ) {
+        guard var suspension = metadataEditSuspension,
+              suspension.restoreAfterFailedSupersession(
+                  shouldPlay: pending.fallbackIntentWasExplicitlySet
+                      ? pending.fallbackShouldPlay
+                      : nil
+              ) else {
+            return
+        }
+        metadataEditSuspension = suspension
+    }
+
+    private func completeMetadataSupersessionForPlaybackStart(
+        _ track: Track
+    ) {
+        guard let suspension = metadataEditSuspension,
+              !suspension.matches(
+                  trackID: track.trackId,
+                  url: track.url
+              ),
+              case .superseded = suspension.restoration else {
+            return
+        }
+        clearMetadataEditSuspension(generation: suspension.generation)
+    }
+
+    private func recordSupersededMetadataFallback(
+        shouldPlay: Bool
+    ) {
+        guard var suspension = metadataEditSuspension,
+              suspension.updateFallbackPlayback(
+                  shouldPlay: shouldPlay
+              ) else {
+            return
+        }
+        metadataEditSuspension = suspension
+    }
+
+    private func recordSupersededMetadataFallbackStop() {
+        guard var suspension = metadataEditSuspension,
+              suspension.requestFallbackStop() else {
+            return
+        }
+        metadataEditSuspension = suspension
     }
 
     private func applyPendingPlaybackFallbackIntent(shouldPlay: Bool) {
@@ -909,6 +1255,108 @@ final class PlaybackManager: NSObject, ObservableObject {
         return true
     }
 
+    private func deferMetadataWritePlayIfNeeded(_ track: Track) -> Bool {
+        guard var guardState = metadataWriteAccessGuard else {
+            return false
+        }
+
+        switch guardState.requestPlay(
+            trackID: track.trackId,
+            url: track.url
+        ) {
+        case .deferTarget:
+            metadataWriteAccessGuard = guardState
+            deferredMetadataWriteTrack = track
+            invalidatePlaybackRequests()
+            Logger.info(
+                "Deferred playback until metadata writing releases the target file"
+            )
+            return true
+
+        case .allowDifferentTarget:
+            metadataWriteAccessGuard = guardState
+            deferredMetadataWriteTrack = nil
+            return false
+        }
+    }
+
+    private func deferMetadataWritePlayingIfNeeded() -> Bool {
+        guard var guardState = metadataWriteAccessGuard else {
+            return false
+        }
+        if !guardState.requestPlaying() {
+            guard seedMetadataWriteIntentForCurrentTrack(&guardState),
+                  guardState.requestPlaying() else {
+                return false
+            }
+        }
+        metadataWriteAccessGuard = guardState
+        return true
+    }
+
+    private func deferMetadataWritePausedIfNeeded() -> Bool {
+        guard var guardState = metadataWriteAccessGuard else {
+            return false
+        }
+        if !guardState.requestPaused() {
+            guard seedMetadataWriteIntentForCurrentTrack(&guardState),
+                  guardState.requestPaused() else {
+                return false
+            }
+        }
+        metadataWriteAccessGuard = guardState
+        return true
+    }
+
+    private func deferMetadataWriteToggleIfNeeded() -> Bool {
+        guard var guardState = metadataWriteAccessGuard else {
+            return false
+        }
+        if !guardState.toggle() {
+            guard seedMetadataWriteIntentForCurrentTrack(&guardState),
+                  guardState.toggle() else {
+                return false
+            }
+        }
+        guard guardState.deferredShouldStartPlaying != nil else {
+            return false
+        }
+        metadataWriteAccessGuard = guardState
+        return true
+    }
+
+    private func deferMetadataWriteStopIfNeeded() -> Bool {
+        guard var guardState = metadataWriteAccessGuard else {
+            return false
+        }
+        if !guardState.requestStop() {
+            guard seedMetadataWriteIntentForCurrentTrack(&guardState),
+                  guardState.requestStop() else {
+                return false
+            }
+        }
+        metadataWriteAccessGuard = guardState
+        deferredMetadataWriteTrack = nil
+        cancelMetadataRestoreForPlaybackChange()
+        stopPlaybackImmediately()
+        return true
+    }
+
+    private func seedMetadataWriteIntentForCurrentTrack(
+        _ guardState: inout MetadataWriteAccessGuard
+    ) -> Bool {
+        if let pending = pendingPlaybackRequest,
+           pending.generation == playbackRequestGeneration {
+            return false
+        }
+        guard let currentTrack else { return false }
+        return guardState.seedDeferredPlayback(
+            trackID: currentTrack.trackId,
+            url: currentTrack.url,
+            shouldStartPlaying: wantsPlaybackActive || isPlaying
+        )
+    }
+
     private func deferMetadataEditPlayIfNeeded(_ track: Track) -> Bool {
         guard var suspension = metadataEditSuspension else {
             return false
@@ -921,6 +1369,12 @@ final class PlaybackManager: NSObject, ObservableObject {
         switch suspension.requestPlay(trackID: track.trackId, url: track.url) {
         case .playDifferentTrack:
             metadataEditSuspension = suspension
+            if metadataRestoreOperation != nil {
+                Logger.info(
+                    "Keeping the restoring track as fallback while a replacement loads"
+                )
+                return false
+            }
             stageMetadataEditSupersedingTrack(track)
             Logger.info("Different-track playback superseded metadata restoration")
             return false
@@ -1093,6 +1547,19 @@ final class PlaybackManager: NSObject, ObservableObject {
         return suspension.restoration
     }
 
+    private func metadataEditFallbackRestoration(
+        for snapshot: MetadataEditPlaybackSnapshot,
+        overridingShouldPlay shouldPlay: Bool?
+    ) -> MetadataEditPlaybackSuspension.Restoration? {
+        guard let suspension = metadataEditSuspension,
+              suspension.generation == snapshot.suspensionGeneration else {
+            return nil
+        }
+        return suspension.fallbackRestoration(
+            overridingShouldPlay: shouldPlay
+        )
+    }
+
     private func clearMetadataEditSuspension(generation: UInt64) {
         guard metadataEditSuspension?.generation == generation else { return }
         metadataEditSuspension = nil
@@ -1148,6 +1615,9 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         pending.shouldResume.toggle()
         pendingPlaybackRestore = pending
+        recordSupersededMetadataFallback(
+            shouldPlay: pending.shouldResume
+        )
         wantsPlaybackActive = pending.shouldResume
         if pending.shouldResume {
             startStateSaveTimer()
@@ -1469,25 +1939,38 @@ final class PlaybackManager: NSObject, ObservableObject {
     private func cancelMetadataRestoreForPlaybackChange() {
         guard let operation = metadataRestoreOperation else { return }
 
-        if pendingPlaybackRestore?.entryId == operation.entryId {
-            pendingPlaybackRestore = nil
-        }
-
-        finishMetadataRestore(
-            .failure(
+        let result: Result<Void, MetadataPlaybackRestoreError>
+        if case .superseded? = metadataEditSuspension?.restoration {
+            result = .success(())
+        } else {
+            result = .failure(
                 .engine(
                     String(appLocalized: "Playback restoration was interrupted by another playback action.")
                 )
-            ),
+            )
+        }
+
+        let preservePendingPlaybackRestore: Bool
+        if case .superseded? = metadataEditSuspension?.restoration {
+            preservePendingPlaybackRestore = true
+        } else {
+            preservePendingPlaybackRestore = false
+        }
+
+        finishMetadataRestore(
+            result,
             generation: operation.generation,
-            entryId: operation.entryId
+            entryId: operation.entryId,
+            preservePendingPlaybackRestore:
+                preservePendingPlaybackRestore
         )
     }
 
     private func finishMetadataRestore(
         _ result: Result<Void, MetadataPlaybackRestoreError>,
         generation: UInt64? = nil,
-        entryId: AudioEntryId? = nil
+        entryId: AudioEntryId? = nil,
+        preservePendingPlaybackRestore: Bool = false
     ) {
         guard let operation = metadataRestoreOperation,
               operation.generation == metadataRestoreGeneration else {
@@ -1496,7 +1979,8 @@ final class PlaybackManager: NSObject, ObservableObject {
         if let generation, generation != operation.generation { return }
         if let entryId, entryId != operation.entryId { return }
         guard let completion = metadataRestoreCompletion else { return }
-        if pendingPlaybackRestore?.entryId == operation.entryId {
+        if !preservePendingPlaybackRestore,
+           pendingPlaybackRestore?.entryId == operation.entryId {
             pendingPlaybackRestore = nil
         }
         metadataRestoreCompletion = nil
@@ -1566,6 +2050,20 @@ final class PlaybackManager: NSObject, ObservableObject {
             audioPlayer.clearNextTrack()
             pendingNext = nil
             pendingNextWasSkipped = false
+            return
+        }
+
+        if let guardState = metadataWriteAccessGuard,
+           guardState.matches(
+               trackID: next.track.trackId,
+               url: next.track.url
+           ) {
+            audioPlayer.clearNextTrack()
+            pendingNext = nil
+            pendingNextWasSkipped = true
+            Logger.info(
+                "Skipped gapless lookahead while its metadata file is being written"
+            )
             return
         }
 

@@ -5,6 +5,8 @@ enum TrackMetadataFileError: LocalizedError {
     case fileMissing(String)
     case unsupportedFormat(String)
     case fileNotWritable(String)
+    case multipleHardLinks(String)
+    case unsupportedReplacementVolume(String)
     case readFailed(String)
     case writeFailed(String)
     case verificationFailed([TrackMetadataEditableField])
@@ -24,6 +26,22 @@ enum TrackMetadataFileError: LocalizedError {
         case .fileNotWritable(let name):
             return String.localizedStringWithFormat(
                 String(appLocalized: "The file “%1$@” is not writable."),
+                name
+            )
+        case .multipleHardLinks(let name):
+            return String.localizedStringWithFormat(
+                String(
+                    appLocalized:
+                        "The file “%1$@” has multiple hard links and cannot be edited safely."
+                ),
+                name
+            )
+        case .unsupportedReplacementVolume(let name):
+            return String.localizedStringWithFormat(
+                String(
+                    appLocalized:
+                        "The volume containing “%1$@” does not support safe metadata replacement."
+                ),
                 name
             )
         case .readFailed(let detail):
@@ -47,7 +65,8 @@ enum TrackMetadataFileError: LocalizedError {
 
     var isPreflightSkip: Bool {
         switch self {
-        case .fileMissing, .unsupportedFormat, .fileNotWritable:
+        case .fileMissing, .unsupportedFormat, .fileNotWritable,
+             .multipleHardLinks, .unsupportedReplacementVolume:
             return true
         case .readFailed, .writeFailed, .verificationFailed:
             return false
@@ -144,20 +163,55 @@ actor SFBTrackMetadataFileService {
 
         let id3Container = try validateWritable(target)
 
-        switch id3Container {
-        case .mpeg, .wave, .aiff, .trueAudio:
-            do {
-                try ID3TrackMetadataWriter.write(patch, to: target.url)
-            } catch {
-                throw TrackMetadataFileError.writeFailed(
-                    error.localizedDescription
-                )
-            }
-        case .nativeMetadata:
-            try writeNonID3Metadata(target: target, patch: patch)
-        case .none, .unsafeID3Carrier:
-            throw TrackMetadataFileError.unsupportedFormat(
-                target.url.pathExtension.lowercased()
+        do {
+            try AtomicMetadataFileReplacer.replace(
+                target.url,
+                mutate: { temporaryURL in
+                    let temporaryTarget = TrackMetadataEditTarget(
+                        trackID: target.trackID,
+                        url: temporaryURL
+                    )
+
+                    switch id3Container {
+                    case .mpeg, .wave, .aiff, .trueAudio:
+                        try ID3TrackMetadataWriter.write(
+                            patch,
+                            to: temporaryTarget.url
+                        )
+                    case .nativeMetadata:
+                        try writeNonID3Metadata(
+                            target: temporaryTarget,
+                            patch: patch
+                        )
+                    case .none, .unsafeID3Carrier:
+                        throw TrackMetadataFileError.unsupportedFormat(
+                            target.url.pathExtension.lowercased()
+                        )
+                    }
+                },
+                verify: { candidateURL in
+                    let candidateTarget = TrackMetadataEditTarget(
+                        trackID: target.trackID,
+                        url: candidateURL
+                    )
+                    let candidateSnapshot = try loadSnapshot(
+                        target: candidateTarget
+                    )
+                    let candidateMismatches = patch.mismatchedFields(
+                        in: candidateSnapshot.tags
+                    )
+                    guard candidateMismatches.isEmpty else {
+                        throw TrackMetadataFileError.verificationFailed(
+                            candidateMismatches
+                        )
+                    }
+                }
+            )
+        } catch let error as TrackMetadataFileError {
+            throw error
+        } catch {
+            throw TrackMetadataFileError.writeFailed(
+                error.localizedDescription
             )
         }
 
@@ -288,6 +342,23 @@ actor SFBTrackMetadataFileService {
         }
         guard fileManager.isWritableFile(atPath: target.url.path) else {
             throw TrackMetadataFileError.fileNotWritable(target.displayName)
+        }
+        let resolvedParent = target.url.resolvingSymlinksInPath()
+            .deletingLastPathComponent()
+        guard fileManager.isWritableFile(atPath: resolvedParent.path) else {
+            throw TrackMetadataFileError.fileNotWritable(target.displayName)
+        }
+        switch AtomicMetadataFileReplacer.replacementSupport(for: target.url) {
+        case .supported:
+            break
+        case .multipleHardLinks:
+            throw TrackMetadataFileError.multipleHardLinks(
+                target.displayName
+            )
+        case .unsupportedVolume:
+            throw TrackMetadataFileError.unsupportedReplacementVolume(
+                target.displayName
+            )
         }
         let id3Container = ID3TrackMetadataWriter.probe(target.url)
         if id3Container == .none || id3Container == .unsafeID3Carrier {
