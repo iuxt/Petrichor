@@ -38,7 +38,7 @@ struct TrackMetadataEditorSheet: View {
         .task {
             model.load()
         }
-        .onChange(of: model.allSelectedItemsSaved) { completed in
+        .onChange(of: model.allSelectedItemsSaved) { _, completed in
             finishAfterSuccessfulSave(completed)
         }
     }

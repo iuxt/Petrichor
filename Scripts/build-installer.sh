@@ -11,7 +11,7 @@ CONFIGURATION="Release"
 PROJECT="Petrichor.xcodeproj"
 NOTARY_PROFILE="Petrichor"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALLER_BACKGROUND="${PETRICHOR_INSTALLER_BACKGROUND:-$SCRIPT_DIR/assets/install.svg}"
+INSTALLER_BACKGROUND="${PETRICHOR_INSTALLER_BACKGROUND:-$SCRIPT_DIR/../Resources/dmg.svg}"
 INSTALLER_DS_STORE="${PETRICHOR_INSTALLER_DS_STORE:-$SCRIPT_DIR/assets/installer.DS_Store}"
 CXX_EXPERIMENTAL_FLAGS='$(inherited) -D_LIBCPP_ENABLE_EXPERIMENTAL'
 DMG_WINDOW_WIDTH=660
@@ -228,7 +228,9 @@ check_requirements() {
     fi
     
     # Check optional tools
-    if ! command -v xcpretty >/dev/null 2>&1; then
+    # xcpretty only matters for the signed/notarized path (run_build); local
+    # builds never invoke it, so don't warn about its absence there.
+    if [ "$LOCAL_PACKAGE" = false ] && ! command -v xcpretty >/dev/null 2>&1; then
         warning "xcpretty not found - install with: gem install xcpretty"
         warning "Build output will be verbose without xcpretty"
     fi

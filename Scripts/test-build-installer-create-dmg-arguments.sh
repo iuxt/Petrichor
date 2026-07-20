@@ -24,7 +24,7 @@ if rg -n -- '--dmg-title' "$script" >/dev/null; then
     exit 1
 fi
 
-if ! rg -n 'INSTALLER_BACKGROUND="\$\{PETRICHOR_INSTALLER_BACKGROUND:-\$SCRIPT_DIR/assets/install\.svg\}"' "$script" >/dev/null; then
+if ! rg -n 'INSTALLER_BACKGROUND="\$\{PETRICHOR_INSTALLER_BACKGROUND:-\$SCRIPT_DIR/\.\./Resources/dmg\.svg\}"' "$script" >/dev/null; then
     printf 'build-installer must default to the repository installer SVG background and allow an environment override.\n' >&2
     exit 1
 fi
