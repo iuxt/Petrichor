@@ -270,6 +270,7 @@ extension Notification.Name {
     static let trackTableSortChanged = Notification.Name("trackTableSortChanged")
     static let trackTableRowSizeChanged = Notification.Name("trackTableRowSizeChanged")
     static let createPlaylistFromSelection = Notification.Name("createPlaylistFromSelection")
+    static let trackSelectionChanged = Notification.Name("trackSelectionChanged")
     
     static let focusSearchField = Notification.Name("FocusSearchField")
 

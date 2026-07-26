@@ -117,6 +117,18 @@ struct TrackTableView: View {
                     }
                 }
             }
+            .onChange(of: selection) { _, newSelection in
+                // Follow the Track Info panel on single selection only;
+                // multi-selection and clearing are ignored to avoid ambiguity.
+                guard newSelection.count == 1,
+                      let trackID = newSelection.first,
+                      let track = sortedTracks.first(where: { $0.id == trackID }) else { return }
+                NotificationCenter.default.post(
+                    name: .trackSelectionChanged,
+                    object: nil,
+                    userInfo: ["track": track]
+                )
+            }
             .onAppear {
                 initializeSortedTracks()
                 hasInitializedCustomization = true

@@ -161,7 +161,8 @@ struct ContentView: View {
             selectedTab: $selectedTab,
             pendingLibraryFilter: $pendingLibraryFilter,
             trackMetadataEditorRequest: $trackMetadataEditorRequest,
-            showTrackDetail: showTrackDetail
+            showTrackDetail: showTrackDetail,
+            followTrackDetailIfOpen: followTrackDetailIfOpen
         )
         .onChange(of: playbackManager.currentTrack?.id) { oldId, _ in
             if case .trackDetail(let currentDetailTrack) = rightSidebarContent,
@@ -489,6 +490,14 @@ struct ContentView: View {
         rightSidebarContent = .trackDetail(track)
     }
 
+    /// Follows the Track Info panel to the most recently selected track, but only
+    /// when the panel is already open — selection never auto-opens it.
+    private func followTrackDetailIfOpen(_ track: Track) {
+        if case .trackDetail = rightSidebarContent {
+            rightSidebarContent = .trackDetail(track)
+        }
+    }
+
     private func isCurrentlyEditingText() -> Bool {
         guard let firstResponder = NSApp.keyWindow?.firstResponder else {
             return false
@@ -513,7 +522,8 @@ extension View {
         selectedTab: Binding<Sections>,
         pendingLibraryFilter: Binding<LibraryFilterRequest?>,
         trackMetadataEditorRequest: Binding<TrackMetadataEditorRequest?>,
-        showTrackDetail: @escaping (Track) -> Void
+        showTrackDetail: @escaping (Track) -> Void,
+        followTrackDetailIfOpen: @escaping (Track) -> Void
     ) -> some View {
         self
             .onReceive(NotificationCenter.default.publisher(for: .focusSearchField)) { _ in
@@ -531,6 +541,11 @@ extension View {
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowTrackInfo"))) { notification in
                 if let track = notification.userInfo?["track"] as? Track {
                     showTrackDetail(track)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .trackSelectionChanged)) { notification in
+                if let track = notification.userInfo?["track"] as? Track {
+                    followTrackDetailIfOpen(track)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .editTrackMetadata)) { notification in
