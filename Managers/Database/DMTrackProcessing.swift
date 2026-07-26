@@ -7,50 +7,9 @@
 import Foundation
 import GRDB
 
-/// Lazily loads and caches artwork from file paths for deferred artwork loading on slow filesystems.
-actor LazyArtworkLoader {
-    private let artworkPathsByAudioURL: [URL: URL]
-    private var cache: [URL: Data] = [:]
-
-    init(artworkPaths: [URL: URL]) {
-        self.artworkPathsByAudioURL = artworkPaths
-    }
-
-    func getArtwork(for audioURL: URL) -> Data? {
-        guard let fileURL = artworkPathsByAudioURL[audioURL] else {
-            return nil
-        }
-
-        // Return cached result
-        if let cached = cache[fileURL] {
-            return cached
-        }
-
-        // Load from file path if available
-        guard let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else {
-            return nil
-        }
-
-        if size > AlbumArtFormat.maxArtworkSize {
-            Logger.warning("Skipping oversized artwork: \(fileURL.lastPathComponent) (\(size) bytes)")
-            return nil
-        }
-
-        guard let data = try? Data(contentsOf: fileURL) else {
-            return nil
-        }
-
-        let compressed = ImageUtils.compressImage(from: data, source: fileURL.path) ?? data
-        cache[fileURL] = compressed
-        return compressed
-    }
-}
-
 extension DatabaseManager {
     func processBatch(
         _ batch: [(url: URL, folderId: Int64)],
-        artworkMap: [URL: Data] = [:],
-        artworkPaths: [URL: URL] = [:],
         hardRefresh: Bool = false,
         existingFullTracksByPath: [String: FullTrack] = [:],
         modificationDates: [URL: Date] = [:],
@@ -69,9 +28,6 @@ extension DatabaseManager {
         let chunks = batch.chunked(into: chunkSize)
 
         for chunk in chunks {
-            let artworkCache = ArtworkCompressionCache()
-            let lazyArtwork = artworkPaths.isEmpty ? nil : LazyArtworkLoader(artworkPaths: artworkPaths)
-
             let results = try await withThrowingTaskGroup(of: (URL, TrackProcessResult).self) { group in
                 var chunkResults: [(URL, TrackProcessResult)] = []
                 chunkResults.reserveCapacity(chunk.count)
@@ -84,12 +40,9 @@ extension DatabaseManager {
                         return await self.processFile(
                             item.url,
                             folderId: item.folderId,
-                            artworkMap: artworkMap,
-                            lazyArtwork: lazyArtwork,
                             hardRefresh: hardRefresh,
                             existingFullTracksByPath: existingFullTracksByPath,
-                            modificationDates: modificationDates,
-                            artworkCache: artworkCache
+                            modificationDates: modificationDates
                         )
                     }
                 }
@@ -198,19 +151,10 @@ extension DatabaseManager {
     private func processFile(
         _ fileURL: URL,
         folderId: Int64,
-        artworkMap: [URL: Data],
-        lazyArtwork: LazyArtworkLoader? = nil,
         hardRefresh: Bool = false,
         existingFullTracksByPath: [String: FullTrack] = [:],
-        modificationDates: [URL: Date] = [:],
-        artworkCache: ArtworkCompressionCache? = nil
+        modificationDates: [URL: Date] = [:]
     ) async -> (URL, TrackProcessResult) {
-        // Get artwork selected for this specific file (eager from artworkMap, or lazy from deferred paths).
-        var externalArtwork = artworkMap[fileURL]
-        if externalArtwork == nil, let lazyArtwork = lazyArtwork {
-            externalArtwork = await lazyArtwork.getArtwork(for: fileURL)
-        }
-
         do {
             // Look up the prefetched FullTrack directly — no per-file DB read. The
             // previous code fetched a lightweight `Track` here then re-queried the
@@ -222,11 +166,7 @@ extension DatabaseManager {
             if let existingFullTrack = existingFullTracksByPath[fileURL.standardizedFileURL.path] {
                 // Re-extract complete metadata on hardRefresh
                 if hardRefresh {
-                    let metadata = await MetadataEngine.extractMetadata(
-                        from: fileURL,
-                        externalArtwork: externalArtwork,
-                        artworkCache: artworkCache
-                    )
+                    let metadata = await MetadataEngine.extractMetadata(from: fileURL)
 
                     var updatedTrack = existingFullTrack
                     _ = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
@@ -251,10 +191,7 @@ extension DatabaseManager {
 
                     if timeDifference > 1.0 {
                         // File modified, extract fresh metadata
-                        let metadata = await MetadataEngine.extractMetadata(
-                            from: fileURL,
-                            externalArtwork: externalArtwork
-                        )
+                        let metadata = await MetadataEngine.extractMetadata(from: fileURL)
 
                         var updatedTrack = existingFullTrack
                         let hasChanges = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
@@ -272,11 +209,7 @@ extension DatabaseManager {
             }
             
             // New track - extract metadata
-            let metadata = await MetadataEngine.extractMetadata(
-                from: fileURL,
-                externalArtwork: externalArtwork,
-                artworkCache: artworkCache
-            )
+            let metadata = await MetadataEngine.extractMetadata(from: fileURL)
             
             var fullTrack = FullTrack(url: fileURL)
             fullTrack.folderId = folderId

@@ -85,8 +85,6 @@ struct FolderEnumerationResult {
     let musicFiles: [URL]
     let modificationDates: [URL: Date]  // audio file URL -> contentModificationDate (captured during enumeration)
     let unsupportedFiles: [(url: URL, extension: String)]
-    let artworkMap: [URL: Data]    // audio file URL -> selected artwork data (unused since artwork is deferred)
-    let artworkPaths: [URL: URL]   // audio file URL -> selected artwork file URL (decoded lazily during processing)
 }
 
 extension DatabaseManager {
@@ -469,18 +467,12 @@ extension DatabaseManager {
             supportedExtensions: supportedExtensions
         )
         let musicFiles = enumeration.musicFiles
-        let artworkMap = enumeration.artworkMap
-        let artworkPaths = enumeration.artworkPaths
 
         // Grow the progress total now that we know this folder's real file count,
         // instead of pre-counting via a second full directory walk.
         await globalScanState?.addTotal(by: musicFiles.count)
 
         await scanState.addSkippedFiles(enumeration.unsupportedFiles)
-
-        if artworkPaths.count > 0 {
-            Logger.info("Resolved artwork for \(artworkPaths.count) tracks within \(folder.name)")
-        }
 
         // Pre-fetch the full records for every existing track in this folder in one
         // query, keyed by standardized path. The processing stage then compares and
@@ -514,8 +506,6 @@ extension DatabaseManager {
         try await processMusicFilesInBatches(
             musicFiles: musicFiles,
             folderId: folderId,
-            artworkMap: artworkMap,
-            artworkPaths: artworkPaths,
             modificationDates: enumeration.modificationDates,
             folderName: folder.name,
             hardRefresh: hardRefresh,
@@ -553,7 +543,6 @@ extension DatabaseManager {
         var musicFiles: [URL] = []
         var modificationDates: [URL: Date] = [:]
         var unsupportedFiles: [(url: URL, extension: String)] = []
-        var artworkCandidatesByDirectory: [URL: [URL]] = [:]
         // De-duplicate by resolved path so a symlinked file and its target (or two
         // symlinks pointing at the same file) are ingested exactly once.
         var seenResolvedPaths = Set<String>()
@@ -586,55 +575,17 @@ extension DatabaseManager {
                 unsupportedFiles.append((url: resolvedURL, extension: fileExtension))
                 Logger.info("Skipped unsupported audio file: \(resolvedURL.lastPathComponent) (.\(fileExtension))")
             }
-
-            // Collect supported image files; each audio file resolves its preferred
-            // candidate after enumeration so same-name artwork can beat generic artwork.
-            if AlbumArtFormat.isSupported(fileExtension) {
-                let directory = resolvedURL.deletingLastPathComponent()
-                artworkCandidatesByDirectory[directory, default: []].append(resolvedURL)
-            }
         }
 
-        let artworkPaths = resolvedArtwork(
-            for: musicFiles,
-            candidatesByDirectory: artworkCandidatesByDirectory
-        )
+        // Image files are intentionally not collected during enumeration. Artwork is
+        // resolved on demand by ArtworkResolver at playback, so the scan never reads
+        // or decodes any image bytes.
 
         return FolderEnumerationResult(
             musicFiles: musicFiles,
             modificationDates: modificationDates,
-            unsupportedFiles: unsupportedFiles,
-            artworkMap: [:],
-            artworkPaths: artworkPaths
+            unsupportedFiles: unsupportedFiles
         )
-    }
-
-    /// Resolve each audio file's preferred external artwork path without reading or
-    /// decoding the image. Decoding and JPEG recompression are deferred to
-    /// `LazyArtworkLoader` inside the processing TaskGroup, so they overlap with
-    /// metadata extraction instead of serializing this enumeration pass (the
-    /// oversized-image guard runs there too).
-    private func resolvedArtwork(
-        for musicFiles: [URL],
-        candidatesByDirectory: [URL: [URL]]
-    ) -> [URL: URL] {
-        var artworkPaths: [URL: URL] = [:]
-
-        for musicFile in musicFiles {
-            let directory = musicFile.deletingLastPathComponent()
-            guard
-                let candidates = candidatesByDirectory[directory],
-                let artworkURL = ExternalArtworkResolver.artworkURL(
-                    forAudioURL: musicFile,
-                    candidates: candidates
-                )
-            else {
-                continue
-            }
-            artworkPaths[musicFile] = artworkURL
-        }
-
-        return artworkPaths
     }
 
     /// Remove tracks from database that no longer exist in the filesystem
@@ -712,8 +663,6 @@ extension DatabaseManager {
     private func processMusicFilesInBatches(
         musicFiles: [URL],
         folderId: Int64,
-        artworkMap: [URL: Data],
-        artworkPaths: [URL: URL] = [:],
         modificationDates: [URL: Date] = [:],
         folderName: String,
         hardRefresh: Bool = false,
@@ -731,8 +680,6 @@ extension DatabaseManager {
             do {
                 try await processBatch(
                     batchWithFolderId,
-                    artworkMap: artworkMap,
-                    artworkPaths: artworkPaths,
                     hardRefresh: hardRefresh,
                     existingFullTracksByPath: existingFullTracksByPath,
                     modificationDates: modificationDates,

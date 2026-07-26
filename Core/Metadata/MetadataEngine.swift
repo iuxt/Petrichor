@@ -11,7 +11,6 @@ struct TrackMetadata {
     var genre: String?
     var year: String?
     var duration: Double = 0
-    var artworkData: Data?
     var albumArtist: String?
     var trackNumber: Int?
     var totalTracks: Int?
@@ -43,33 +42,13 @@ struct TrackMetadata {
     }
 }
 
-// MARK: - Artwork Compression Cache
-
-/// Thread-safe cache for compressed artwork data within a processing chunk.
-/// Avoids re-compressing identical album artwork across tracks in the same batch.
-actor ArtworkCompressionCache {
-    private var cache: [Int: Data] = [:]
-
-    func get(for data: Data) -> Data? {
-        cache[data.hashValue]
-    }
-
-    func store(original: Data, compressed: Data) {
-        cache[original.hashValue] = compressed
-    }
-}
-
 // MARK: - Metadata Reader
 
 /// Backend-agnostic contract for reading a file's tags, audio properties, and
 /// artwork into a `TrackMetadata`. Concrete readers live in their own files and
 /// hold only engine-specific code.
 protocol MetadataReader {
-    func extractMetadata(
-        from url: URL,
-        externalArtwork: Data?,
-        artworkCache: ArtworkCompressionCache?
-    ) async -> TrackMetadata
+    func extractMetadata(from url: URL) async -> TrackMetadata
 
     func extractEmbeddedArtwork(from url: URL) async -> Data?
 }
@@ -78,21 +57,10 @@ protocol MetadataReader {
 
 enum MetadataEngine {
     /// Extract metadata from an audio file using the selected backend's reader.
-    /// - Parameters:
-    ///   - url: The URL of the audio file
-    ///   - externalArtwork: Optional external artwork to use if file has none
-    ///   - artworkCache: Optional shared cache to avoid re-compressing identical artwork
+    /// - Parameter url: The URL of the audio file
     /// - Returns: TrackMetadata containing all extracted information
-    static func extractMetadata(
-        from url: URL,
-        externalArtwork: Data? = nil,
-        artworkCache: ArtworkCompressionCache? = nil
-    ) async -> TrackMetadata {
-        await reader().extractMetadata(
-            from: url,
-            externalArtwork: externalArtwork,
-            artworkCache: artworkCache
-        )
+    static func extractMetadata(from url: URL) async -> TrackMetadata {
+        await reader().extractMetadata(from: url)
     }
 
     /// Extract only embedded artwork from an audio file.

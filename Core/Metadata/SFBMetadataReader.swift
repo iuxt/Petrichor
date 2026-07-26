@@ -11,11 +11,7 @@ import Foundation
 import SFBAudioEngine
 
 struct SFBMetadataReader: MetadataReader {
-    func extractMetadata(
-        from url: URL,
-        externalArtwork: Data?,
-        artworkCache: ArtworkCompressionCache?
-    ) async -> TrackMetadata {
+    func extractMetadata(from url: URL) async -> TrackMetadata {
         var metadata = TrackMetadata(url: url)
 
         // Try to create AudioFile
@@ -36,18 +32,9 @@ struct SFBMetadataReader: MetadataReader {
         // Extract metadata
         Self.extractMetadata(from: audioFile.metadata, into: &metadata)
 
-        // Extract artwork
-        await Self.extractArtwork(
-            from: audioFile.metadata,
-            into: &metadata,
-            source: url.lastPathComponent,
-            artworkCache: artworkCache
-        )
-
-        // Use external artwork if no artwork found
-        if metadata.artworkData == nil, let externalArtwork = externalArtwork {
-            metadata.artworkData = externalArtwork
-        }
+        // Artwork is intentionally not extracted here. It is resolved on demand
+        // by ArtworkResolver at playback time via extractEmbeddedArtwork, so the
+        // scan never pays the decode/recompress cost for bytes that are discarded.
 
         return metadata
     }
@@ -64,8 +51,7 @@ struct SFBMetadataReader: MetadataReader {
 
         return await MetadataMapping.compressedArtwork(
             from: firstPicture.imageData,
-            source: url.lastPathComponent,
-            cache: nil
+            source: url.lastPathComponent
         )
     }
 
@@ -372,18 +358,4 @@ struct SFBMetadataReader: MetadataReader {
         }
     }
 
-    private static func extractArtwork(
-        from audioMetadata: AudioMetadata,
-        into metadata: inout TrackMetadata,
-        source: String? = nil,
-        artworkCache: ArtworkCompressionCache? = nil
-    ) async {
-        guard let firstPicture = audioMetadata.attachedPictures.first else { return }
-
-        metadata.artworkData = await MetadataMapping.compressedArtwork(
-            from: firstPicture.imageData,
-            source: source,
-            cache: artworkCache
-        )
-    }
 }

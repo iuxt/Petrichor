@@ -19,8 +19,7 @@ extension DatabaseManager {
         track.year = metadata.year?.nilIfEmpty ?? ""
         track.duration = HelperUtils.sanitizedDuration(metadata.duration)
         
-        // Artwork is resolved from source files through ArtworkResolver and is not stored in SQLite.
-        track.trackArtworkData = nil
+        // Artwork is resolved on demand by ArtworkResolver at playback and is not stored in SQLite.
 
         // Additional metadata
         track.albumArtist = metadata.albumArtist
@@ -123,11 +122,6 @@ extension DatabaseManager {
         let newDuration = HelperUtils.sanitizedDuration(metadata.duration)
         if newDuration > 0 && abs(newDuration - track.duration) > 0.1 {
             track.duration = newDuration
-            hasChanges = true
-        }
-
-        if track.trackArtworkData != nil {
-            track.trackArtworkData = nil
             hasChanges = true
         }
 

@@ -118,12 +118,11 @@ enum MetadataMapping {
         return normalized == "mp3" || normalized.contains("mpeg")
     }
 
-    /// Size-cap, compress, and cache embedded artwork bytes. Returns the
-    /// compressed data, or nil if it is oversized or compression fails.
+    /// Size-cap and compress embedded artwork bytes. Returns the compressed
+    /// data, or nil if it is oversized or compression fails.
     static func compressedArtwork(
         from rawData: Data,
-        source: String?,
-        cache: ArtworkCompressionCache?
+        source: String?
     ) async -> Data? {
         if rawData.count > AlbumArtFormat.maxArtworkSize {
             let context = source.map { " for \($0)" } ?? ""
@@ -131,18 +130,8 @@ enum MetadataMapping {
             return nil
         }
 
-        // Check cache for previously compressed identical artwork
-        if let cache = cache, let cached = await cache.get(for: rawData) {
-            return cached
-        }
-
         // If compression fails, leave artwork nil rather than persisting undecodable bytes
         // that would re-fail on every later read (sidebar, now-playing, color extraction).
-        guard let compressed = ImageUtils.compressImage(from: rawData, source: source) else { return nil }
-
-        if let cache = cache {
-            await cache.store(original: rawData, compressed: compressed)
-        }
-        return compressed
+        return ImageUtils.compressImage(from: rawData, source: source)
     }
 }

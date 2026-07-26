@@ -12,11 +12,7 @@ import Crescendo
 import Foundation
 
 struct CrescendoMetadataReader: MetadataReader {
-    func extractMetadata(
-        from url: URL,
-        externalArtwork: Data?,
-        artworkCache: ArtworkCompressionCache?
-    ) async -> TrackMetadata {
+    func extractMetadata(from url: URL) async -> TrackMetadata {
         var metadata = TrackMetadata(url: url)
 
         let source: CrescendoMetadata
@@ -29,17 +25,9 @@ struct CrescendoMetadataReader: MetadataReader {
 
         await map(source, into: &metadata)
 
-        if let firstPicture = source.pictures.first {
-            metadata.artworkData = await MetadataMapping.compressedArtwork(
-                from: firstPicture.data,
-                source: url.lastPathComponent,
-                cache: artworkCache
-            )
-        }
-
-        if metadata.artworkData == nil, let externalArtwork = externalArtwork {
-            metadata.artworkData = externalArtwork
-        }
+        // Artwork is intentionally not extracted here. It is resolved on demand
+        // by ArtworkResolver at playback time via extractEmbeddedArtwork, so the
+        // scan never pays the decode/recompress cost for bytes that are discarded.
 
         return metadata
     }
@@ -56,8 +44,7 @@ struct CrescendoMetadataReader: MetadataReader {
         guard let firstPicture = source.pictures.first else { return nil }
         return await MetadataMapping.compressedArtwork(
             from: firstPicture.data,
-            source: url.lastPathComponent,
-            cache: nil
+            source: url.lastPathComponent
         )
     }
 
