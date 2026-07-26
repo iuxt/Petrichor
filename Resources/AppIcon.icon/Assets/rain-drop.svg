@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <path
+    fill="currentColor"
+    d="M512 144C452 233 252 444 252 620C252 764 368 880 512 880C656 880 772 764 772 620C772 444 572 233 512 144Z"
+  />
+</svg>

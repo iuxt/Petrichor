@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">Petrichor</title>
+  <desc id="description">A raindrop containing a three-bar audio waveform.</desc>
+  <defs>
+    <linearGradient id="petrichor" x1="0.22" y1="0.12" x2="0.78" y2="0.92">
+      <stop offset="0" stop-color="#145A78"/>
+      <stop offset="1" stop-color="#11947D"/>
+    </linearGradient>
+  </defs>
+  <path
+    fill="url(#petrichor)"
+    d="M512 144C452 233 252 444 252 620C252 764 368 880 512 880C656 880 772 764 772 620C772 444 572 233 512 144Z"
+  />
+  <g fill="#F1FFFB">
+    <path d="M368 568C368 550.327 382.327 536 400 536C417.673 536 432 550.327 432 568V688C432 705.673 417.673 720 400 720C382.327 720 368 705.673 368 688V568Z"/>
+    <path d="M480 422C480 404.327 494.327 390 512 390C529.673 390 544 404.327 544 422V734C544 751.673 529.673 766 512 766C494.327 766 480 751.673 480 734V422Z"/>
+    <path d="M592 520C592 502.327 606.327 488 624 488C641.673 488 656 502.327 656 520V676C656 693.673 641.673 708 624 708C606.327 708 592 693.673 592 676V520Z"/>
+  </g>
+</svg>

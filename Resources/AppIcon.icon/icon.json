@@ -1,9 +1,19 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "display-p3:0.51791,0.68616,0.92326,1.00000",
-      "display-p3:0.23485,0.40869,0.65432,1.00000"
-    ]
+      "display-p3:0.03500,0.22800,0.35500,1.00000",
+      "display-p3:0.03500,0.55500,0.47000,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.18,
+        "y" : 0.08
+      },
+      "stop" : {
+        "x" : 0.82,
+        "y" : 0.92
+      }
+    }
   },
   "groups" : [
     {
@@ -12,23 +22,102 @@
           "blend-mode" : "normal",
           "fill-specializations" : [
             {
-              "value" : "automatic"
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.02500,0.26000,0.33000,1.00000",
+                  "display-p3:0.01000,0.14500,0.20500,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.50,
+                    "y" : 0.22
+                  },
+                  "stop" : {
+                    "x" : 0.50,
+                    "y" : 0.82
+                  }
+                }
+              }
             },
             {
               "appearance" : "dark",
               "value" : {
                 "linear-gradient" : [
-                  "display-p3:0.33011,0.58610,0.93854,1.00000",
-                  "display-p3:0.53278,0.71455,0.97287,1.00000"
+                  "display-p3:0.02000,0.21000,0.27500,1.00000",
+                  "display-p3:0.00500,0.10000,0.15000,1.00000"
                 ],
                 "orientation" : {
                   "start" : {
-                    "x" : 0.5,
-                    "y" : 1
+                    "x" : 0.50,
+                    "y" : 0.20
                   },
                   "stop" : {
-                    "x" : 0.5,
-                    "y" : 0.3
+                    "x" : 0.50,
+                    "y" : 0.84
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "display-p3:0.05000,0.05000,0.05000,0.90000"
+              }
+            }
+          ],
+          "glass" : false,
+          "image-name" : "waveform.svg",
+          "name" : "Audio Waveform"
+        }
+      ],
+      "name" : "Music",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.30
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    },
+    {
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill-specializations" : [
+            {
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.93500,1.00000,0.98200,1.00000",
+                  "display-p3:0.71000,0.94000,0.90500,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.26,
+                    "y" : 0.18
+                  },
+                  "stop" : {
+                    "x" : 0.74,
+                    "y" : 0.88
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.88500,0.98500,1.00000,1.00000",
+                  "display-p3:0.55000,0.86000,0.83500,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.28,
+                    "y" : 0.16
+                  },
+                  "stop" : {
+                    "x" : 0.72,
+                    "y" : 0.90
                   }
                 }
               }
@@ -41,84 +130,19 @@
             }
           ],
           "glass" : true,
-          "hidden-specializations" : [
-            {
-              "idiom" : "macOS",
-              "value" : false
-            }
-          ],
-          "image-name" : "custom.music.svg",
-          "name" : "Music Notes",
-          "position-specializations" : [
-            {
-              "value" : {
-                "scale" : 1,
-                "translation-in-points" : [
-                  -212.78125,
-                  -229.0078125
-                ]
-              }
-            },
-            {
-              "idiom" : "macOS",
-              "value" : {
-                "scale" : 28,
-                "translation-in-points" : [
-                  -14,
-                  0
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "blend-mode" : "normal",
-          "fill-specializations" : [
-            {
-              "value" : {
-                "solid" : "display-p3:1.00000,1.00000,1.00000,1.00000"
-              }
-            },
-            {
-              "appearance" : "dark",
-              "value" : {
-                "automatic-gradient" : "display-p3:1.00000,1.00000,1.00000,1.00000"
-              }
-            },
-            {
-              "appearance" : "tinted",
-              "value" : {
-                "automatic-gradient" : "display-p3:1.00000,1.00000,1.00000,1.00000"
-              }
-            }
-          ],
-          "glass" : true,
-          "hidden" : false,
-          "image-name" : "play.fill.svg",
-          "name" : "Play",
-          "opacity" : 0.2,
-          "position-specializations" : [
-            {
-              "idiom" : "macOS",
-              "value" : {
-                "scale" : 40,
-                "translation-in-points" : [
-                  19.3836,
-                  0.19399999999995998
-                ]
-              }
-            }
-          ]
+          "image-name" : "rain-drop.svg",
+          "name" : "Rain Drop",
+          "opacity" : 0.96
         }
       ],
-      "name" : "Symbols",
+      "name" : "Petrichor Drop",
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.5
+        "opacity" : 0.42
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.5
+        "value" : 0.22
       }
     }
   ],
