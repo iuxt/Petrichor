@@ -52,23 +52,17 @@ extension DatabaseManager {
         artworkMap: [URL: Data] = [:],
         artworkPaths: [URL: URL] = [:],
         hardRefresh: Bool = false,
-        existingTracksByPath: [String: Track] = [:],
+        existingFullTracksByPath: [String: FullTrack] = [:],
+        modificationDates: [URL: Date] = [:],
         scanState: ScanState? = nil,
         folderName: String? = nil,
         totalFilesInFolder: Int? = nil,
         globalScanState: GlobalScanState? = nil
     ) async throws {
         let chunkSize = 100  // DB-write batch + progress cadence
-        // Bound concurrent parses. Saturating every cooperative-pool thread (each
-        // briefly blocks on GRDB/artwork work) deadlocks macOS 14's runtime; 15+
-        // recovers, so only 14 needs headroom.
+        // Bound concurrent parses to the available cores.
         let cores = ProcessInfo.processInfo.activeProcessorCount
-        let maxConcurrent: Int
-        if #available(macOS 15, *) {
-            maxConcurrent = max(4, cores)
-        } else {
-            maxConcurrent = max(2, cores / 2)
-        }
+        let maxConcurrent = max(4, cores)
 
         Logger.info("Processing batch of \(batch.count) files in chunks of \(chunkSize), up to \(maxConcurrent) concurrent")
 
@@ -93,7 +87,8 @@ extension DatabaseManager {
                             artworkMap: artworkMap,
                             lazyArtwork: lazyArtwork,
                             hardRefresh: hardRefresh,
-                            existingTracksByPath: existingTracksByPath,
+                            existingFullTracksByPath: existingFullTracksByPath,
+                            modificationDates: modificationDates,
                             artworkCache: artworkCache
                         )
                     }
@@ -206,7 +201,8 @@ extension DatabaseManager {
         artworkMap: [URL: Data],
         lazyArtwork: LazyArtworkLoader? = nil,
         hardRefresh: Bool = false,
-        existingTracksByPath: [String: Track] = [:],
+        existingFullTracksByPath: [String: FullTrack] = [:],
+        modificationDates: [URL: Date] = [:],
         artworkCache: ArtworkCompressionCache? = nil
     ) async -> (URL, TrackProcessResult) {
         // Get artwork selected for this specific file (eager from artworkMap, or lazy from deferred paths).
@@ -216,26 +212,14 @@ extension DatabaseManager {
         }
 
         do {
-            // Check if track already exists using prefetched dictionary.
+            // Look up the prefetched FullTrack directly — no per-file DB read. The
+            // previous code fetched a lightweight `Track` here then re-queried the
+            // (serial) DB queue for its `FullTrack` on every already-known file,
+            // which serialized the whole TaskGroup during incremental scans.
             // Standardize the lookup key to match how the dictionary is built (and how
             // the scan enumerates files), so symlink-resolved / un-trailing-slashed
             // paths don't cause a false miss and a duplicate insert.
-            if let existingTrack = existingTracksByPath[fileURL.standardizedFileURL.path] {
-                // Fetch the full track for comparison and update
-                guard let existingFullTrack = try await existingTrack.fullTrack(using: dbQueue) else {
-                    // If we can't get full track, treat as new
-                    let metadata = await MetadataEngine.extractMetadata(
-                        from: fileURL,
-                        externalArtwork: externalArtwork,
-                        artworkCache: artworkCache
-                    )
-                    var fullTrack = FullTrack(url: fileURL)
-                    fullTrack.folderId = folderId
-                    applyMetadataToTrack(&fullTrack, from: metadata, at: fileURL)
-                    
-                    return (fileURL, .new(fullTrack, metadata))
-                }
-                
+            if let existingFullTrack = existingFullTracksByPath[fileURL.standardizedFileURL.path] {
                 // Re-extract complete metadata on hardRefresh
                 if hardRefresh {
                     let metadata = await MetadataEngine.extractMetadata(
@@ -243,30 +227,38 @@ extension DatabaseManager {
                         externalArtwork: externalArtwork,
                         artworkCache: artworkCache
                     )
-                    
+
                     var updatedTrack = existingFullTrack
                     _ = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
-                    
+
                     // Always return as update during hard refresh
                     return (fileURL, .update(updatedTrack, metadata))
                 }
-                
-                // Check if file has been modified
-                if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-                   let modDate = attributes[.modificationDate] as? Date,
-                   let storedModDate = existingFullTrack.dateModified {
+
+                // Check if file has been modified. Prefer the modification date
+                // captured during enumeration (the enumerator already stated every
+                // file) instead of stating the file a second time.
+                let modDate: Date?
+                if let cached = modificationDates[fileURL] {
+                    modDate = cached
+                } else if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path) {
+                    modDate = attributes[.modificationDate] as? Date
+                } else {
+                    modDate = nil
+                }
+                if let modDate, let storedModDate = existingFullTrack.dateModified {
                     let timeDifference = abs(modDate.timeIntervalSince(storedModDate))
-                    
+
                     if timeDifference > 1.0 {
                         // File modified, extract fresh metadata
                         let metadata = await MetadataEngine.extractMetadata(
                             from: fileURL,
                             externalArtwork: externalArtwork
                         )
-                        
+
                         var updatedTrack = existingFullTrack
                         let hasChanges = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
-                        
+
                         if hasChanges {
                             return (fileURL, .update(updatedTrack, metadata))
                         } else {
@@ -274,7 +266,7 @@ extension DatabaseManager {
                         }
                     }
                 }
-                
+
                 // File not modified, skip
                 return (fileURL, .skipped)
             }

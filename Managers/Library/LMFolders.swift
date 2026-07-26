@@ -104,30 +104,24 @@ extension LibraryManager {
                 await self.refreshBookmarkForFolder(folder)
             }
 
-            // Show the indicator before counting: enumerating a large folder can take
-            // a moment, and refreshLibrary() starts activity before counting too.
+            // Show the indicator before enumerating: enumerating a large folder can
+            // take a moment, and refreshLibrary() starts activity before scanning too.
             await MainActor.run {
                 NotificationManager.shared.startActivity(String(appLocalized: "Refreshing \(folder.name)..."))
             }
 
-            // Pre-count files so the progress bar can advance (needs a
-            // GlobalScanState); skip on slow filesystems, like refreshLibrary().
-            let isSlowFS = FilesystemUtils.isSlowFilesystem(url: folder.url)
-            let totalFiles = isSlowFS
-                ? 0
-                : await self.databaseManager.countFilesInFolder(
-                    folder,
-                    supportedExtensions: AudioFormat.supportedExtensions
-                )
-            let globalScanState = GlobalScanState(totalFiles: totalFiles)
+            // Total file count is grown during enumeration (see scanSingleFolder),
+            // so start at 0 and let the progress bar show an indeterminate state
+            // until the folder is enumerated — no separate pre-count walk.
+            let globalScanState = GlobalScanState(totalFiles: 0)
 
-            // startActivity() above cleared progress; set the initial total now that
-            // we know it (the first update always passes the throttle after a start).
+            // startActivity() above cleared progress; set the initial state (the
+            // first update always passes the throttle after a start).
             await MainActor.run {
                 NotificationManager.shared.updateActivityProgress(
                     current: 0,
-                    total: totalFiles,
-                    detail: totalFiles > 0 ? String(appLocalized: "0 of \(totalFiles) files") : String(appLocalized: "Preparing files...")
+                    total: 0,
+                    detail: String(appLocalized: "Preparing files...")
                 )
             }
 

@@ -39,17 +39,24 @@ struct GlobalScanProgress {
 }
 
 actor GlobalScanState {
-    let totalFiles: Int
+    var totalFiles: Int
     let isInitialScan: Bool
     var processedFiles = 0
     var tracksAdded = 0
     var tracksRemoved = 0
-    
+
     init(totalFiles: Int, isInitialScan: Bool = false) {
         self.totalFiles = totalFiles
         self.isInitialScan = isInitialScan
     }
-    
+
+    /// Grow the total as each folder's real file count becomes known during
+    /// enumeration, so we don't need a separate full-directory pre-count walk
+    /// just to seed the progress bar.
+    func addTotal(by count: Int) {
+        totalFiles += count
+    }
+
     func incrementProcessed(by count: Int) {
         processedFiles += count
     }
@@ -76,9 +83,10 @@ actor GlobalScanState {
 /// Result of a single-pass folder enumeration
 struct FolderEnumerationResult {
     let musicFiles: [URL]
+    let modificationDates: [URL: Date]  // audio file URL -> contentModificationDate (captured during enumeration)
     let unsupportedFiles: [(url: URL, extension: String)]
-    let artworkMap: [URL: Data]    // audio file URL -> selected artwork data
-    let artworkPaths: [URL: URL]   // audio file URL -> selected artwork file URL (for deferred loading on slow FS)
+    let artworkMap: [URL: Data]    // audio file URL -> selected artwork data (unused since artwork is deferred)
+    let artworkPaths: [URL: URL]   // audio file URL -> selected artwork file URL (decoded lazily during processing)
 }
 
 extension DatabaseManager {
@@ -202,6 +210,7 @@ extension DatabaseManager {
         hardRefresh: Bool = false,
         manageActivityIndicator: Bool = true,
         globalScanState: GlobalScanState? = nil,
+        precomputedHash: String? = nil,
         _ completion: @escaping (Result<Void, Error>) -> Void
     ) {
         Task {
@@ -223,18 +232,17 @@ extension DatabaseManager {
                 // can't leak or double-decrement a concurrent scan's data.
                 defer { ArtistParser.unloadKnownArtists() }
 
-                // Scan the folder - this will check for metadata updates
+                // Scan the folder - this will check for metadata updates.
+                // finalizeScan (inside) updates the folder row and hash, so we no
+                // longer re-call updateFolderMetadata here — that used to hash the
+                // tree a second time on top of the refresh-check hash.
                 try await scanSingleFolder(
                     folder,
                     supportedExtensions: AudioFormat.supportedExtensions,
                     hardRefresh: hardRefresh,
+                    precomputedHash: precomputedHash,
                     globalScanState: globalScanState
                 )
-
-                // Update folder's metadata
-                if let folderId = folder.id {
-                    try await updateFolderMetadata(folderId)
-                }
 
                 // Log the result
                 let trackCountAfter = getTracksForFolder(folder.id ?? -1).count
@@ -305,15 +313,24 @@ extension DatabaseManager {
         }
     }
     
-    func updateFolderMetadata(_ folderId: Int64) async throws {
+    func updateFolderMetadata(_ folderId: Int64, precomputedHash: String? = nil) async throws {
         // First, get the folder and calculate hash outside the database transaction
         let folderData = try await dbQueue.read { db in
             try Folder.fetchOne(db, key: folderId)
         }
-        
+
         guard let folder = folderData else { return }
-        
-        let hash = await FilesystemUtils.computeFolderHash(for: folder.url)
+
+        // Reuse the hash computed during the refresh-check when available; the scan
+        // doesn't mutate files, so the pre-scan hash is still valid here. Otherwise
+        // hash the tree now. (`??` can't host an `await` on its right side — it's an
+        // autoclosure that doesn't support concurrency — so spell the fallback out.)
+        let hash: String?
+        if let precomputedHash {
+            hash = precomputedHash
+        } else {
+            hash = await FilesystemUtils.computeFolderHash(for: folder.url)
+        }
         
         try await dbQueue.write { db in
             guard var folder = try Folder.fetchOne(db, key: folderId) else { return }
@@ -351,23 +368,6 @@ extension DatabaseManager {
         return getTracksForFolder(folderId)
     }
     
-    func countFilesInFolder(_ folder: Folder, supportedExtensions: [String]) async -> Int {
-        guard let enumerator = FileManager.default.enumerator(
-            at: folder.url,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return 0 }
-        
-        var count = 0
-        while let fileURL = enumerator.nextObject() as? URL {
-            let ext = fileURL.pathExtension.lowercased()
-            if !ext.isEmpty && supportedExtensions.contains(ext) {
-                count += 1
-            }
-        }
-        return count
-    }
-    
     func scanFoldersForTracks(
         _ folders: [Folder],
         showActivityInTray: Bool = true,
@@ -385,15 +385,9 @@ extension DatabaseManager {
             }
         }
 
-        // Count total files for progress tracking (skip on slow/network filesystems)
-        let isSlowFS = folders.first.map { FilesystemUtils.isSlowFilesystem(url: $0.url) } ?? false
-        var totalFiles = 0
-        if !isSlowFS {
-            for folder in folders {
-                totalFiles += await countFilesInFolder(folder, supportedExtensions: supportedExtensions)
-            }
-        }
-        let globalScanState = GlobalScanState(totalFiles: totalFiles, isInitialScan: isInitialScan)
+        // Total file count is grown per-folder as each is enumerated, so we skip the
+        // separate full-directory pre-count walk the progress bar used to need.
+        let globalScanState = GlobalScanState(totalFiles: 0, isInitialScan: isInitialScan)
         
         ArtistParser.loadKnownArtists()
         // Balanced unload on every exit path, including a throw from the post-scan steps below.
@@ -459,46 +453,48 @@ extension DatabaseManager {
         _ folder: Folder,
         supportedExtensions: [String],
         hardRefresh: Bool = false,
+        precomputedHash: String? = nil,
         globalScanState: GlobalScanState? = nil
     ) async throws {
         guard let folderId = folder.id else {
             Logger.error("Folder has no ID")
             throw DatabaseError.invalidFolderId
         }
-        
+
         let scanState = ScanState()
 
         // Single-pass enumeration: collect music files, unsupported files, and artwork
-        let isSlowFS = FilesystemUtils.isSlowFilesystem(url: folder.url)
         let enumeration = try enumerateFolderContents(
             from: folder.url,
-            supportedExtensions: supportedExtensions,
-            deferArtworkLoading: isSlowFS
+            supportedExtensions: supportedExtensions
         )
         let musicFiles = enumeration.musicFiles
         let artworkMap = enumeration.artworkMap
         let artworkPaths = enumeration.artworkPaths
 
+        // Grow the progress total now that we know this folder's real file count,
+        // instead of pre-counting via a second full directory walk.
+        await globalScanState?.addTotal(by: musicFiles.count)
+
         await scanState.addSkippedFiles(enumeration.unsupportedFiles)
 
-        let artworkCount = artworkMap.count + artworkPaths.count
-        if artworkCount > 0 {
-            Logger.info("Resolved artwork for \(artworkCount) tracks within \(folder.name)")
+        if artworkPaths.count > 0 {
+            Logger.info("Resolved artwork for \(artworkPaths.count) tracks within \(folder.name)")
         }
 
-        // Pre-fetch existing tracks for this folder to avoid per-file DB lookups.
-        // Key by the standardized path so symlink resolution and trailing-slash /
-        // `private`-prefix differences don't cause a track to be treated as both
-        // missing (re-inserted, duplicating) and found.
-        let existingTracksByPath: [String: Track] = try await dbQueue.read { db in
-            let tracks = try Track
-                .filter(Track.Columns.folderId == folderId)
+        // Pre-fetch the full records for every existing track in this folder in one
+        // query, keyed by standardized path. The processing stage then compares and
+        // updates entirely from this dictionary — no per-file DB reads on the
+        // (serial) queue, which used to serialize the whole TaskGroup.
+        let existingFullTracksByPath: [String: FullTrack] = try await dbQueue.read { db in
+            let fullTracks = try FullTrack
+                .filter(FullTrack.Columns.folderId == folderId)
                 .fetchAll(db)
-            return Dictionary(uniqueKeysWithValues: tracks.map { ($0.url.standardizedFileURL.path, $0) })
+            return Dictionary(uniqueKeysWithValues: fullTracks.map { ($0.url.standardizedFileURL.path, $0) })
         }
 
         // Remove tracks that no longer exist (skip on fresh scan when folder has no tracks)
-        if !existingTracksByPath.isEmpty {
+        if !existingFullTracksByPath.isEmpty {
             try await removeDeletedTracks(
                 folderId: folderId,
                 foundPaths: Set(musicFiles),
@@ -520,28 +516,29 @@ extension DatabaseManager {
             folderId: folderId,
             artworkMap: artworkMap,
             artworkPaths: artworkPaths,
+            modificationDates: enumeration.modificationDates,
             folderName: folder.name,
             hardRefresh: hardRefresh,
-            existingTracksByPath: existingTracksByPath,
+            existingFullTracksByPath: existingFullTracksByPath,
             scanState: scanState,
             globalScanState: globalScanState
         )
-        
+
         // Update metadata and report results
         try await finalizeScan(
             folderId: folderId,
             folder: folder,
+            precomputedHash: precomputedHash,
             scanState: scanState
         )
     }
     // MARK: - Private Helpers
 
-    /// Single-pass enumeration: collect music files, unsupported files, and folder artwork
-    /// - Parameter deferArtworkLoading: When true (slow FS), collect artwork paths without reading files
+    /// Single-pass enumeration: collect music files (plus their prefetched mod
+    /// dates), unsupported files, and folder artwork paths (decoded lazily later).
     private func enumerateFolderContents(
         from folderURL: URL,
-        supportedExtensions: [String],
-        deferArtworkLoading: Bool = false
+        supportedExtensions: [String]
     ) throws -> FolderEnumerationResult {
         let fileManager = FileManager.default
 
@@ -554,6 +551,7 @@ extension DatabaseManager {
         }
 
         var musicFiles: [URL] = []
+        var modificationDates: [URL: Date] = [:]
         var unsupportedFiles: [(url: URL, extension: String)] = []
         var artworkCandidatesByDirectory: [URL: [URL]] = [:]
         // De-duplicate by resolved path so a symlinked file and its target (or two
@@ -578,6 +576,12 @@ extension DatabaseManager {
 
             if supportedExtensions.contains(fileExtension) {
                 musicFiles.append(resolvedURL)
+                // Reuse the modification date the enumerator already prefetched (via
+                // includingPropertiesForKeys) so processing doesn't stat each file
+                // again. Key by resolvedURL to match how musicFiles/lookups address it.
+                if let modDate = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+                    modificationDates[resolvedURL] = modDate
+                }
             } else if AudioFormat.isNotSupported(fileExtension) {
                 unsupportedFiles.append((url: resolvedURL, extension: fileExtension))
                 Logger.info("Skipped unsupported audio file: \(resolvedURL.lastPathComponent) (.\(fileExtension))")
@@ -591,29 +595,30 @@ extension DatabaseManager {
             }
         }
 
-        let artwork = resolvedArtwork(
+        let artworkPaths = resolvedArtwork(
             for: musicFiles,
-            candidatesByDirectory: artworkCandidatesByDirectory,
-            deferArtworkLoading: deferArtworkLoading
+            candidatesByDirectory: artworkCandidatesByDirectory
         )
 
         return FolderEnumerationResult(
             musicFiles: musicFiles,
+            modificationDates: modificationDates,
             unsupportedFiles: unsupportedFiles,
-            artworkMap: artwork.map,
-            artworkPaths: artwork.paths
+            artworkMap: [:],
+            artworkPaths: artworkPaths
         )
     }
 
+    /// Resolve each audio file's preferred external artwork path without reading or
+    /// decoding the image. Decoding and JPEG recompression are deferred to
+    /// `LazyArtworkLoader` inside the processing TaskGroup, so they overlap with
+    /// metadata extraction instead of serializing this enumeration pass (the
+    /// oversized-image guard runs there too).
     private func resolvedArtwork(
         for musicFiles: [URL],
-        candidatesByDirectory: [URL: [URL]],
-        deferArtworkLoading: Bool
-    ) -> (map: [URL: Data], paths: [URL: URL]) {
-        var artworkMap: [URL: Data] = [:]
+        candidatesByDirectory: [URL: [URL]]
+    ) -> [URL: URL] {
         var artworkPaths: [URL: URL] = [:]
-        var loadedArtworkByURL: [URL: Data] = [:]
-        var skippedArtworkURLs: Set<URL> = []
 
         for musicFile in musicFiles {
             let directory = musicFile.deletingLastPathComponent()
@@ -626,35 +631,10 @@ extension DatabaseManager {
             else {
                 continue
             }
-
-            if deferArtworkLoading {
-                artworkPaths[musicFile] = artworkURL
-                continue
-            }
-
-            if let cached = loadedArtworkByURL[artworkURL] {
-                artworkMap[musicFile] = cached
-                continue
-            }
-
-            guard let size = (try? artworkURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else {
-                continue
-            }
-
-            if size > AlbumArtFormat.maxArtworkSize {
-                if skippedArtworkURLs.insert(artworkURL).inserted {
-                    Logger.warning("Skipping oversized artwork: \(artworkURL.lastPathComponent) (\(size) bytes)")
-                }
-                continue
-            }
-
-            guard let data = try? Data(contentsOf: artworkURL) else { continue }
-            let compressed = ImageUtils.compressImage(from: data, source: artworkURL.path) ?? data
-            loadedArtworkByURL[artworkURL] = compressed
-            artworkMap[musicFile] = compressed
+            artworkPaths[musicFile] = artworkURL
         }
 
-        return (map: artworkMap, paths: artworkPaths)
+        return artworkPaths
     }
 
     /// Remove tracks from database that no longer exist in the filesystem
@@ -734,9 +714,10 @@ extension DatabaseManager {
         folderId: Int64,
         artworkMap: [URL: Data],
         artworkPaths: [URL: URL] = [:],
+        modificationDates: [URL: Date] = [:],
         folderName: String,
         hardRefresh: Bool = false,
-        existingTracksByPath: [String: Track],
+        existingFullTracksByPath: [String: FullTrack],
         scanState: ScanState,
         globalScanState: GlobalScanState? = nil
     ) async throws {
@@ -753,7 +734,8 @@ extension DatabaseManager {
                     artworkMap: artworkMap,
                     artworkPaths: artworkPaths,
                     hardRefresh: hardRefresh,
-                    existingTracksByPath: existingTracksByPath,
+                    existingFullTracksByPath: existingFullTracksByPath,
+                    modificationDates: modificationDates,
                     scanState: scanState,
                     folderName: folderName,
                     totalFilesInFolder: totalFiles,
@@ -771,10 +753,11 @@ extension DatabaseManager {
     private func finalizeScan(
         folderId: Int64,
         folder: Folder,
+        precomputedHash: String? = nil,
         scanState: ScanState
     ) async throws {
         // Update folder metadata
-        try await updateFolderMetadata(folderId)
+        try await updateFolderMetadata(folderId, precomputedHash: precomputedHash)
         
         // Get final counts
         let processedCount = await scanState.getProcessedCount()

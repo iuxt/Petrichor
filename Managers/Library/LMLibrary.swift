@@ -213,7 +213,9 @@ extension LibraryManager {
             }
 
             // Filter folders that need refreshing
-            let foldersToRefresh = await determineFoldersToRefresh(hardRefresh: hardRefresh)
+            let refreshDecision = await determineFoldersToRefresh(hardRefresh: hardRefresh)
+            let foldersToRefresh = refreshDecision.folders
+            let precomputedHashes = refreshDecision.precomputedHashes
 
             // Only proceed if there are folders to refresh
             if foldersToRefresh.isEmpty {
@@ -228,40 +230,31 @@ extension LibraryManager {
                 NotificationManager.shared.startActivity(String(appLocalized: "Refreshing \(foldersToRefresh.count) folders..."))
             }
 
-            let isSlowFS = foldersToRefresh.first.map { FilesystemUtils.isSlowFilesystem(url: $0.url) } ?? false
-            let totalFiles: Int
-            if isSlowFS {
-                totalFiles = 0
-            } else {
-                var countedFiles = 0
-                for folder in foldersToRefresh {
-                    countedFiles += await databaseManager.countFilesInFolder(
-                        folder,
-                        supportedExtensions: AudioFormat.supportedExtensions
-                    )
-                }
-                totalFiles = countedFiles
-            }
-            let globalScanState = GlobalScanState(totalFiles: totalFiles)
+            // Total file count is grown per-folder during enumeration, so start at 0
+            // and let the progress bar show an indeterminate state until the first
+            // folder is enumerated.
+            let globalScanState = GlobalScanState(totalFiles: 0)
 
             await MainActor.run {
                 NotificationManager.shared.updateActivityProgress(
                     current: 0,
-                    total: totalFiles,
-                    detail: totalFiles > 0 ? String(appLocalized: "0 of \(totalFiles) files") : String(appLocalized: "Preparing files...")
+                    total: 0,
+                    detail: String(appLocalized: "Preparing files...")
                 )
             }
 
             // Process folders
             for folder in foldersToRefresh {
                 group.enter()
-                
+                let precomputedHash = folder.id.flatMap { precomputedHashes[$0] }
+
                 await MainActor.run { [weak self] in
                     self?.databaseManager.refreshFolder(
                         folder,
                         hardRefresh: hardRefresh,
                         manageActivityIndicator: false,
-                        globalScanState: globalScanState
+                        globalScanState: globalScanState,
+                        precomputedHash: precomputedHash
                     ) { result in
                         Task {
                             switch result {
@@ -337,11 +330,12 @@ extension LibraryManager {
         }
     }
 
-    private func determineFoldersToRefresh(hardRefresh: Bool = false) async -> [Folder] {
+    private func determineFoldersToRefresh(hardRefresh: Bool = false) async -> (folders: [Folder], precomputedHashes: [Int64: String]) {
         var foldersToRefresh: [Folder] = []
-        
+        var precomputedHashes: [Int64: String] = [:]
+
         Logger.info("Starting folder refresh check (hardRefresh: \(hardRefresh))")
-            
+
         // Refresh all folders when hardRefresh is set
         if hardRefresh {
             for folder in folders {
@@ -353,9 +347,9 @@ extension LibraryManager {
                 foldersToRefresh.append(folder)
             }
             Logger.info("Hard refresh: All \(foldersToRefresh.count) accessible folders marked for refresh")
-            return foldersToRefresh
+            return (foldersToRefresh, precomputedHashes)
         }
-        
+
         for folder in folders {
             // Skip folders that are currently inaccessible
             guard FileManager.default.fileExists(atPath: folder.url.path) else {
@@ -368,28 +362,33 @@ extension LibraryManager {
                 for: folder.url,
                 comparedTo: folder.dateUpdated
             )
-            
+
             if timestampChanged {
                 Logger.info("Folder \(folder.name): Timestamp changed, marking for refresh")
                 foldersToRefresh.append(folder)
                 continue
             }
-            
+
             // Step 2: If timestamp hasn't changed, check content hash
             Logger.info("Folder \(folder.name): Timestamp unchanged, checking content hash...")
-            
+
             // If no hash stored yet, we need to scan
             guard let storedHash = folder.shasumHash else {
                 Logger.info("Folder \(folder.name): No hash stored, marking for refresh")
                 foldersToRefresh.append(folder)
                 continue
             }
-            
+
             // Calculate current hash
             if let currentHash = await FilesystemUtils.computeFolderHash(for: folder.url) {
                 if currentHash != storedHash {
                     Logger.info("Folder \(folder.name): Content changed (hash mismatch), marking for refresh")
                     foldersToRefresh.append(folder)
+                    // Cache the freshly computed hash so the scan can reuse it when
+                    // writing the folder row back, instead of hashing the tree again.
+                    if let folderId = folder.id {
+                        precomputedHashes[folderId] = currentHash
+                    }
                 } else {
                     Logger.info("Folder \(folder.name): No changes detected, skipping")
                 }
@@ -399,9 +398,9 @@ extension LibraryManager {
                 foldersToRefresh.append(folder)
             }
         }
-        
+
         Logger.info("Refresh check complete: \(foldersToRefresh.count)/\(folders.count) folders need refresh")
-        return foldersToRefresh
+        return (foldersToRefresh, precomputedHashes)
     }
 
     internal func loadEntities() {
