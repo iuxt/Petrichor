@@ -35,19 +35,21 @@ struct AppearanceTabView: View {
     private var desktopLyricsClickThrough = false
 
     @AppStorage("desktopLyricsFontName")
-    private var desktopLyricsFontName = DesktopLyricsSettings.systemFontName
+    private var desktopLyricsFontName = LyricsFontSettings.systemFontName
 
     @AppStorage("desktopLyricsFontSize")
     private var desktopLyricsFontSize = 28.0
+
+    @AppStorage("immersiveLyricsFontName")
+    private var immersiveLyricsFontName = LyricsFontSettings.systemFontName
+
+    @AppStorage("immersiveLyricsFontSize")
+    private var immersiveLyricsFontSize = 20.0
 
     @State private var showTrackInfoHelp = false
 
     /// Leading inset used to nest the options that depend on the master tint toggle.
     private let dependentIndent: CGFloat = 20
-
-    private var desktopLyricsFontFamilies: [String] {
-        [DesktopLyricsSettings.systemFontName] + NSFontManager.shared.availableFontFamilies.sorted()
-    }
 
     private var languageSelection: Binding<AppLanguage> {
         Binding(
@@ -109,25 +111,18 @@ struct AppearanceTabView: View {
                     .help("Lets mouse clicks pass through desktop lyrics")
                     .disabled(!desktopLyricsEnabled)
 
-                Picker("Font", selection: $desktopLyricsFontName) {
-                    ForEach(desktopLyricsFontFamilies, id: \.self) { fontName in
-                        Text(fontName == DesktopLyricsSettings.systemFontName ? String(appLocalized: "System Font") : fontName)
-                            .tag(fontName)
-                    }
-                }
+                LyricsFontSettingsControls(
+                    fontName: $desktopLyricsFontName,
+                    fontSize: $desktopLyricsFontSize
+                )
                 .disabled(!desktopLyricsEnabled)
+            }
 
-                HStack {
-                    Slider(value: $desktopLyricsFontSize, in: 18...48, step: 1) {
-                        Text("Size")
-                    }
-
-                    Text("\(Int(desktopLyricsFontSize))")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, alignment: .trailing)
-                }
-                .disabled(!desktopLyricsEnabled)
+            Section("Full Screen Lyrics") {
+                LyricsFontSettingsControls(
+                    fontName: $immersiveLyricsFontName,
+                    fontSize: $immersiveLyricsFontSize
+                )
             }
 
             Section("Customization") {

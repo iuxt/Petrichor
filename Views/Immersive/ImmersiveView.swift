@@ -32,7 +32,6 @@ private struct ImmersiveLayout {
     var columnSpacing: CGFloat { 20 * scale }
     var controlsSpacing: CGFloat { 16 * scale }
     var controlsScale: CGFloat { min(scale * 1.3, 2.6) }
-    var lyricsFontSize: CGFloat { 20 * scale }
     var cornerRadius: CGFloat { 12 * scale }
     var headerHorizontalPadding: CGFloat { 16 * scale }
     var headerVerticalPadding: CGFloat { 14 * scale }
@@ -58,6 +57,12 @@ struct ImmersiveView: View {
     private var tintPlaybackControls = true
     @AppStorage("tintNowPlayingBackground")
     private var tintNowPlayingBackground = true
+
+    @AppStorage("immersiveLyricsFontName")
+    private var immersiveLyricsFontName = LyricsFontSettings.systemFontName
+
+    @AppStorage("immersiveLyricsFontSize")
+    private var immersiveLyricsFontSize = 20.0
 
     @AppStorage(immersivePanelStateKey)
     private var panel: ImmersivePanel = .none
@@ -327,7 +332,8 @@ struct ImmersiveView: View {
             )
         case .lyrics:
             TrackLyricsContent(
-                fontSize: layout.lyricsFontSize,
+                fontName: immersiveLyricsFontName == LyricsFontSettings.systemFontName ? nil : immersiveLyricsFontName,
+                fontSize: CGFloat(immersiveLyricsFontSize) * layout.scale,
                 activeColor: adaptiveText,
                 inactiveColor: adaptiveText.opacity(0.55)
             )

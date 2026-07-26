@@ -8035,7 +8035,7 @@
       }
     },
     "Font": {
-      "comment": "A label for choosing the desktop lyrics font.",
+      "comment": "A label for choosing a lyrics font.",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -8078,6 +8078,17 @@
         }
       }
     },
+    "Full Screen Lyrics": {
+      "comment": "A settings section for configuring lyrics in full screen mode.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全屏歌词"
+          }
+        }
+      }
+    },
     "Show desktop lyrics": {
       "comment": "A toggle that shows or hides the desktop lyrics window.",
       "localizations": {
@@ -8090,7 +8101,7 @@
       }
     },
     "Size": {
-      "comment": "A label for choosing the desktop lyrics font size.",
+      "comment": "A label for choosing a lyrics font size.",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -8101,7 +8112,7 @@
       }
     },
     "System Font": {
-      "comment": "A picker option that uses the system font for desktop lyrics.",
+      "comment": "A picker option that uses the system font for lyrics.",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {

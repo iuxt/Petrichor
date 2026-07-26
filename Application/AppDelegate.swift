@@ -389,8 +389,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "discoverTrackCount": 50,
             "desktopLyricsEnabled": false,
             "desktopLyricsClickThrough": false,
-            "desktopLyricsFontName": DesktopLyricsSettings.systemFontName,
+            "desktopLyricsFontName": LyricsFontSettings.systemFontName,
             "desktopLyricsFontSize": 28.0,
+            "immersiveLyricsFontName": LyricsFontSettings.systemFontName,
+            "immersiveLyricsFontSize": 20.0,
             "appLanguage": AppLanguage.system.rawValue,
             MediaBackend.userDefaultsKey: true
         ]

@@ -36,6 +36,8 @@ struct TrackLyricsView: View {
 /// chrome, so it can be hosted inside a custom shell (e.g. the mini player) as
 /// well as the main TrackLyricsView. Self-manages loading and line sync.
 struct TrackLyricsContent: View {
+    /// Optional font family for lyric lines. A nil value uses the system font.
+    var fontName: String? = nil
     /// Font size for lyric lines. Larger hosts (e.g. immersive mode) pass a bigger
     /// value; defaults preserve the compact main-window / mini-player sizing.
     var fontSize: CGFloat = 14
@@ -174,6 +176,7 @@ struct TrackLyricsContent: View {
                 line: line,
                 sampleTime: sampledPlaybackTime,
                 isPlaying: playbackManager.isPlaying,
+                fontName: fontName,
                 fontSize: fontSize,
                 fontWeight: .bold,
                 activeColor: activeColor,
@@ -185,13 +188,19 @@ struct TrackLyricsContent: View {
             .multilineTextAlignment(.center)
         } else {
             Text(line.text.isEmpty ? " " : line.text)
-                .font(.system(size: fontSize))
-                .fontWeight(isCurrent ? .bold : .regular)
+                .font(lyricsFont(weight: isCurrent ? .bold : .regular))
                 .scaleEffect(isCurrent ? 1.1 : 1.0)
                 .foregroundColor(isCurrent ? activeColor : inactiveColor)
                 .multilineTextAlignment(.center)
                 .lineSpacing(6)
         }
+    }
+
+    private func lyricsFont(weight: Font.Weight) -> Font {
+        if let fontName {
+            return .custom(fontName, size: fontSize).weight(weight)
+        }
+        return .system(size: fontSize, weight: weight)
     }
 
     // MARK: - Helper Methods

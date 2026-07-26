@@ -11,7 +11,7 @@ struct DesktopLyricsView: View {
     private var desktopLyricsClickThrough = false
 
     @AppStorage("desktopLyricsFontName")
-    private var desktopLyricsFontName = DesktopLyricsSettings.systemFontName
+    private var desktopLyricsFontName = LyricsFontSettings.systemFontName
 
     @AppStorage("desktopLyricsFontSize")
     private var desktopLyricsFontSize = 28.0
@@ -88,7 +88,7 @@ struct DesktopLyricsView: View {
                 line: line,
                 sampleTime: provider.rendererSampleTime,
                 isPlaying: playbackManager.isPlaying,
-                fontName: desktopLyricsFontName == DesktopLyricsSettings.systemFontName ? nil : desktopLyricsFontName,
+                fontName: desktopLyricsFontName == LyricsFontSettings.systemFontName ? nil : desktopLyricsFontName,
                 fontSize: CGFloat(desktopLyricsFontSize),
                 fontWeight: .semibold,
                 activeColor: .primary,
@@ -133,7 +133,7 @@ struct DesktopLyricsView: View {
     }
 
     private func desktopFont(size: CGFloat, weight: Font.Weight) -> Font {
-        if desktopLyricsFontName == DesktopLyricsSettings.systemFontName {
+        if desktopLyricsFontName == LyricsFontSettings.systemFontName {
             return .system(size: size, weight: weight)
         }
         return .custom(desktopLyricsFontName, size: size).weight(weight)
@@ -160,10 +160,6 @@ struct DesktopLyricsView: View {
                 DesktopLyricsWindowManager.shared.saveFrame()
             }
     }
-}
-
-enum DesktopLyricsSettings {
-    static let systemFontName = "System"
 }
 
 extension View {
