@@ -90,9 +90,9 @@ require_pattern "$ENTITY_TABLE" 'struct ArtistTableView: View' \
     'ArtistTableView view must exist.'
 require_pattern "$ENTITY_TABLE" 'Table\(sortedArtists, selection: \$selection, sortOrder: \$sortOrder\)' \
     'Artist table must use Table with selection and sort order.'
-require_pattern "$ENTITY_TABLE" 'TableColumn\("Artist", value: \.name\)' \
+require_pattern "$ENTITY_TABLE" 'TableColumn\("Artist", value: \\.name\)' \
     'Artist table needs the Artist column.'
-require_pattern "$ENTITY_TABLE" 'TableColumn\("Songs", value: \.trackCount\)' \
+require_pattern "$ENTITY_TABLE" 'TableColumn\("Songs", value: \\.trackCount\)' \
     'Artist table needs the Songs column.'
 require_pattern "$ENTITY_TABLE" 'localizedCaseInsensitiveCompare' \
     'Artist sorting must stay locale-aware.'
