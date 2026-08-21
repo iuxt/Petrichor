@@ -41,6 +41,16 @@ if [ ! -f "$ENTITY_TABLE" ]; then
     exit 1
 fi
 
+if [ ! -f "$HOME_VIEW" ]; then
+    printf 'HomeView source file must exist.\n' >&2
+    exit 1
+fi
+
+command -v rg >/dev/null 2>&1 || {
+    printf 'ripgrep (rg) is required but not found on PATH.\n' >&2
+    exit 1
+}
+
 require_pattern() {
     local file="$1"
     local pattern="$2"
