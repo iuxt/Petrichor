@@ -6911,6 +6911,17 @@
         }
       }
     },
+    "Songs": {
+      "comment": "Column header for the artist table's song count column.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌曲数"
+          }
+        }
+      }
+    },
     "Songs played 5 or more times will appear here": {
       "comment": "Empty-state message for the most-played smart playlist.",
       "localizations": {
