@@ -216,10 +216,23 @@ extension LibraryManager {
             let refreshDecision = await determineFoldersToRefresh(hardRefresh: hardRefresh)
             let foldersToRefresh = refreshDecision.folders
             let precomputedHashes = refreshDecision.precomputedHashes
+            let unavailableFolders = refreshDecision.unavailableFolders
 
             // Only proceed if there are folders to refresh
             if foldersToRefresh.isEmpty {
                 Logger.info("No folders need refreshing")
+                // The user explicitly asked for a refresh, so never stay silent here —
+                // report what happened instead: nothing changed, or folders were skipped.
+                await MainActor.run {
+                    if unavailableFolders.isEmpty {
+                        NotificationManager.shared.addMessage(.info, String(appLocalized: "Library is up to date, no changes detected"))
+                    } else {
+                        let message = unavailableFolders.count == 1
+                            ? String(appLocalized: "Folder '\(unavailableFolders[0])' is unavailable, skipped refresh")
+                            : String(appLocalized: "\(unavailableFolders.count) folders are unavailable, skipped refresh")
+                        NotificationManager.shared.addMessage(.warning, message)
+                    }
+                }
                 return
             }
 
@@ -330,9 +343,10 @@ extension LibraryManager {
         }
     }
 
-    private func determineFoldersToRefresh(hardRefresh: Bool = false) async -> (folders: [Folder], precomputedHashes: [Int64: String]) {
+    private func determineFoldersToRefresh(hardRefresh: Bool = false) async -> (folders: [Folder], precomputedHashes: [Int64: String], unavailableFolders: [String]) {
         var foldersToRefresh: [Folder] = []
         var precomputedHashes: [Int64: String] = [:]
+        var unavailableFolders: [String] = []
 
         Logger.info("Starting folder refresh check (hardRefresh: \(hardRefresh))")
 
@@ -341,19 +355,21 @@ extension LibraryManager {
             for folder in folders {
                 guard FileManager.default.fileExists(atPath: folder.url.path) else {
                     Logger.info("Folder '\(folder.name)': Currently unavailable, skipping")
+                    unavailableFolders.append(folder.name)
                     continue
                 }
                 Logger.info("Folder \(folder.name): Hard refresh requested, marking for refresh")
                 foldersToRefresh.append(folder)
             }
             Logger.info("Hard refresh: All \(foldersToRefresh.count) accessible folders marked for refresh")
-            return (foldersToRefresh, precomputedHashes)
+            return (foldersToRefresh, precomputedHashes, unavailableFolders)
         }
 
         for folder in folders {
             // Skip folders that are currently inaccessible
             guard FileManager.default.fileExists(atPath: folder.url.path) else {
                 Logger.info("Folder '\(folder.name)': Currently unavailable, skipping refresh")
+                unavailableFolders.append(folder.name)
                 continue
             }
 
@@ -400,7 +416,7 @@ extension LibraryManager {
         }
 
         Logger.info("Refresh check complete: \(foldersToRefresh.count)/\(folders.count) folders need refresh")
-        return (foldersToRefresh, precomputedHashes)
+        return (foldersToRefresh, precomputedHashes, unavailableFolders)
     }
 
     internal func loadEntities() {
