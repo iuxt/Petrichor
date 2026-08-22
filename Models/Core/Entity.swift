@@ -63,7 +63,7 @@ extension Entity {
 }
 
 // MARK: - Artist Entity
-struct ArtistEntity: Entity {
+struct ArtistEntity: Entity, Equatable {
     let id: UUID
     let name: String
     let tracks: [Track]
