@@ -140,13 +140,13 @@ struct ArtistTableView: View {
 // MARK: - Preview
 
 #Preview("Artist Table") {
+    @Previewable @State var sortOrder = [KeyPathComparator(\ArtistEntity.name)]
+
     let artists = [
         ArtistEntity(name: "Beatles", trackCount: 25),
         ArtistEntity(name: "Coldplay", trackCount: 42),
         ArtistEntity(name: "周杰伦", trackCount: 68)
     ]
-
-    @Previewable @State var sortOrder = [KeyPathComparator(\ArtistEntity.name)]
 
     ArtistTableView(
         artists: artists,
