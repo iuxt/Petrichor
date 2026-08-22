@@ -24,10 +24,9 @@ struct HomeView: View {
     @State private var selectedTrackID: UUID?
     @State private var pinnedItemTracks: [Track] = []
     @State private var pinnedEntity: (any Entity)?
-    @State private var sortedArtistEntities: [ArtistEntity] = []
     @State private var sortedAlbumEntities: [AlbumEntity] = []
-    @State private var lastArtistCount: Int = 0
     @State private var lastAlbumCount: Int = 0
+    @State private var artistSortOrder = [KeyPathComparator(\ArtistEntity.name)]
     @State private var selectedArtistEntity: ArtistEntity?
     @State private var selectedAlbumEntity: AlbumEntity?
     @State private var isShowingEntityDetail = false
@@ -100,10 +99,8 @@ struct HomeView: View {
 
                         // Load appropriate data
                         switch type {
-                        case .discover, .tracks:
+                        case .discover, .tracks, .artists:
                             isShowingEntities = false
-                        case .artists:
-                            sortArtistEntities()
                         case .albums:
                             sortAlbumEntities()
                         }
@@ -259,29 +256,18 @@ struct HomeView: View {
             TrackListHeader(
                 title: String(appLocalized: "All Artists"),
                 trackCount: libraryManager.artistEntities.count
-            ) {
-                Button(action: {
-                    entitySortAscending.toggle()
-                    sortEntities()
-                }, label: {
-                    Image(Icons.sortIcon(for: entitySortAscending))
-                        .renderingMode(.template)
-                        .scaleEffect(0.8)
-                })
-                .buttonStyle(.borderless)
-                .hoverEffect(scale: 1.1)
-                .help(entitySortAscending ? String(appLocalized: "Sort descending") : String(appLocalized: "Sort ascending"))
-            }
-            
+            )
+
             Divider()
-            
+
             // Artists list
             if libraryManager.artistEntities.isEmpty {
                 NoMusicEmptyStateView(context: .mainWindow)
             } else {
-                EntityView(
-                    entities: sortedArtistEntities,
-                    onSelectEntity: { artist in
+                ArtistTableView(
+                    artists: libraryManager.artistEntities,
+                    sortOrder: $artistSortOrder,
+                    onSelectArtist: { artist in
                         selectedArtistEntity = artist
                         selectedAlbumEntity = nil
                         isShowingEntityDetail = true
@@ -291,14 +277,6 @@ struct HomeView: View {
                     }
                 )
             }
-        }
-        .onAppear {
-            if sortedArtistEntities.isEmpty {
-                sortArtistEntities()
-            }
-        }
-        .onReceive(libraryManager.$cachedArtistEntities) { _ in
-            sortArtistEntities()
         }
     }
     
@@ -452,13 +430,6 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func sortArtistEntities() {
-        sortedArtistEntities = entitySortAscending
-        ? libraryManager.artistEntities.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        : libraryManager.artistEntities.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
-        lastArtistCount = sortedArtistEntities.count
-    }
-    
     private func sortAlbumEntities() {
         let albums = libraryManager.albumEntities
 
@@ -508,12 +479,7 @@ struct HomeView: View {
 
         lastAlbumCount = sortedAlbumEntities.count
     }
-    
-    private func sortEntities() {
-        sortArtistEntities()
-        sortAlbumEntities()
-    }
-    
+
     private func loadTracksForPinnedItem(_ item: PinnedItem) {
         let tracks: [Track]
 
