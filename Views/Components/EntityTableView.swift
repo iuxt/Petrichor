@@ -34,9 +34,9 @@ enum ArtistSortField: String, CaseIterable {
 /// Multi-column artist list mirroring the tracks table presentation.
 struct ArtistTableView: View {
     let artists: [ArtistEntity]
+    @Binding var sortOrder: [KeyPathComparator<ArtistEntity>]
     let onSelectArtist: (ArtistEntity) -> Void
     let contextMenuItems: (ArtistEntity) -> [ContextMenuItem]
-    @Binding var sortOrder: [KeyPathComparator<ArtistEntity>]
 
     @State private var selection: Set<ArtistEntity.ID> = []
     @State private var sortedArtists: [ArtistEntity] = []
