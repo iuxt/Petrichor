@@ -174,9 +174,7 @@ struct NotificationTray: View {
     
     var body: some View {
         Button(action: {
-            if hasNotifications || manager.isActivityInProgress {
-                showingPopover.toggle()
-            }
+            showingPopover.toggle()
         }, label: {
             ZStack {
                 // Background circle only on hover
@@ -195,6 +193,12 @@ struct NotificationTray: View {
                     Image(systemName: mostSevereNotificationType.icon)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(mostSevereNotificationType.color)
+                        .frame(width: 24, height: 24)
+                } else {
+                    // Idle icon, dimmed when there is nothing to show
+                    Image(systemName: "bell")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.secondary.opacity(0.5))
                         .frame(width: 24, height: 24)
                 }
             }
@@ -241,7 +245,7 @@ struct NotificationTray: View {
         } else if hasNotifications {
             return String(appLocalized: "\(manager.messages.count) notifications")
         }
-        return ""
+        return String(appLocalized: "No notifications")
     }
 }
 
