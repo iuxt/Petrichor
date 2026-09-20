@@ -10,40 +10,20 @@ struct VerticalSlider: View {
         VStack(spacing: 5) {
             SliderRepresentable(value: $value, isDragging: $isDragging)
                 .frame(width: 22, height: 180)
-                .overlay(alignment: .top) {
-                    if isDragging {
-                        Text("\(Int(value)) dB")
-                            .font(.caption)
-                            .foregroundColor(.primary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(
-                                        Color(nsColor: .windowBackgroundColor)
-                                    )
-                                    .shadow(
-                                        color: .black.opacity(0.2),
-                                        radius: 2
-                                    )
-                            )
-                            .fixedSize()
-                            .offset(y: calculateTooltipYOffset())
-                            .transition(.opacity)
-                            .animation(.easeInOut(duration: 0.1), value: value)
-                            .allowsHitTesting(false)
-                    }
+                .overlay {
+                    SliderValueTooltip(
+                        value: value,
+                        format: .decibels,
+                        visible: isDragging,
+                        isVertical: true
+                    )
+                    .equatable()
                 }
 
             Text(label)
                 .font(.caption)
                 .fixedSize()
         }
-    }
-
-    private func calculateTooltipYOffset() -> CGFloat {
-        let normalizedValue = (value + 12) / 24
-        return -30 + (180 * CGFloat(1 - normalizedValue))
     }
 }
 

@@ -45,7 +45,6 @@ struct PlayerView: View {
     @State private var cachedArtworkImage: NSImage?
     @State private var hoveredOverProgress = false
     @State private var playButtonPressed = false
-    @State private var isMuted = false
     @State private var previousVolume: Float = 0.7
     @State private var isDraggingVolume = false
 
@@ -364,44 +363,27 @@ struct PlayerView: View {
         Slider(
             value: Binding(
                 get: { playbackManager.volume },
-                set: { newVolume in
-                    // Save previous volume before changing
-                    if playbackManager.volume > 0.01 {
-                        previousVolume = playbackManager.volume
-                    }
-                    
-                    playbackManager.setVolume(newVolume)
-                    
-                    // Update mute state
-                    if newVolume < 0.01 {
-                        isMuted = true
-                    } else if isMuted {
-                        isMuted = false
-                    }
-                }
+                set: { newVolume in playbackManager.setVolume(newVolume) }
             ),
             in: 0...1
         ) { editing in
-                isDraggingVolume = editing
+            // Capture the pre-drag volume once so unmuting after a drag to
+            // zero restores it rather than the last intermediate value.
+            if editing && playbackManager.volume > 0.01 {
+                previousVolume = playbackManager.volume
+            }
+            isDraggingVolume = editing
         }
         .frame(width: 100)
         .controlSize(.small)
         .tint(controlAccent)
-        .overlay(alignment: .leading) {
-            if isDraggingVolume {
-                Text(playbackManager.volume.formatted(.percent.precision(.fractionLength(0))))
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                            .shadow(radius: 2)
-                    )
-                    .offset(x: 100 * CGFloat(playbackManager.volume) - 15, y: -25)
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.1), value: playbackManager.volume)
-            }
+        .overlay {
+            SliderValueTooltip(
+                value: playbackManager.volume,
+                format: .percent,
+                visible: isDraggingVolume
+            )
+            .equatable()
         }
     }
 
@@ -517,8 +499,14 @@ struct PlayerView: View {
         }
     }
 
+    // Derived from the volume so external writers (menu shortcuts,
+    // automation, state restore) can't leave this stale.
+    private var isMuted: Bool {
+        playbackManager.volume < 0.01
+    }
+
     private var volumeIcon: String {
-        if isMuted || playbackManager.volume < 0.01 {
+        if isMuted {
             return "speaker.slash.fill"
         } else if playbackManager.volume < 0.33 {
             return "speaker.fill"
@@ -549,7 +537,6 @@ struct PlayerView: View {
         }
 
         if playbackManager.volume < 0.01 {
-            isMuted = true
             previousVolume = 0.7
         } else {
             previousVolume = playbackManager.volume
@@ -602,12 +589,10 @@ struct PlayerView: View {
         if isMuted {
             // Unmute - restore previous volume
             playbackManager.setVolume(previousVolume)
-            isMuted = false
         } else {
             // Mute - save current volume and set to 0
             previousVolume = playbackManager.volume
             playbackManager.setVolume(0)
-            isMuted = true
         }
     }
 }
