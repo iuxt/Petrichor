@@ -360,23 +360,22 @@ struct PlayerView: View {
     }
 
     private var volumeSlider: some View {
-        Slider(
+        NativeSlider(
             value: Binding(
                 get: { playbackManager.volume },
                 set: { newVolume in playbackManager.setVolume(newVolume) }
             ),
-            in: 0...1
-        ) { editing in
-            // Capture the pre-drag volume once so unmuting after a drag to
-            // zero restores it rather than the last intermediate value.
-            if editing && playbackManager.volume > 0.01 {
-                previousVolume = playbackManager.volume
+            tintColor: NSColor(controlAccent),
+            onEditingChanged: { editing in
+                // Capture the pre-drag volume once so unmuting after a drag to
+                // zero restores it rather than the last intermediate value.
+                if editing && playbackManager.volume > 0.01 {
+                    previousVolume = playbackManager.volume
+                }
+                isDraggingVolume = editing
             }
-            isDraggingVolume = editing
-        }
+        )
         .frame(width: 100)
-        .controlSize(.small)
-        .tint(controlAccent)
         .overlay {
             SliderValueTooltip(
                 value: playbackManager.volume,
