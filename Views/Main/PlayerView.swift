@@ -360,20 +360,19 @@ struct PlayerView: View {
     }
 
     private var volumeSlider: some View {
-        NativeSlider(
+        GlassVolumeSlider(
             value: Binding(
                 get: { playbackManager.volume },
                 set: { newVolume in playbackManager.setVolume(newVolume) }
             ),
-            tintColor: NSColor(controlAccent),
-            onEditingChanged: { editing in
-                // Capture the pre-drag volume once so unmuting after a drag to
-                // zero restores it rather than the last intermediate value.
-                if editing && playbackManager.volume > 0.01 {
+            tint: controlAccent,
+            onInteractionStarted: {
+                // Preserve the volume before a click or drag reaches zero.
+                if playbackManager.volume > 0.01 {
                     previousVolume = playbackManager.volume
                 }
-                isDraggingVolume = editing
-            }
+            },
+            onEditingChanged: { isDraggingVolume = $0 }
         )
         .frame(width: 100)
         .overlay {
