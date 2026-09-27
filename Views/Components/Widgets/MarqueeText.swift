@@ -9,6 +9,8 @@ struct MarqueeText: View {
     
     @Environment(\.scenePhase)
     private var scenePhase
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
     
     init(text: String, font: Font = .system(size: 13), color: Color = .primary, containerWidth: CGFloat = .infinity) {
         self.text = text
@@ -24,7 +26,7 @@ struct MarqueeText: View {
                 font: font,
                 color: color,
                 containerWidth: geometry.size.width,
-                isActive: scenePhase == .active
+                isActive: scenePhase == .active && !reduceMotion
             )
         }
         .frame(height: font == .system(size: 12) ? 16 : font == .system(size: 11) ? 14 : 18)
@@ -42,18 +44,12 @@ private struct MarqueeTextRepresentable: NSViewRepresentable {
     
     func makeNSView(context: Context) -> MarqueeNSView {
         let view = MarqueeNSView()
-        view.configure(text: text, font: font, color: color, containerWidth: containerWidth)
+        view.configure(text: text, font: font, color: color, containerWidth: containerWidth, isActive: isActive)
         return view
     }
     
     func updateNSView(_ nsView: MarqueeNSView, context: Context) {
-        nsView.configure(text: text, font: font, color: color, containerWidth: containerWidth)
-        
-        if isActive {
-            nsView.startAnimationIfNeeded()
-        } else {
-            nsView.stopAnimation()
-        }
+        nsView.configure(text: text, font: font, color: color, containerWidth: containerWidth, isActive: isActive)
     }
 }
 
@@ -95,18 +91,27 @@ private class MarqueeNSView: NSView {
         }
     }
     
-    func configure(text: String, font: Font, color: Color, containerWidth: CGFloat) {
+    func configure(text: String, font: Font, color: Color, containerWidth: CGFloat, isActive: Bool) {
         guard let textLayer = textLayer, let containerLayer = containerLayer else { return }
         
-        let textChanged = currentText != text
+        let nsFont = NSFont.systemFont(ofSize: fontSizeFromFont(font))
+        let attributes: [NSAttributedString.Key: Any] = [.font: nsFont]
+        let textSize = (text as NSString).size(withAttributes: attributes)
+
+        let geometryChanged = currentText != text
+            || self.containerWidth != containerWidth
+            || textWidth != textSize.width
+            || textLayer.fontSize != nsFont.pointSize
+
+        // Geometry and resets must be immediate; only the explicit scroll
+        // animation should move the text, including when Reduce Motion changes.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
         currentText = text
         self.textColor = color
         self.containerWidth = containerWidth
-        
-        let nsFont = NSFont.systemFont(ofSize: fontSizeFromFont(font))
-        
-        let attributes: [NSAttributedString.Key: Any] = [.font: nsFont]
-        let textSize = (text as NSString).size(withAttributes: attributes)
         textWidth = textSize.width
         
         containerLayer.frame = CGRect(x: 0, y: 0, width: containerWidth, height: textSize.height)
@@ -117,20 +122,23 @@ private class MarqueeNSView: NSView {
         textLayer.foregroundColor = textForegroundColor(for: color)
         textLayer.frame = CGRect(x: 0, y: 0, width: textWidth, height: textSize.height)
         
-        if textChanged {
+        if geometryChanged || !isActive || textWidth <= containerWidth {
             stopAnimation()
+        }
+        if isActive {
             startAnimationIfNeeded()
         }
     }
     
-    func startAnimationIfNeeded() {
-        guard textWidth > containerWidth, !isAnimating else { return }
+    private func startAnimationIfNeeded() {
+        guard containerWidth > 0, containerWidth.isFinite,
+              textWidth > containerWidth, !isAnimating else { return }
         
         isAnimating = true
         addScrollAnimation()
     }
     
-    func stopAnimation() {
+    private func stopAnimation() {
         textLayer?.removeAllAnimations()
         textLayer?.position = CGPoint(x: textWidth / 2, y: textLayer?.position.y ?? 0)
         isAnimating = false
