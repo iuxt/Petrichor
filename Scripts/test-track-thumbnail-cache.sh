@@ -61,6 +61,17 @@ actor Gate {
         for waiter in pending { waiter.resume() }
     }
 }
+actor OrderedGate {
+    var entered: [ArtworkRequest] = []
+    private var waiters: [ArtworkRequest: CheckedContinuation<NSImage?, Never>] = [:]
+    func load(_ request: ArtworkRequest) async -> NSImage? {
+        entered.append(request)
+        return await withCheckedContinuation { waiters[request] = $0 }
+    }
+    func release(_ request: ArtworkRequest) {
+        waiters.removeValue(forKey: request)?.resume(returning: NSImage(size: NSSize(width: 80, height: 80)))
+    }
+}
 @main struct Regression {
     static func request(_ index: Int) -> ArtworkRequest {
         .thumbnail(URL(fileURLWithPath: "/music/\(index).mp3"), albumTitle: "Album")
@@ -77,8 +88,74 @@ actor Gate {
         await boundedQueue()
         await cachedMissesAndEviction()
         await warmCacheBypassesDelay()
+        await visibleLoadsPrecedePrefetch()
+        await synchronousLRU()
         try await libraryStress()
         print("Track thumbnail regressions passed")
+    }
+    static func visibleLoadsPrecedePrefetch() async {
+        let gate = OrderedGate()
+        let cache = TrackThumbnailCache(pendingLimit: 3, workerLimit: 1, loader: { await gate.load($0) })
+        let first = Task { await cache.image(for: request(0), prefetch: true) }
+        await wait { await gate.entered.count == 1 }
+        let offscreen = Task { await cache.image(for: request(1), prefetch: true) }
+        await wait { await cache.statistics.pending == 1 }
+        let promoted = Task { await cache.image(for: request(2), prefetch: true) }
+        await wait { await cache.statistics.pending == 2 }
+        let visible = Task { await cache.image(for: request(3)) }
+        await wait { await cache.statistics.pending == 3 }
+        let overflow = await cache.image(for: request(4), prefetch: true)
+        let full = await cache.statistics
+        precondition(overflow == nil && full.pending == 3 && full.waiters == 4,
+                     "prefetch overflow must not displace queued visible work")
+        await gate.release(request(0))
+        _ = await first.value
+        await wait { await gate.entered.count == 2 }
+        let order = await gate.entered
+        precondition(order == [request(0), request(3)], "visible artwork must precede queued prefetch")
+        let joined = Task { await cache.image(for: request(2)) }
+        await wait { await cache.statistics.waiters == 4 }
+        await gate.release(request(3))
+        _ = await visible.value
+        await wait { await gate.entered.count == 3 }
+        let promotedOrder = await gate.entered
+        precondition(promotedOrder.last == request(2), "a row entering the viewport must promote its existing prefetch")
+        offscreen.cancel()
+        _ = await offscreen.value
+        await gate.release(request(2))
+        let prefetchedImage = await promoted.value
+        let joinedImage = await joined.value
+        precondition(prefetchedImage === joinedImage, "prefetch and visible rows must share one decoded image")
+        let state = await cache.statistics
+        precondition(state.active == 0 && state.pending == 0 && state.waiters == 0)
+    }
+    static func synchronousLRU() async {
+        let cache = TrackThumbnailCache(cacheLimit: 7, loader: { request in
+            request == Self.request(99) ? nil : NSImage(size: NSSize(width: 80, height: 80))
+        })
+        var order: [Int] = []
+        // Compare the linked LRU against a simple reference, including synchronous touches.
+        for step in 0..<300 {
+            let index = (step * 17 + step / 9) % 13
+            if let cached = cache.cachedImage(for: request(index)) {
+                precondition(cached.image != nil && order.contains(index))
+            } else {
+                precondition(!order.contains(index))
+                _ = await cache.image(for: request(index))
+            }
+            order.removeAll { $0 == index }
+            order.append(index)
+            if order.count > 7 { order.removeFirst() }
+            let state = await cache.statistics
+            precondition(state.cached == order.count)
+        }
+        _ = await cache.image(for: request(99))
+        let miss = cache.cachedImage(for: request(99))
+        precondition(miss != nil && miss?.image == nil, "synchronous lookup must distinguish a cached miss")
+        await cache.removeAll()
+        precondition(cache.cachedImage(for: request(99)) == nil, "clear must invalidate synchronous reads too")
+        let original = await cache.image(for: request(0))
+        precondition(cache.cachedImage(for: request(0))?.image === original, "synchronous hits must return the decoded object")
     }
     static func deduplication() async {
         let gate = Gate()

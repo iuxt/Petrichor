@@ -137,6 +137,11 @@ struct ScrollTest: View {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard let table = findTable(window.contentView!) else { fatalError("No native table") }
             precondition(table.numberOfRows == 4000)
+            let initialRange = table.rows(in: table.visibleRect)
+            let nextRow = NSMaxRange(initialRange) + 5
+            let nextRequest = ArtworkRequest.thumbnail(tracks[nextRow].url, albumTitle: tracks[nextRow].album)
+            precondition(TrackThumbnailCache.shared.cachedImage(for: nextRequest)?.image != nil,
+                         "nearby offscreen rows should already be prefetched")
             measure = true
             for row in stride(from: 0, through: 3999, by: 20) {
                 table.scrollRowToVisible(row)
@@ -149,6 +154,29 @@ struct ScrollTest: View {
             table.enumerateAvailableRowViews { _, _ in rowViews += 1 }
             print("Native table row views at bottom: \(rowViews)")
             precondition(rowViews < 40, "offscreen row views must be reused")
+            // Prepare a repeat pass, then inspect rendered pixels synchronously
+            // after cell creation. Awaiting a task here would hide placeholder flashes.
+            for track in tracks {
+                _ = await TrackThumbnailCache.shared.image(for: .thumbnail(track.url, albumTitle: track.album))
+            }
+            let titleColumn = table.column(withIdentifier: NSUserInterfaceItemIdentifier("title"))
+            let readsBeforeRepeat = MetadataEngine.rawReads.value
+            for row in stride(from: 0, through: 3999, by: 20) {
+                table.scrollRowToVisible(row)
+                table.layoutSubtreeIfNeeded()
+                let cell = table.view(atColumn: titleColumn, row: row, makeIfNecessary: true) as! NativeTrackTitleCell
+                cell.layoutSubtreeIfNeeded()
+                let artwork = cell.artwork
+                let bitmap = artwork.bitmapImageRepForCachingDisplay(in: artwork.bounds)!
+                artwork.cacheDisplay(in: artwork.bounds, to: bitmap)
+                let color = bitmap.colorAt(x: bitmap.pixelsWide / 4, y: bitmap.pixelsHigh / 4)!.usingColorSpace(.deviceRGB)!
+                precondition(color.blueComponent - color.redComponent > 0.3,
+                             "warm rows must draw their cover on the first frame, without an async placeholder")
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+            precondition(MetadataEngine.rawReads.value == readsBeforeRepeat, "warm fast scrolling must not reread metadata")
+            print("Fast repeat scrolling: 200 first-frame artwork checks passed")
+            table.scrollRowToVisible(3999)
             let coordinator = table.delegate as! NativeTrackTable.Coordinator
             // Keep native selection, context selection and SwiftUI bindings in sync.
             table.selectRowIndexes(IndexSet([3998, 3999]), byExtendingSelection: false)

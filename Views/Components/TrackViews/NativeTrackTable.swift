@@ -64,6 +64,7 @@ struct NativeTrackTable: NSViewRepresentable {
         table.autosaveTableColumns = true
         table.buildMenu = { [weak coordinator = context.coordinator] row in coordinator?.menu(for: row) }
         table.activateSelection = { [weak coordinator = context.coordinator] in coordinator?.activateSelection() }
+        table.viewportChanged = { [weak coordinator = context.coordinator] in coordinator?.schedulePrefetch() }
         let headerMenu = NSMenu()
         for column in table.tableColumns {
             let item = NSMenuItem(title: column.title, action: #selector(Coordinator.toggleColumn(_:)), keyEquivalent: "")
@@ -78,6 +79,9 @@ struct NativeTrackTable: NSViewRepresentable {
         scroll.drawsBackground = false
         scroll.documentView = table
         context.coordinator.table = table
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.viewportChanged(_:)),
+            name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         context.coordinator.update(self)
         return scroll
     }
@@ -85,6 +89,9 @@ struct NativeTrackTable: NSViewRepresentable {
     func updateNSView(_ view: NSScrollView, context: Context) { context.coordinator.update(self) }
 
     static func dismantleNSView(_ view: NSScrollView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator)
+        coordinator.cancelPrefetch()
+        coordinator.table?.viewportChanged = nil
         coordinator.table?.enumerateAvailableRowViews { row, _ in
             for cell in row.subviews.compactMap({ $0 as? NativeTrackTitleCell }) { cell.artwork.stopLoading() }
         }
@@ -98,15 +105,24 @@ struct NativeTrackTable: NSViewRepresentable {
         private var initialized = false
         private var applying = false
         private var actions: [() -> Void] = []
+        private var prefetchTasks: [ArtworkRequest: Task<Void, Never>] = [:]
+        private var prefetchUpdate: Task<Void, Never>?
+        private var previousVisibleRow = 0
         private static let dates: DateFormatter = {
             let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .none; return value
         }()
 
         init(_ parent: NativeTrackTable) { self.parent = parent }
 
+        deinit {
+            prefetchUpdate?.cancel()
+            for task in prefetchTasks.values { task.cancel() }
+        }
+
         func update(_ next: NativeTrackTable) {
             guard let table else { return }
             let changedTracks = !initialized || next.tracks != parent.tracks
+            if changedTracks || next.artworkRevision != parent.artworkRevision { cancelPrefetch() }
             let changedAppearance = !initialized || next.currentTrack != parent.currentTrack || next.isPlaying != parent.isPlaying
                 || next.rowSize != parent.rowSize || next.artworkRevision != parent.artworkRevision
             parent = next
@@ -131,6 +147,58 @@ struct NativeTrackTable: NSViewRepresentable {
             let changedSelection = indices != table.selectedRowIndexes
             if changedSelection { table.selectRowIndexes(indices, byExtendingSelection: false) }
             if changedTracks || changedAppearance || changedSelection { refreshVisibleCells() }
+            schedulePrefetch()
+        }
+
+        @objc func viewportChanged(_ notification: Notification) { schedulePrefetch() }
+
+        func schedulePrefetch() {
+            guard table?.window != nil, parent.rowSize == .expanded,
+                  table?.tableColumn(withIdentifier: .init("title"))?.isHidden == false else {
+                cancelPrefetch()
+                return
+            }
+            guard prefetchUpdate == nil else { return }
+            // Coalesce row creation and scroll notifications into one small update.
+            prefetchUpdate = Task { [weak self] in
+                await Task.yield()
+                guard !Task.isCancelled, let self else { return }
+                self.prefetchUpdate = nil
+                self.prefetchNearbyRows()
+            }
+        }
+
+        func cancelPrefetch() {
+            prefetchUpdate?.cancel()
+            prefetchUpdate = nil
+            for task in prefetchTasks.values { task.cancel() }
+            prefetchTasks.removeAll()
+        }
+
+        private func prefetchNearbyRows() {
+            guard let table, table.window != nil else { cancelPrefetch(); return }
+            let visible = table.rows(in: table.visibleRect)
+            guard visible.location != NSNotFound, visible.length > 0,
+                  parent.tracks.indices.contains(visible.location) else { cancelPrefetch(); return }
+            let end = min(NSMaxRange(visible), parent.tracks.count)
+            let margin = min(32, max(12, visible.length * 2))
+            let after = Array(end..<min(parent.tracks.count, end + margin))
+            let before = Array(max(0, visible.location - margin)..<visible.location).reversed()
+            let rows = visible.location >= previousVisibleRow ? after + before : before + after
+            previousVisibleRow = visible.location
+            let requests = rows.map { ArtworkRequest.thumbnail(parent.tracks[$0].url, albumTitle: parent.tracks[$0].album) }
+            let wanted = Set(requests)
+            // Preserve overlapping work on small scrolls; cancel only rows that
+            // left the bounded window (at most 32 rows on either side).
+            for request in Array(prefetchTasks.keys) where !wanted.contains(request) {
+                prefetchTasks.removeValue(forKey: request)?.cancel()
+            }
+            for request in requests where prefetchTasks[request] == nil {
+                guard TrackThumbnailCache.shared.cachedImage(for: request) == nil else { continue }
+                prefetchTasks[request] = Task {
+                    _ = await TrackThumbnailCache.shared.image(for: request, prefetch: true)
+                }
+            }
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int { parent.tracks.count }
@@ -210,6 +278,10 @@ struct NativeTrackTable: NSViewRepresentable {
             for cell in rowView.subviews.compactMap({ $0 as? NativeTrackTitleCell }) { cell.artwork.stopLoading() }
         }
 
+        func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+            schedulePrefetch()
+        }
+
         func tableViewSelectionDidChange(_ notification: Notification) {
             guard !applying, let table else { return }
             parent.selection = Set(table.selectedRowIndexes.compactMap { parent.tracks.indices.contains($0) ? parent.tracks[$0].id : nil })
@@ -281,6 +353,11 @@ struct NativeTrackTable: NSViewRepresentable {
 @MainActor final class MenuTrackTable: NSTableView {
     var buildMenu: ((Int) -> NSMenu?)?
     var activateSelection: (() -> Void)?
+    var viewportChanged: (() -> Void)?
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        viewportChanged?()
+    }
     override func menu(for event: NSEvent) -> NSMenu? {
         buildMenu?(row(at: convert(event.locationInWindow, from: nil)))
     }

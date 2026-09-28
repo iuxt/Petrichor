@@ -36,10 +36,16 @@ final class ThumbnailImageView: NSView {
     }
 
     private func startLoading() {
-        guard window != nil, loadTask == nil, image == nil, let request else { return }
+        guard !isHidden, loadTask == nil, image == nil, let request else { return }
+        if let cached = TrackThumbnailCache.shared.cachedImage(for: request) {
+            image = cached.image
+            needsDisplay = true
+            return
+        }
+        guard window != nil else { return }
         let expectedRevision = revision
         loadTask = Task { [weak self] in
-            let image = await TrackThumbnailCache.shared.image(for: request, delayIfMissing: 80_000_000)
+            let image = await TrackThumbnailCache.shared.image(for: request)
             guard !Task.isCancelled, let self,
                   self.request == request, self.revision == expectedRevision else { return }
             self.image = image
