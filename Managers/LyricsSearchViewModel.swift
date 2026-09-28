@@ -9,11 +9,11 @@ struct LyricsSearchRequest: Identifiable {
 @MainActor
 final class LyricsSearchViewModel: ObservableObject {
     let track: Track
-    @Published var title: String { didSet { resetSearch() } }
-    @Published var artist: String { didSet { resetSearch() } }
-    @Published var provider: OnlineTagProvider { didSet { resetSearch() } }
-    @Published var includeTranslation: Bool { didSet { clearPreview() } }
-    @Published var selection: String? { didSet { clearPreview() } }
+    @Published var title: String { didSet { if title != oldValue { resetSearch() } } }
+    @Published var artist: String { didSet { if artist != oldValue { resetSearch() } } }
+    @Published var provider: OnlineTagProvider { didSet { if provider != oldValue { resetSearch() } } }
+    @Published var includeTranslation: Bool { didSet { if includeTranslation != oldValue { clearPreview() } } }
+    @Published var selection: String? { didSet { if selection != oldValue { clearPreview() } } }
     @Published private(set) var candidates: [OnlineTagCandidate] = []
     @Published private(set) var preview: DownloadedLyrics?
     @Published private(set) var isSearching = false
@@ -131,6 +131,7 @@ final class LyricsSearchViewModel: ObservableObject {
         hasSearched = false
         candidates = []
         selection = nil
+        clearPreview()
     }
 
     private func clearPreview() {

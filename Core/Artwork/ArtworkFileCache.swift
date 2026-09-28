@@ -143,7 +143,7 @@ final class ArtworkFileCache {
         ) else { return [] }
 
         return urls.compactMap { url in
-            guard url.pathExtension.lowercased() == "heic",
+            guard ["heic", "jpg"].contains(url.pathExtension.lowercased()),
                   let values = try? url.resourceValues(
                     forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
                   ),

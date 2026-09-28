@@ -27,6 +27,7 @@ struct TrackTableView: View {
     
     @State private var selection: Set<Track.ID> = []
     @State private var sortedTracks: [Track] = []
+    @State private var artworkRevision = 0
     
     @State private var isCustomSort: Bool = false
     @State private var hasInitializedCustomization = false
@@ -42,10 +43,6 @@ struct TrackTableView: View {
     @AppStorage("trackTableColumnCustomizationData")
     private var columnCustomizationData = Data()
     
-    private static let trackFont = Font.system(size: 13, weight: .regular)
-    private static let currentTrackFont = Font.system(size: 13, weight: .medium)
-    private static let currentTrackTitleFont = Font.system(size: 13, weight: .bold)
-
     private func isCurrentTrack(_ track: Track) -> Bool {
         guard let currentTrack = playbackManager.currentTrack else { return false }
         if let currentId = currentTrack.trackId, let trackId = track.trackId {
@@ -54,25 +51,8 @@ struct TrackTableView: View {
         return currentTrack.url.path == track.url.path
     }
 
-    private func isPlaying(_ track: Track) -> Bool {
-        isCurrentTrack(track) && playbackManager.isPlaying
-    }
-    
     var body: some View {
         tableView
-            .contextMenu(forSelectionType: Track.ID.self) { selectedIDs in
-                let selectedTracks = sortedTracks.filter { selectedIDs.contains($0.id) }
-                if !selectedTracks.isEmpty {
-                    ForEach(contextMenuItems(selectedTracks, playbackManager), id: \.id) { item in
-                        contextMenuItem(item)
-                    }
-                }
-            } primaryAction: { selectedIDs in
-                if let trackID = selectedIDs.first,
-                   let track = tracks.first(where: { $0.id == trackID }) {
-                    handleDoubleTap(on: track)
-                }
-            }
             .onChange(of: columnCustomization) { _, newValue in
                 if hasInitializedCustomization {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -133,6 +113,13 @@ struct TrackTableView: View {
                 initializeSortedTracks()
                 hasInitializedCustomization = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
+                Task {
+                    ArtworkResolver.shared.invalidateMemoryCache()
+                    await TrackThumbnailCache.shared.removeAll()
+                    artworkRevision += 1
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .playEntityTracks)) { notification in
                 handlePlayEntityNotification(notification)
             }
@@ -156,152 +143,16 @@ struct TrackTableView: View {
     }
     
     private var tableView: some View {
-        Table(sortedTracks, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
-            Group {
-                // Track Number
-                TableColumn("#", value: \.sortableTrackNumber) { track in
-                    Text(track.trackNumber.map(String.init) ?? "")
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .foregroundColor(.secondary)
-                        .monospacedDigit()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 20)
-                .customizationID("trackNumber")
-                .defaultVisibility(.hidden)
-                
-                // Disc Number
-                TableColumn("Disc", value: \.sortableDiscNumber) { track in
-                    Text(track.discNumber.map(String.init) ?? "")
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .foregroundColor(.secondary)
-                        .monospacedDigit()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 20)
-                .customizationID("discNumber")
-                .defaultVisibility(.hidden)
-            }
-            
-            Group {
-                // Title
-                TableColumn("Title", value: \.title) { track in
-                    TrackTitleCell(
-                        tableRowSize: tableRowSize,
-                        track: track,
-                        isCurrentTrack: isCurrentTrack(track),
-                        isPlaying: isPlaying(track),
-                        isSelected: selection.contains(track.id),
-                        handlePlayTrack: handlePlayTrack
-                    ) {
-                        _ = playbackManager.isPlaying
-                            ? playbackManager.requestPause()
-                            : playbackManager.requestPlay()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 200)
-                .customizationID("title")
-                .defaultVisibility(.visible)
-                
-                // Artist
-                TableColumn("Artist", value: \.artist) { track in
-                    Text(track.displayArtist)
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 100)
-                .customizationID("artist")
-                .defaultVisibility(.visible)
-                
-                // Album
-                TableColumn("Album", value: \.album) { track in
-                    Text(track.displayAlbum)
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 100)
-                .customizationID("album")
-                .defaultVisibility(.visible)
-                
-                // Genre
-                TableColumn("Genre", value: \.genre) { track in
-                    Text(track.displayGenre)
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 80)
-                .customizationID("genre")
-                .defaultVisibility(.hidden)
-                
-                // Year
-                TableColumn("Year", value: \.year) { track in
-                    Text(track.displayYear)
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 40)
-                .customizationID("year")
-                .defaultVisibility(.visible)
-                
-                // Composer
-                TableColumn("Composer", value: \.composer) { track in
-                    Text(track.displayComposer)
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 100)
-                .customizationID("composer")
-                .defaultVisibility(.hidden)
-            }
-            
-            Group {
-                // Filename
-                TableColumn("Filename", value: \.filename) { track in
-                    Text(track.filename)
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 200)
-                .customizationID("filename")
-                .defaultVisibility(.hidden)
-                
-                // Date Added
-                TableColumn("Date Added", value: \.sortableDateAdded) { track in
-                    Text(track.dateAdded.map(formatDate) ?? "")
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 100)
-                .customizationID("dateAdded")
-                .defaultVisibility(.hidden)
-                
-                // Duration
-                TableColumn("Duration", value: \.duration) { track in
-                    Text(HelperUtils.formattedDuration(track.duration))
-                        .font(isCurrentTrack(track) ? Self.currentTrackFont : Self.trackFont)
-                        .foregroundColor(.secondary)
-                        .monospacedDigit()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 40)
-                .customizationID("duration")
-                .defaultVisibility(.visible)
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .environment(\.defaultMinListRowHeight, tableRowSize.rowHeight)
+        NativeTrackTable(
+            tracks: sortedTracks, selection: $selection, sortOrder: $sortOrder,
+            customization: $columnCustomization, rowSize: tableRowSize,
+            currentTrack: playbackManager.currentTrack, isPlaying: playbackManager.isPlaying,
+            artworkRevision: artworkRevision,
+            onPlay: handleDoubleTap, onDoubleClick: handleDoubleTap,
+            menuItems: { contextMenuItems($0, playbackManager) }
+        )
     }
-    
+
     // MARK: - Helper Methods
     
     private func initializeSortedTracks() {
@@ -357,22 +208,6 @@ struct TrackTableView: View {
         } else {
             playlistManager.currentQueueSource = queueSource
         }
-    }
-    
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
-
-    private func formatDate(_ date: Date) -> String {
-        Self.dateFormatter.string(from: date)
-    }
-    
-    @ViewBuilder
-    private func contextMenuItem(_ item: ContextMenuItem) -> some View {
-        ContextMenuItemView(item: item)
     }
     
     // MARK: - Sorting Helpers
@@ -480,214 +315,6 @@ struct TrackTableView: View {
         }
     }
     
-}
-
-// MARK: - Track Artwork Cache
-
-private final class TrackArtworkCache: @unchecked Sendable {
-    static let shared = TrackArtworkCache()
-    private let cache = NSCache<NSString, NSImage>()
-    private let loadQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 2
-        queue.qualityOfService = .utility
-        return queue
-    }()
-
-    private static let pixelSize = Int(ViewDefaults.listArtworkSize * 2)
-    private static let bytesPerImage = pixelSize * pixelSize * 4
-
-    init() {
-        cache.countLimit = 500
-        cache.totalCostLimit = 32 * 1024 * 1024
-    }
-
-    private func cacheKey(for track: Track) -> NSString {
-        "\(track.trackId?.description ?? track.url.path)-trackCell" as NSString
-    }
-
-    func getCachedImage(for track: Track) -> NSImage? {
-        cache.object(forKey: cacheKey(for: track))
-    }
-
-    func loadImage(for track: Track) async -> NSImage? {
-        guard !Task.isCancelled else { return nil }
-        let key = cacheKey(for: track)
-
-        if let cached = cache.object(forKey: key) {
-            return cached
-        }
-
-        let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url, albumTitle: track.album)
-        guard let data = await ArtworkResolver.shared.artworkData(for: request),
-              !Task.isCancelled else {
-            return nil
-        }
-
-        return await loadQueue.renderArtwork { [self, data] in
-            // Re-check cache — another operation may have loaded it while queued
-            if let cached = cache.object(forKey: key) {
-                return cached
-            }
-
-            guard let cgImage = ImageUtils.downsampledImage(
-                from: data, maxDimension: CGFloat(Self.pixelSize)
-            ) else {
-                return nil
-            }
-
-            let size = Int(ViewDefaults.listArtworkSize * 2)
-            guard let context = CGContext(
-                data: nil,
-                width: size,
-                height: size,
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-            ) else { return nil }
-
-            context.interpolationQuality = .high
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
-
-            guard let resizedCG = context.makeImage() else { return nil }
-
-            let result = NSImage(cgImage: resizedCG, size: NSSize(width: size, height: size))
-            cache.setObject(result, forKey: key, cost: Self.bytesPerImage)
-            return result
-        }
-    }
-}
-
-// MARK: - Title Cell with Artwork & Playback Controls
-
-private struct TrackTitleCell: View {
-    let tableRowSize: TableRowSize
-    let track: Track
-    let isCurrentTrack: Bool
-    let isPlaying: Bool
-    let isSelected: Bool
-    let handlePlayTrack: (Track) -> Void
-    let handleTogglePlayPause: () -> Void
-
-    @State private var artworkImage: NSImage?
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if tableRowSize == .expanded {
-                ZStack {
-                    if let image = artworkImage {
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: ViewDefaults.listArtworkSize, height: ViewDefaults.listArtworkSize)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                    } else {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: ViewDefaults.listArtworkSize, height: ViewDefaults.listArtworkSize)
-                            .overlay(
-                                Image(systemName: Icons.musicNote)
-                                    .font(.system(size: 18))
-                                    .foregroundColor(.secondary)
-                            )
-                    }
-
-                    if isCurrentTrack || isSelected {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.black.opacity(0.5))
-                            .frame(width: ViewDefaults.listArtworkSize, height: ViewDefaults.listArtworkSize)
-
-                        Button(action: handleButtonAction) {
-                            Image(systemName: buttonIcon)
-                                .font(.system(size: 20))
-                                .foregroundColor(.white)
-                                .frame(width: 22, height: 22)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .frame(width: ViewDefaults.listArtworkSize, height: ViewDefaults.listArtworkSize)
-                .animation(.none, value: isSelected)
-            } else if tableRowSize == .compact {
-                ZStack {
-                    Image(systemName: Icons.playFill)
-                        .font(.system(size: 14))
-                        .foregroundColor(.clear)
-                        .frame(width: 20, height: 20)
-
-                    if isSelected || isCurrentTrack {
-                        Button(action: handleButtonAction) {
-                            Image(systemName: buttonIcon)
-                                .font(.system(size: 14))
-                                .foregroundColor(.primary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .animation(.none, value: isSelected)
-            }
-
-            // Title text
-            Text(track.title)
-                .font(.system(size: 13, weight: isCurrentTrack ? .bold : .regular))
-                .lineLimit(1)
-                .animation(.none, value: isSelected)
-
-            Spacer()
-        }
-        .task(id: artworkTaskID) {
-            await loadArtwork()
-        }
-        .onDisappear {
-            artworkImage = nil
-        }
-    }
-
-    // MARK: - Private Helpers
-
-    private var artworkTaskID: String {
-        "\(track.id)-\(track.url.path)-\(tableRowSize.rawValue)"
-    }
-
-    @MainActor
-    private func loadArtwork() async {
-        artworkImage = nil
-        guard tableRowSize == .expanded, !Task.isCancelled else { return }
-        // Serve from cache synchronously to avoid flicker on re-render
-        if let cached = TrackArtworkCache.shared.getCachedImage(for: track) {
-            artworkImage = cached
-            return
-        }
-
-        // Rows crossed during a fast scroll should not start file IO or decoding.
-        do {
-            try await Task.sleep(nanoseconds: 100_000_000)
-        } catch {
-            return
-        }
-        let image = await TrackArtworkCache.shared.loadImage(for: track)
-
-        if !Task.isCancelled {
-            artworkImage = image
-        }
-    }
-
-    private func handleButtonAction() {
-        if isCurrentTrack {
-            handleTogglePlayPause()
-        } else {
-            handlePlayTrack(track)
-        }
-    }
-
-    private var buttonIcon: String {
-        if isCurrentTrack && isPlaying {
-            return Icons.pauseFill
-        } else {
-            return Icons.playFill
-        }
-    }
 }
 
 // MARK: - Track Extension for Sorting

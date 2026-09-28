@@ -40,6 +40,11 @@ struct SFBMetadataReader: MetadataReader {
     }
 
     func extractEmbeddedArtwork(from url: URL) async -> Data? {
+        guard let raw = await extractRawEmbeddedArtwork(from: url) else { return nil }
+        return await MetadataMapping.compressedArtwork(from: raw, source: url.lastPathComponent)
+    }
+
+    func extractRawEmbeddedArtwork(from url: URL) async -> Data? {
         guard
             let audioFile = try? AudioFile(
                 readingPropertiesAndMetadataFrom: url
@@ -49,10 +54,8 @@ struct SFBMetadataReader: MetadataReader {
             return nil
         }
 
-        return await MetadataMapping.compressedArtwork(
-            from: firstPicture.imageData,
-            source: url.lastPathComponent
-        )
+        guard firstPicture.imageData.count <= AlbumArtFormat.maxArtworkSize, !Task.isCancelled else { return nil }
+        return firstPicture.imageData
     }
 
     // MARK: - Private Extraction Methods

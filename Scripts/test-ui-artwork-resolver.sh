@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 required_patterns=(
-  "Views/Components/TrackViews/TrackTableView.swift:ArtworkResolver\\.shared\\.artworkData"
+  "Core/Artwork/TrackThumbnailCache.swift:ArtworkResolver\\.shared\\.artworkData"
   "Views/Components/EntityGridView.swift:AsyncArtworkImage\\(request: albumEntity\\.artworkRequest"
   "Views/Home/EntityDetailView.swift:AsyncArtworkImage\\("
   "Views/Main/TrackDetailView.swift:AsyncArtworkImage\\("

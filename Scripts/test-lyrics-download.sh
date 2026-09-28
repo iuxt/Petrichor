@@ -159,6 +159,10 @@ actor FakeWriter: DownloadedLyricsWriting {
         manual.selection = candidate.id
         manual.fetchPreview()
         await wait { manual.preview != nil }
+        manual.title = manual.title
+        manual.artist = manual.artist
+        manual.selection = manual.selection
+        expect(manual.preview != nil && !manual.candidates.isEmpty, "Unchanged control commits must preserve the preview")
         expect(await fakeWriter.writes == 0, "Preview must not write files")
         await fakeWriter.setExists()
         manual.save()

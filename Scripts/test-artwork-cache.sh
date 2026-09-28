@@ -103,6 +103,9 @@ enum MetadataEngine {
     static func extractEmbeddedArtwork(from url: URL) async -> Data? {
         await probe.read()
     }
+    static func extractRawEmbeddedArtwork(from url: URL) async -> Data? {
+        await probe.read()
+    }
 }
 
 final class Counter: @unchecked Sendable {
@@ -289,7 +292,7 @@ final class CountingFileManager: FileManager, @unchecked Sendable {
 }
 SWIFT
 swiftc -parse-as-library Utilities/ArtworkCache.swift Core/Artwork/ArtworkRequest.swift \
-    Core/Artwork/ArtworkFileCache.swift Core/Artwork/ArtworkLoadLimiter.swift \
+    Core/Artwork/ArtworkFileCache.swift Core/Artwork/ArtworkLoadLimiter.swift Core/Artwork/TrackThumbnailCache.swift \
     Core/Artwork/ArtworkResolver.swift Core/Metadata/ExternalArtworkResolver.swift Utilities/ImageUtils.swift \
     "$test_dir/ArtworkRegression.swift" -o "$test_dir/artwork-regression"
 "$test_dir/artwork-regression"

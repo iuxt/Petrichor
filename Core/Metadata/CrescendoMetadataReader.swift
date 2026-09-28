@@ -33,6 +33,11 @@ struct CrescendoMetadataReader: MetadataReader {
     }
 
     func extractEmbeddedArtwork(from url: URL) async -> Data? {
+        guard let raw = await extractRawEmbeddedArtwork(from: url) else { return nil }
+        return await MetadataMapping.compressedArtwork(from: raw, source: url.lastPathComponent)
+    }
+
+    func extractRawEmbeddedArtwork(from url: URL) async -> Data? {
         let source: CrescendoMetadata
         do {
             source = try await Crescendo.CrescendoMetadataReader.read(from: url)
@@ -42,10 +47,8 @@ struct CrescendoMetadataReader: MetadataReader {
         }
 
         guard let firstPicture = source.pictures.first else { return nil }
-        return await MetadataMapping.compressedArtwork(
-            from: firstPicture.data,
-            source: url.lastPathComponent
-        )
+        guard firstPicture.data.count <= AlbumArtFormat.maxArtworkSize, !Task.isCancelled else { return nil }
+        return firstPicture.data
     }
 
     private func map(_ source: CrescendoMetadata, into metadata: inout TrackMetadata) async {
