@@ -18,68 +18,49 @@ enum ImageUtils {
         quality: CGFloat = 0.8,
         source: String? = nil
     ) -> Data? {
-        #if arch(x86_64)
-        return compressImageIntel(from: imageData, maxDimension: maxDimension, quality: quality, source: source)
-        #else
-        guard let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
-              let srcWidth = props[kCGImagePropertyPixelWidth] as? CGFloat,
-              let srcHeight = props[kCGImagePropertyPixelHeight] as? CGFloat else {
-            let context = source.map { " from \($0)" } ?? ""
-            Logger.warning("Failed to read image properties\(context) (\(imageData.count) bytes)")
-            return nil
+        // ImageIO decodes at the requested size instead of allocating the full
+        // (up to 8000×8000) bitmap first. Drain temporary codec/encoder objects
+        // after each image, including calls made by long-lived worker threads.
+        autoreleasepool {
+            guard let image = downsampledImage(from: imageData, maxDimension: maxDimension, source: source) else {
+                return nil
+            }
+            #if arch(x86_64)
+            // Intel software HEVC encoding can deadlock under concurrent loads.
+            return encodeJPEG(image, quality: quality)
+            #else
+            return encodeHEIC(image, quality: quality) ?? encodeJPEG(image, quality: quality)
+            #endif
         }
+    }
+
+    static func downsampledImage(
+        from imageData: Data,
+        maxDimension: CGFloat,
+        source: String? = nil
+    ) -> CGImage? {
+        guard maxDimension.isFinite, maxDimension >= 1,
+              let imageSource = CGImageSourceCreateWithData(imageData as CFData, [
+                kCGImageSourceShouldCache: false
+              ] as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = props[kCGImagePropertyPixelHeight] as? CGFloat,
+              width > 0, height > 0 else { return nil }
 
         let pixelLimit = CGFloat(AlbumArtFormat.maxArtworkPixelDimension)
-        if srcWidth > pixelLimit || srcHeight > pixelLimit {
+        guard width <= pixelLimit, height <= pixelLimit else {
             let context = source.map { " from \($0)" } ?? ""
-            Logger.warning("Skipping oversized artwork \(Int(srcWidth))x\(Int(srcHeight))\(context)")
+            Logger.warning("Skipping oversized artwork \(Int(width))x\(Int(height))\(context)")
             return nil
         }
 
-        guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
-            let context = source.map { " from \($0)" } ?? ""
-            Logger.warning("Failed to decode image\(context) (\(imageData.count) bytes)")
-            return nil
-        }
-
-        var destWidth = srcWidth
-        var destHeight = srcHeight
-
-        if srcWidth > maxDimension || srcHeight > maxDimension {
-            let scale = min(maxDimension / srcWidth, maxDimension / srcHeight)
-            destWidth = (srcWidth * scale).rounded(.down)
-            destHeight = (srcHeight * scale).rounded(.down)
-        }
-
-        let targetSize = NSSize(width: destWidth, height: destHeight)
-
-        guard let context = CGContext(
-            data: nil,
-            width: Int(destWidth),
-            height: Int(destHeight),
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else {
-            return resizeImage(from: imageData, to: targetSize)
-        }
-        context.interpolationQuality = .high
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: destWidth, height: destHeight))
-        guard let finalCGImage = context.makeImage() else {
-            return resizeImage(from: imageData, to: targetSize)
-        }
-
-        if let heicData = encodeHEIC(finalCGImage, quality: quality) {
-            return heicData
-        }
-
-        // Fall back to JPEG if HEIC encoding fails
-        let logContext = source.map { " from \($0)" } ?? ""
-        Logger.warning("HEIC encoding failed\(logContext), falling back to JPEG")
-        return resizeImage(from: imageData, to: targetSize)
-        #endif
+        return CGImageSourceCreateThumbnailAtIndex(imageSource, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: min(maxDimension, max(width, height)),
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary)
     }
 
     /// Encode a CGImage as HEIC data.
@@ -466,49 +447,6 @@ enum ImageUtils {
         guard let cgImage = ctx.makeImage() else { return nil }
         return NSBitmapImageRep(cgImage: cgImage).representation(using: .jpeg, properties: [.compressionFactor: 0.85])
     }
-
-    // MARK: - Intel x86_64 fallback
-    // Software HEVC encode (VCPHEVC) on Intel deadlocks under concurrent scans (issue #265).
-    // Resize-and-JPEG bypasses the encoder entirely. Remove this block when Intel support is dropped.
-
-    #if arch(x86_64)
-    private static func compressImageIntel(
-        from imageData: Data,
-        maxDimension: CGFloat,
-        quality: CGFloat,
-        source: String?
-    ) -> Data? {
-        guard let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
-              let width = props[kCGImagePropertyPixelWidth] as? CGFloat,
-              let height = props[kCGImagePropertyPixelHeight] as? CGFloat else {
-            let context = source.map { " from \($0)" } ?? ""
-            Logger.warning("Failed to read image properties\(context) (\(imageData.count) bytes)")
-            return nil
-        }
-
-        let pixelLimit = CGFloat(AlbumArtFormat.maxArtworkPixelDimension)
-        if width > pixelLimit || height > pixelLimit {
-            let context = source.map { " from \($0)" } ?? ""
-            Logger.warning("Skipping oversized artwork \(Int(width))x\(Int(height))\(context)")
-            return nil
-        }
-
-        var destWidth = width
-        var destHeight = height
-        if width > maxDimension || height > maxDimension {
-            let scale = min(maxDimension / width, maxDimension / height)
-            destWidth = (width * scale).rounded(.down)
-            destHeight = (height * scale).rounded(.down)
-        }
-
-        return resizeImage(
-            from: imageData,
-            to: NSSize(width: destWidth, height: destHeight),
-            compressionFactor: Float(quality)
-        )
-    }
-    #endif
 }
 
 // MARK: - Color Cache Object

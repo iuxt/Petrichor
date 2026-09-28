@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TrackLyricsView: View {
     let onClose: () -> Void
+    @EnvironmentObject private var playbackManager: PlaybackManager
+    @State private var searchRequest: LyricsSearchRequest?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -9,6 +11,7 @@ struct TrackLyricsView: View {
             Divider()
             TrackLyricsContent()
         }
+        .sheet(item: $searchRequest) { LyricsSearchSheet(track: $0.track) }
     }
 
     // MARK: - Header
@@ -26,6 +29,15 @@ struct TrackLyricsView: View {
                     .headerTitleStyle()
             }
             Spacer()
+            Button {
+                if let track = playbackManager.currentTrack { searchRequest = LyricsSearchRequest(track: track) }
+            } label: {
+                Image(systemName: "text.magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .help(String(appLocalized: "Search Lyrics Online..."))
+            .accessibilityLabel(String(appLocalized: "Search Lyrics Online..."))
+            .disabled(playbackManager.currentTrack == nil)
         }
     }
 }
@@ -52,6 +64,8 @@ struct TrackLyricsContent: View {
     @State private var lyricLines: [LyricLine] = []
     @State private var isLoading = true
     @State private var fetchFailed = false
+    @State private var loadGeneration = UUID()
+    @State private var searchRequest: LyricsSearchRequest?
     @State private var currentLineIndex: Int = -1
     @State private var hasTimedLyrics: Bool = false
     @State private var isKaraokeLyrics = false
@@ -77,6 +91,12 @@ struct TrackLyricsContent: View {
             // Sample the playhead at 0.5s while lyrics are on screen for tight
             // line highlighting; the rate drops back to 1s when this view closes.
             playbackManager.setFineProgressSampling(true)
+        }
+        .sheet(item: $searchRequest) { LyricsSearchSheet(track: $0.track) }
+        .onReceive(NotificationCenter.default.publisher(for: .downloadedLyricsDidChange)) { notification in
+            guard let url = notification.object as? URL,
+                  url.standardizedFileURL == currentTrack?.url.standardizedFileURL else { return }
+            loadLyricsForCurrentTrack()
         }
         .onDisappear {
             boundaryScheduler.cancel()
@@ -129,6 +149,13 @@ struct TrackLyricsContent: View {
             Text("No Lyrics Available")
                 .font(.headline)
                 .foregroundColor(activeColor)
+
+            Button(String(appLocalized: "Search Lyrics Online...")) {
+                if let track = currentTrack { searchRequest = LyricsSearchRequest(track: track) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(currentTrack == nil)
 
             if fetchFailed {
                 Button {
@@ -206,6 +233,8 @@ struct TrackLyricsContent: View {
     // MARK: - Helper Methods
 
     private func loadLyricsForCurrentTrack(forceReload: Bool = false) {
+        let generation = UUID()
+        loadGeneration = generation
         guard let track = currentTrack else {
             boundaryScheduler.cancel()
             lyricLines = []
@@ -249,7 +278,7 @@ struct TrackLyricsContent: View {
                 )
 
                 await MainActor.run {
-                    guard currentTrack?.id == loadedTrackId else { return }
+                    guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     lyricLines = result.lines
                     hasTimedLyrics = result.hasTimed
                     isKaraokeLyrics = result.isKaraoke
@@ -261,7 +290,7 @@ struct TrackLyricsContent: View {
                 }
             } catch {
                 await MainActor.run {
-                    guard currentTrack?.id == loadedTrackId else { return }
+                    guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     boundaryScheduler.cancel()
                     lyricLines = []
                     hasTimedLyrics = false

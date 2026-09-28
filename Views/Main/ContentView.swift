@@ -84,6 +84,7 @@ struct ContentView: View {
     @State private var immersiveToolbarWasVisible = true
     @State private var pendingLibraryFilter: LibraryFilterRequest?
     @State private var trackMetadataEditorRequest: TrackMetadataEditorRequest?
+    @State private var lyricsSearchRequest: LyricsSearchRequest?
     @State private var windowDelegate = WindowDelegate()
     @State private var shouldFocusSearch = false
 
@@ -155,6 +156,14 @@ struct ContentView: View {
             }
         }
         .onAppear(perform: handleOnAppear)
+        .onReceive(NotificationCenter.default.publisher(for: .searchLyricsOnline)) { notification in
+            if let track = notification.object as? Track, lyricsSearchRequest == nil {
+                lyricsSearchRequest = LyricsSearchRequest(track: track)
+            }
+        }
+        .sheet(item: $lyricsSearchRequest) { request in
+            LyricsSearchSheet(track: request.track)
+        }
         .contentViewNotificationHandlers(
             shouldFocusSearch: $shouldFocusSearch,
             showingSettings: $showingSettings,

@@ -511,12 +511,47 @@ struct Harness {
     @MainActor
     static func main() async {
         await testFreshLoadAggregation()
+        await testOnlineTagsOnlyStageSingleWritableTrack()
         await testSequentialSaveAndFailedOnlyRetry()
         await testCurrentPreflightSkipDoesNotSuspend()
         await testCurrentFailureRestoresBeforeContinuing()
         await testPlaybackRestoreFailureBlocksDismissal()
         await testCancellationRestoresCurrentBeforeStopping()
         print("Track metadata editor orchestration checks passed")
+    }
+
+    @MainActor
+    private static func testOnlineTagsOnlyStageSingleWritableTrack() async {
+        let recorder = EventRecorder()
+        let one = Track(id: 1, name: "one")
+        let two = Track(id: 2, name: "two")
+        let service = ScriptedFileService(recorder: recorder, loads: [
+            1: .loaded(snapshot(one, title: "Original")),
+            2: .loaded(snapshot(two, title: "Read only", writable: false))
+        ])
+        let candidate = OnlineTagCandidate(provider: .netease, songID: "123", title: "Online", artist: "Online artist", album: "Online album", duration: 30, trackNumber: nil)
+        let viewModel = TrackMetadataEditorViewModel(tracks: [one], fileService: service)
+        expect(!viewModel.canLookUpTags, "Lookup must wait for file loading")
+        viewModel.load()
+        await waitUntil("single load") { viewModel.phase == .editing }
+        expect(viewModel.canLookUpTags, "Single writable track supports lookup")
+        viewModel.setText("My unsaved notes", for: .comment)
+        viewModel.applyOnlineTags(candidate, fields: [.title])
+        expect(viewModel.text(for: .title) == "Online", "Online title must reach editor")
+        expect(viewModel.text(for: .artist) == "Artist", "Unchecked artist must be preserved")
+        expect(viewModel.text(for: .comment) == "My unsaved notes", "Existing unsaved edits must survive")
+        expect(viewModel.canSave, "Staged tags should enable Save")
+        expect(recorder.events == ["load:1"], "Applying online tags must not write or touch playback")
+
+        for tracks in [[one, two], [two]] {
+            let restricted = TrackMetadataEditorViewModel(tracks: tracks, fileService: service)
+            restricted.load()
+            await waitUntil("restricted load") { restricted.phase == .editing }
+            expect(!restricted.canLookUpTags, "Batch and read-only selections must not support lookup")
+            let original = restricted.form
+            restricted.applyOnlineTags(candidate, fields: [.title])
+            expect(restricted.form == original, "Rejected lookup application must not mutate the form")
+        }
     }
 
     @MainActor
@@ -938,6 +973,7 @@ SWIFT
 xcrun swiftc \
     -parse-as-library \
     "$TMP_DIR/TrackMetadataEditModel.swift" \
+    "$ROOT_DIR/Core/Metadata/OnlineTagLookup.swift" \
     "$TMP_DIR/TestDoubles.swift" \
     "$TMP_DIR/TrackMetadataEditorViewModel.swift" \
     "$TMP_DIR/Harness.swift" \

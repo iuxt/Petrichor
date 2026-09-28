@@ -13,6 +13,7 @@ class AppCoordinator: ObservableObject {
     let playlistManager: PlaylistManager
     let playbackManager: PlaybackManager
     let menuBarManager: MenuBarManager
+    let automaticLyricsDownloader: AutomaticLyricsDownloader
     
     private var hadFoldersAtStartup: Bool = false
     private let playbackStateKey = "SavedPlaybackState"
@@ -32,6 +33,12 @@ class AppCoordinator: ObservableObject {
         
         // Create audio player with dependencies
         playbackManager = PlaybackManager(libraryManager: libraryManager, playlistManager: playlistManager)
+        let lyricsDatabase = libraryManager.databaseManager.dbQueue
+        automaticLyricsDownloader = AutomaticLyricsDownloader(loadLocal: { track in
+            let result = try await LyricsLoader.loadLyrics(for: track, using: lyricsDatabase)
+            return !result.lyrics.isEmpty
+        })
+        automaticLyricsDownloader.connect(playbackManager: playbackManager)
         
         // Connect managers
         playlistManager.setAudioPlayer(playbackManager)

@@ -46,6 +46,11 @@ struct DesktopLyricsView: View {
             .onChange(of: playbackManager.currentTrack?.id) {
                 provider.currentTrackChanged()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .downloadedLyricsDidChange)) { notification in
+                guard let url = notification.object as? URL,
+                      url.standardizedFileURL == playbackManager.currentTrack?.url.standardizedFileURL else { return }
+                provider.currentTrackChanged()
+            }
             .onChange(of: playbackManager.isPlaying) { _, isPlaying in
                 provider.playbackStateChanged(isPlaying: isPlaying)
             }

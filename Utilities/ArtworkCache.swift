@@ -1,21 +1,51 @@
 import AppKit
 import Foundation
 
-/// Operation subclass that guarantees its continuation is resumed
-/// even when cancelled, unlike `BlockOperation` whose execution blocks
-/// are skipped entirely for cancelled operations.
+/// A cancelled Operation may never enter main(), so cancellation must also
+/// resume the waiter. Protect installation and completion against races.
 final class ArtworkLoadOperation: Operation, @unchecked Sendable {
-    private let continuation: CheckedContinuation<NSImage?, Never>
+    private let completionLock = NSLock()
+    private var continuation: CheckedContinuation<NSImage?, Never>?
+    private var hasCompleted = false
     private let work: () -> NSImage?
 
-    init(continuation: CheckedContinuation<NSImage?, Never>, work: @escaping () -> NSImage?) {
-        self.continuation = continuation
+    init(work: @escaping () -> NSImage?) {
         self.work = work
         super.init()
     }
 
+    func install(_ continuation: CheckedContinuation<NSImage?, Never>) {
+        completionLock.lock()
+        if hasCompleted {
+            completionLock.unlock()
+            continuation.resume(returning: nil)
+        } else {
+            self.continuation = continuation
+            completionLock.unlock()
+        }
+    }
+
     override func main() {
-        continuation.resume(returning: isCancelled ? nil : work())
+        let image = autoreleasepool { isCancelled ? nil : work() }
+        complete(image)
+    }
+
+    override func cancel() {
+        super.cancel()
+        complete(nil)
+    }
+
+    private func complete(_ image: NSImage?) {
+        completionLock.lock()
+        guard !hasCompleted else {
+            completionLock.unlock()
+            return
+        }
+        hasCompleted = true
+        let waiter = continuation
+        continuation = nil
+        completionLock.unlock()
+        waiter?.resume(returning: image)
     }
 }
 
@@ -24,19 +54,15 @@ extension OperationQueue {
     /// Cancelling the awaiting task cancels the queued operation; cancelled
     /// operations resume with `nil` without rendering.
     func renderArtwork(_ work: @escaping () -> NSImage?) async -> NSImage? {
-        final class Holder: @unchecked Sendable {
-            var operation: ArtworkLoadOperation?
-        }
-        let holder = Holder()
+        let operation = ArtworkLoadOperation(work: work)
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                let operation = ArtworkLoadOperation(continuation: continuation, work: work)
-                holder.operation = operation
+                operation.install(continuation)
                 self.addOperation(operation)
             }
         } onCancel: {
-            holder.operation?.cancel()
+            operation.cancel()
         }
     }
 }

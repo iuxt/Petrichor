@@ -16,6 +16,7 @@ struct GeneralTabView: View {
     private var useModernPlaybackEngine = true
 
     @ObservedObject private var notificationManager = NotificationManager.shared
+    @ObservedObject private var lyricsSettings = LyricsDownloadSettings.shared
 
     var body: some View {
         Form {
@@ -53,9 +54,21 @@ struct GeneralTabView: View {
                         }
                 }
             }
+
+            Section(String(appLocalized: "Lyrics Downloads")) {
+                Toggle(String(appLocalized: "Automatically download missing lyrics"), isOn: $lyricsSettings.automaticallyDownload)
+                Picker(String(appLocalized: "Lyrics source"), selection: $lyricsSettings.provider) {
+                    Text(verbatim: String(appLocalized: "NetEase Cloud Music")).tag(OnlineTagProvider.netease)
+                    Text(verbatim: String(appLocalized: "QQ Music")).tag(OnlineTagProvider.qqMusic)
+                }
+                Toggle(String(appLocalized: "Include lyric translations"), isOn: $lyricsSettings.includeTranslation)
+                Text(verbatim: String(appLocalized: "When enabled, playing songs without local or embedded lyrics sends their title and artist to the selected provider. Confident matches are saved as UTF-8 LRC files beside the songs. Existing lyrics are never automatically replaced."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
-        .scrollDisabled(true)
         .padding(5)
     }
 

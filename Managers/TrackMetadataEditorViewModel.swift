@@ -100,6 +100,17 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         return !patch.isEmpty
     }
 
+    var canLookUpTags: Bool {
+        phase == .editing && tracks.count == 1 && snapshots.count == 1 && snapshots[0].isWritable
+    }
+
+    func applyOnlineTags(_ candidate: OnlineTagCandidate, fields: Set<TrackMetadataEditableField>) {
+        guard canLookUpTags, var form else { return }
+        candidate.apply(to: &form, fields: fields)
+        self.form = form
+        recomputeValidationError()
+    }
+
     var compilationValue: Bool? {
         form?.compilation.value
     }

@@ -5,6 +5,7 @@ final class ArtworkResolver {
 
     private let cache: ArtworkFileCache
     private let fileManager: FileManager
+    private let loadLimiter = ArtworkLoadLimiter()
 
     init(cache: ArtworkFileCache = .shared, fileManager: FileManager = .default) {
         self.cache = cache
@@ -12,9 +13,20 @@ final class ArtworkResolver {
     }
 
     func artworkData(for request: ArtworkRequest) async -> Data? {
+        guard await loadLimiter.acquire() else { return nil }
+        let data = await resolveArtwork(for: request)
+        // Keep the permit until decoding actually finishes, even if the row was
+        // cancelled while a backend was reading a file.
+        await loadLimiter.release()
+        return Task.isCancelled ? nil : data
+    }
+
+    private func resolveArtwork(for request: ArtworkRequest) async -> Data? {
+        guard !Task.isCancelled else { return nil }
         if let embedded = await cachedOrEmbeddedArtwork(for: request) {
             return embedded
         }
+        guard !Task.isCancelled else { return nil }
 
         // List the track's directory once and reuse the candidate set for both the
         // same-stem and generic artwork lookups. Previously each miss re-listed the
@@ -73,6 +85,7 @@ final class ArtworkResolver {
         guard let data = await MetadataEngine.extractEmbeddedArtwork(from: request.audioURL) else {
             return nil
         }
+        guard !Task.isCancelled else { return nil }
 
         cache.store(data, for: key)
         return data
@@ -87,7 +100,10 @@ final class ArtworkResolver {
             return cached
         }
 
-        guard let rawData = try? Data(contentsOf: fileURL),
+        guard !Task.isCancelled,
+              let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= AlbumArtFormat.maxArtworkSize,
+              let rawData = try? Data(contentsOf: fileURL),
               rawData.count <= AlbumArtFormat.maxArtworkSize,
               let data = ImageUtils.compressImage(from: rawData, source: fileURL.lastPathComponent) else {
             return nil

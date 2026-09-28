@@ -25,7 +25,7 @@ python3 - <<'PY'
 from pathlib import Path
 source = Path("Core/Artwork/ArtworkResolver.swift").read_text()
 
-marker = "func artworkData(for request: ArtworkRequest) async -> Data?"
+marker = "func resolveArtwork(for request: ArtworkRequest) async -> Data?"
 start = source.find(marker)
 if start < 0:
     raise SystemExit("Missing ArtworkResolver.artworkData(for:) priority method")

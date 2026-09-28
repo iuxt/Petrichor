@@ -20,6 +20,7 @@ enum TrackContextMenu {
         // Add info item
         items.append(createShowInfoItem(for: track))
         items.append(createEditInfoItem(for: [track]))
+        items.append(createSearchLyricsItem(for: track))
         
         items.append(createRevealInFinderItem(for: track))
 
@@ -98,6 +99,7 @@ enum TrackContextMenu {
         // Add info item
         items.append(createShowInfoItem(for: track))
         items.append(createEditInfoItem(for: [track]))
+        items.append(createSearchLyricsItem(for: track))
         
         items.append(createRevealInFinderItem(for: track))
 
@@ -206,6 +208,12 @@ enum TrackContextMenu {
                 object: nil,
                 userInfo: ["tracks": tracks]
             )
+        }
+    }
+
+    private static func createSearchLyricsItem(for track: Track) -> ContextMenuItem {
+        .button(title: String(appLocalized: "Search Lyrics Online..."), icon: "text.magnifyingglass") {
+            NotificationCenter.default.post(name: .searchLyricsOnline, object: track)
         }
     }
     

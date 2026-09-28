@@ -8,6 +8,9 @@ final class ArtworkFileCache {
     private let imagesURL: URL
     private let maxBytes: Int64
     private let queue = DispatchQueue(label: "org.petrichor.artwork-file-cache", qos: .utility)
+    // Access only on queue. Enumerate once, then account for individual writes;
+    // scanning every cached file on each new thumbnail makes scrolling O(n²).
+    private var knownBytes: Int64?
 
     init(
         fileManager: FileManager = .default,
@@ -48,9 +51,19 @@ final class ArtworkFileCache {
         queue.async {
             do {
                 try self.ensureDirectories()
-                try data.write(to: self.fileURL(for: key), options: .atomic)
-                self.trimToLimitLocked()
+                if self.knownBytes == nil {
+                    self.knownBytes = self.cacheFiles().reduce(Int64(0)) { $0 + $1.size }
+                }
+                let url = self.fileURL(for: key)
+                let oldSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                try data.write(to: url, options: .atomic)
+                let total = (self.knownBytes ?? 0) - Int64(oldSize) + Int64(data.count)
+                self.knownBytes = total
+                if total > self.maxBytes {
+                    self.trimToLimitLocked()
+                }
             } catch {
+                self.knownBytes = nil
                 Logger.error("Failed to write artwork cache file: \(error)")
             }
         }
@@ -68,7 +81,9 @@ final class ArtworkFileCache {
                 if self.fileManager.fileExists(atPath: self.rootURL.path) {
                     try self.fileManager.removeItem(at: self.rootURL)
                 }
+                self.knownBytes = 0
             } catch {
+                self.knownBytes = nil
                 Logger.error("Failed to clear artwork cache: \(error)")
             }
         }
@@ -76,7 +91,9 @@ final class ArtworkFileCache {
 
     func cacheSize() -> Int64 {
         queue.sync {
-            self.cacheFiles().reduce(Int64(0)) { $0 + $1.size }
+            let total = self.cacheFiles().reduce(Int64(0)) { $0 + $1.size }
+            self.knownBytes = total
+            return total
         }
     }
 
@@ -95,6 +112,7 @@ final class ArtworkFileCache {
     private func trimToLimitLocked() {
         let files = cacheFiles()
         let total = files.reduce(Int64(0)) { $0 + $1.size }
+        knownBytes = total
         guard total > maxBytes else { return }
 
         let targetBytes = maxBytes * 9 / 10
@@ -108,6 +126,7 @@ final class ArtworkFileCache {
                 Logger.error("Failed to remove artwork cache file \(file.url.lastPathComponent): \(error)")
             }
         }
+        knownBytes = remaining
     }
 
     private struct CacheFile {

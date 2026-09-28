@@ -489,7 +489,7 @@ private final class TrackArtworkCache: @unchecked Sendable {
     private let cache = NSCache<NSString, NSImage>()
     private let loadQueue: OperationQueue = {
         let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
+        queue.maxConcurrentOperationCount = 2
         queue.qualityOfService = .utility
         return queue
     }()
@@ -511,6 +511,7 @@ private final class TrackArtworkCache: @unchecked Sendable {
     }
 
     func loadImage(for track: Track) async -> NSImage? {
+        guard !Task.isCancelled else { return nil }
         let key = cacheKey(for: track)
 
         if let cached = cache.object(forKey: key) {
@@ -518,7 +519,8 @@ private final class TrackArtworkCache: @unchecked Sendable {
         }
 
         let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url, albumTitle: track.album)
-        guard let data = await ArtworkResolver.shared.artworkData(for: request) else {
+        guard let data = await ArtworkResolver.shared.artworkData(for: request),
+              !Task.isCancelled else {
             return nil
         }
 
@@ -528,10 +530,9 @@ private final class TrackArtworkCache: @unchecked Sendable {
                 return cached
             }
 
-            // Decode with NSImage(data:) and resize via CGContext to avoid
-            // CGImageSource errors under concurrent load from rapid scrolling
-            guard let nsImage = NSImage(data: data),
-                  let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            guard let cgImage = ImageUtils.downsampledImage(
+                from: data, maxDimension: CGFloat(Self.pixelSize)
+            ) else {
                 return nil
             }
 
@@ -635,20 +636,36 @@ private struct TrackTitleCell: View {
 
             Spacer()
         }
-        .task(id: track.trackId) {
+        .task(id: artworkTaskID) {
             await loadArtwork()
+        }
+        .onDisappear {
+            artworkImage = nil
         }
     }
 
     // MARK: - Private Helpers
 
+    private var artworkTaskID: String {
+        "\(track.id)-\(track.url.path)-\(tableRowSize.rawValue)"
+    }
+
+    @MainActor
     private func loadArtwork() async {
+        artworkImage = nil
+        guard tableRowSize == .expanded, !Task.isCancelled else { return }
         // Serve from cache synchronously to avoid flicker on re-render
         if let cached = TrackArtworkCache.shared.getCachedImage(for: track) {
             artworkImage = cached
             return
         }
 
+        // Rows crossed during a fast scroll should not start file IO or decoding.
+        do {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        } catch {
+            return
+        }
         let image = await TrackArtworkCache.shared.loadImage(for: track)
 
         if !Task.isCancelled {

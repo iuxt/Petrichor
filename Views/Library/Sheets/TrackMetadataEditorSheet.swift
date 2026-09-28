@@ -13,6 +13,7 @@ struct TrackMetadataEditorSheet: View {
 
     @StateObject private var model: TrackMetadataEditorViewModel
     @State private var didFinishSuccessfully = false
+    @State private var showingOnlineTagLookup = false
 
     init(request: TrackMetadataEditorRequest) {
         _model = StateObject(
@@ -40,6 +41,17 @@ struct TrackMetadataEditorSheet: View {
         }
         .onChange(of: model.allSelectedItemsSaved) { _, completed in
             finishAfterSuccessfulSave(completed)
+        }
+        .sheet(isPresented: $showingOnlineTagLookup) {
+            if let form = model.form, let snapshot = model.snapshots.first {
+                OnlineTagLookupSheet(
+                    form: form,
+                    filename: snapshot.file.filename,
+                    duration: snapshot.file.duration
+                ) { candidate, fields in
+                    model.applyOnlineTags(candidate, fields: fields)
+                }
+            }
         }
     }
 
@@ -99,6 +111,12 @@ struct TrackMetadataEditorSheet: View {
 
         case .editing:
             HStack {
+                Button(String(appLocalized: "Get Tags Online")) {
+                    showingOnlineTagLookup = true
+                }
+                .disabled(!model.canLookUpTags)
+                .help(String(appLocalized: "Search online tags for a single writable track."))
+
                 Spacer()
                 Button(String(appLocalized: "Cancel")) {
                     dismiss()

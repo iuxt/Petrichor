@@ -8666,6 +8666,720 @@
           }
         }
       }
+    },
+    "Could not search for tags. Check your connection or try another source.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not search for tags. Check your connection or try another source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法搜索标签，请检查网络连接或尝试切换来源。"
+          }
+        }
+      }
+    },
+    "Current Value": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Value"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前值"
+          }
+        }
+      }
+    },
+    "Get Tags Online": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get Tags Online"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线获取标签"
+          }
+        }
+      }
+    },
+    "Local duration: %1$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local duration: %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地时长：%1$@"
+          }
+        }
+      }
+    },
+    "NetEase Cloud Music": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NetEase Cloud Music"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网易云音乐"
+          }
+        }
+      }
+    },
+    "No matching songs. Try changing the title, artist or source.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matching songs. Try changing the title, artist or source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到匹配歌曲，请尝试修改标题、艺术家或切换来源。"
+          }
+        }
+      }
+    },
+    "Online Value": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online Value"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线值"
+          }
+        }
+      }
+    },
+    "QQ Music": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QQ Music"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QQ 音乐"
+          }
+        }
+      }
+    },
+    "Search online tags for a single writable track.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search online tags for a single writable track."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为单首可写入的歌曲搜索在线标签。"
+          }
+        }
+      }
+    },
+    "Search sends only the title and artist entered below to the selected provider. Audio files are not uploaded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search sends only the title and artist entered below to the selected provider. Audio files are not uploaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击搜索仅会将下方填写的标题和艺术家发送至所选平台，不会上传音频文件。"
+          }
+        }
+      }
+    },
+    "Searching for tags...": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching for tags..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索标签…"
+          }
+        }
+      }
+    },
+    "Select a song to preview its tags.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a song to preview its tags."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一首歌曲以预览标签。"
+          }
+        }
+      }
+    },
+    "Selected tags fill the properties form. Click Save there to write them to the audio file.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected tags fill the properties form. Click Save there to write them to the audio file."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选标签将填入歌曲属性，返回后点击“保存”才会写入音频文件。"
+          }
+        }
+      }
+    },
+    "Source": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源"
+          }
+        }
+      }
+    },
+    "Tag Preview": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag Preview"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签预览"
+          }
+        }
+      }
+    },
+    "The provider returned an unreadable response. Try another source.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The provider returned an unreadable response. Try another source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取平台返回的数据，请尝试切换来源。"
+          }
+        }
+      }
+    },
+    "The tag search timed out. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tag search timed out. Please try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签搜索超时，请重试。"
+          }
+        }
+      }
+    },
+    "These tags already match the current form.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These tags already match the current form."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些标签与当前表单一致。"
+          }
+        }
+      }
+    },
+    "Use Selected Tags": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Selected Tags"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用所选标签"
+          }
+        }
+      }
+    },
+    "This result has no downloadable synchronized lyrics. Try another song or source.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This result has no downloadable synchronized lyrics. Try another song or source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此结果没有可下载的同步歌词，请尝试其他歌曲或来源。"
+          }
+        }
+      }
+    },
+    "The lyrics provider returned an unreadable response. Try another source.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The lyrics provider returned an unreadable response. Try another source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取平台返回的歌词，请尝试切换来源。"
+          }
+        }
+      }
+    },
+    "The lyrics destination is not a regular file. Choose another song or check the folder.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The lyrics destination is not a regular file. Choose another song or check the folder."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词保存位置不是普通文件，请检查文件夹或选择其他歌曲。"
+          }
+        }
+      }
+    },
+    "The lyrics request timed out. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The lyrics request timed out. Please try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词请求超时，请重试。"
+          }
+        }
+      }
+    },
+    "Could not download lyrics. Check your connection or try another source.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not download lyrics. Check your connection or try another source."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法下载歌词，请检查网络或尝试切换来源。"
+          }
+        }
+      }
+    },
+    "Could not save the LRC file. Check folder write access: %1$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save the LRC file. Check folder write access: %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存 LRC 文件，请检查文件夹写入权限：%1$@"
+          }
+        }
+      }
+    },
+    "No confident lyrics match. Use Search Lyrics Online to choose a result.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No confident lyrics match. Use Search Lyrics Online to choose a result."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有找到可靠的歌词匹配，可通过“在线搜索歌词”手动选择。"
+          }
+        }
+      }
+    },
+    "Lyrics saved: %1$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lyrics saved: %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词已保存：%1$@"
+          }
+        }
+      }
+    },
+    "Automatic lyrics download failed. You can retry with Search Lyrics Online.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic lyrics download failed. You can retry with Search Lyrics Online."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动下载歌词失败，可通过“在线搜索歌词”重试。"
+          }
+        }
+      }
+    },
+    "Lyrics Downloads": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lyrics Downloads"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词下载"
+          }
+        }
+      }
+    },
+    "Automatically download missing lyrics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically download missing lyrics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动下载缺失歌词"
+          }
+        }
+      }
+    },
+    "Lyrics source": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lyrics source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词来源"
+          }
+        }
+      }
+    },
+    "Include lyric translations": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Include lyric translations"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含歌词翻译"
+          }
+        }
+      }
+    },
+    "When enabled, playing songs without local or embedded lyrics sends their title and artist to the selected provider. Confident matches are saved as UTF-8 LRC files beside the songs. Existing lyrics are never automatically replaced.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, playing songs without local or embedded lyrics sends their title and artist to the selected provider. Confident matches are saved as UTF-8 LRC files beside the songs. Existing lyrics are never automatically replaced."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，播放没有本地或内嵌歌词的歌曲时，会将标题和艺人发送至所选平台。匹配可靠时，将 UTF-8 格式的同名 LRC 文件保存到歌曲所在文件夹，不会自动覆盖已有歌词。"
+          }
+        }
+      }
+    },
+    "Search Lyrics Online...": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search Lyrics Online..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线搜索歌词…"
+          }
+        }
+      }
+    },
+    "Search sends the title and artist below to the selected provider. Preview fetches lyrics for the selected song; audio files are not uploaded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search sends the title and artist below to the selected provider. Preview fetches lyrics for the selected song; audio files are not uploaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索会将下方标题和艺人发送至所选平台；预览会获取所选歌曲的歌词，不会上传音频文件。"
+          }
+        }
+      }
+    },
+    "Select a song, preview its lyrics, then save.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a song, preview its lyrics, then save."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择歌曲、预览歌词后保存。"
+          }
+        }
+      }
+    },
+    "Preview Lyrics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview Lyrics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预览歌词"
+          }
+        }
+      }
+    },
+    "Lyrics Preview": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lyrics Preview"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词预览"
+          }
+        }
+      }
+    },
+    "Select a song and click Preview Lyrics.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a song and click Preview Lyrics."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择歌曲并点击“预览歌词”。"
+          }
+        }
+      }
+    },
+    "Save creates a same-name .lrc file beside the audio file. Existing KSC files keep playback priority.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save creates a same-name .lrc file beside the audio file. Existing KSC files keep playback priority."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存会在歌曲所在文件夹创建同名 .lrc 文件；若已有同名 KSC 歌词，播放时仍优先使用 KSC。"
+          }
+        }
+      }
+    },
+    "Save Lyrics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Lyrics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存歌词"
+          }
+        }
+      }
+    },
+    "Replace the existing LRC file?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace the existing LRC file?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换已有的 LRC 歌词文件？"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
