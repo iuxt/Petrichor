@@ -10,7 +10,7 @@ actor TrackThumbnailCache {
 
     private struct Entry {
         let image: NSImage? // nil is a cached miss, not an absent entry
-        let expiresAt: Date
+        let expiresAt: Date? // Only missing artwork expires; decoded images survive repeat scrolling.
         var lastUsed: UInt64
     }
 
@@ -23,32 +23,41 @@ actor TrackThumbnailCache {
     private let cacheLimit: Int
     private let pendingLimit: Int
     private let workerLimit: Int
-    private let lifetime: TimeInterval
+    private let missLifetime: TimeInterval
     private var cache: [ArtworkRequest: Entry] = [:]
     private var jobs: [ArtworkRequest: Job] = [:]
     private var pending: [ArtworkRequest] = []
     private var workers: [UUID: Task<Void, Never>] = [:]
     private var clock: UInt64 = 0
 
-    init(cacheLimit: Int = 256, pendingLimit: Int = 64, workerLimit: Int = 2,
-         lifetime: TimeInterval = 60, loader: @escaping Loader = { await TrackThumbnailCache.load($0) }) {
+    // 4,096 thumbnails at at most 80×80 RGBA pixels use about 100 MiB of bitmap
+    // storage. Keep a 4,000-track library warm without retaining original artwork.
+    init(cacheLimit: Int = 4096, pendingLimit: Int = 64, workerLimit: Int = 2,
+         missLifetime: TimeInterval = 60, loader: @escaping Loader = { await TrackThumbnailCache.load($0) }) {
         precondition(cacheLimit > 0 && pendingLimit > 0 && workerLimit > 0)
         self.cacheLimit = cacheLimit
         self.pendingLimit = pendingLimit
         self.workerLimit = workerLimit
-        self.lifetime = lifetime
+        self.missLifetime = missLifetime
         self.loader = loader
     }
 
-    func image(for request: ArtworkRequest) async -> NSImage? {
+    /// Cache hits bypass the optional scroll debounce. Only a cache miss waits,
+    /// then checks again because another row may have loaded it in the meantime.
+    func image(for request: ArtworkRequest, delayIfMissing: UInt64 = 0) async -> NSImage? {
         guard !Task.isCancelled else { return nil }
         clock &+= 1
-        if var entry = cache[request], entry.expiresAt > Date() {
+        if var entry = cache[request], entry.expiresAt.map({ $0 > Date() }) ?? true {
             entry.lastUsed = clock
             cache[request] = entry
             return entry.image
         }
         cache.removeValue(forKey: request)
+        if delayIfMissing > 0 {
+            do { try await Task.sleep(nanoseconds: delayIfMissing) }
+            catch { return nil }
+            return await image(for: request)
+        }
         let waiterID = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -123,7 +132,8 @@ actor TrackThumbnailCache {
                     cache.removeValue(forKey: oldest)
                 }
                 clock &+= 1
-                cache[request] = Entry(image: image, expiresAt: Date().addingTimeInterval(lifetime), lastUsed: clock)
+                cache[request] = Entry(image: image,
+                    expiresAt: image == nil ? Date().addingTimeInterval(missLifetime) : nil, lastUsed: clock)
             }
             for waiter in job.waiters.values { waiter.resume(returning: cancelled ? nil : image) }
         }

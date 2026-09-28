@@ -76,6 +76,7 @@ actor Gate {
         await deduplication()
         await boundedQueue()
         await cachedMissesAndEviction()
+        await warmCacheBypassesDelay()
         try await libraryStress()
         print("Track thumbnail regressions passed")
     }
@@ -126,7 +127,7 @@ actor Gate {
     }
     static func cachedMissesAndEviction() async {
         let misses = Counter()
-        let missing = TrackThumbnailCache(lifetime: 0.02, loader: { _ in misses.increment(); return nil })
+        let missing = TrackThumbnailCache(missLifetime: 0.02, loader: { _ in misses.increment(); return nil })
         _ = await missing.image(for: request(0))
         _ = await missing.image(for: request(0))
         precondition(misses.value == 1, "missing artwork must be cached")
@@ -143,6 +144,32 @@ actor Gate {
         _ = await cache.image(for: request(1))
         let state = await cache.statistics
         precondition(reads.value == 4 && state.cached == 2, "cache must evict the least recently used result")
+    }
+    static func warmCacheBypassesDelay() async {
+        let reads = Counter()
+        let cache = TrackThumbnailCache(missLifetime: 0.02, loader: { request in
+            reads.increment()
+            return request == Self.request(0) ? NSImage(size: NSSize(width: 80, height: 80)) : nil
+        })
+        let original = await cache.image(for: request(0))
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        let start = Date()
+        let cached = await cache.image(for: request(0), delayIfMissing: 2_000_000_000)
+        precondition(cached === original && reads.value == 1, "decoded thumbnails must not expire with misses")
+        precondition(Date().timeIntervalSince(start) < 1, "warm thumbnails must bypass scroll debounce")
+        _ = await cache.image(for: request(1))
+        let missStart = Date()
+        _ = await cache.image(for: request(1), delayIfMissing: 2_000_000_000)
+        precondition(reads.value == 2 && Date().timeIntervalSince(missStart) < 1,
+                     "cached missing artwork must also bypass scroll debounce")
+        let delayed = Task { await cache.image(for: request(2), delayIfMissing: 2_000_000_000) }
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        delayed.cancel()
+        let cancelled = await delayed.value
+        precondition(cancelled == nil && reads.value == 2, "recycled rows must cancel before reading artwork")
+        await cache.removeAll()
+        let state = await cache.statistics
+        precondition(state.cached == 0, "explicit invalidation must release persistent thumbnails")
     }
     static func libraryStress() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -167,7 +194,9 @@ actor Gate {
         let manager = CountingFileManager()
         let disk = ArtworkFileCache(rootURL: root)
         let resolver = ArtworkResolver(cache: disk, fileManager: manager)
+        let loads = Counter()
         let thumbnails = TrackThumbnailCache(loader: { request in
+            loads.increment()
             guard let data = await resolver.artworkData(for: request) else { return nil }
             return autoreleasepool {
                 guard let image = ImageUtils.downsampledImage(from: data, maxDimension: 80) else { return nil }
@@ -179,8 +208,9 @@ actor Gate {
         for pass in 0..<2 {
             for request in requests { _ = await thumbnails.image(for: request) }
             let state = await thumbnails.statistics
-            precondition(state.cached == 256 && state.active == 0 && state.pending == 0 && state.waiters == 0)
-            print("4,000-track pass \(pass + 1): entries=\(state.cached), pending=\(state.pending), metadata reads=\(MetadataEngine.rawReads.value)")
+            precondition(state.cached == 4000 && state.active == 0 && state.pending == 0 && state.waiters == 0)
+            precondition(loads.value == 4000, "repeat scrolling must reuse decoded thumbnails without disk reads or decoding")
+            print("4,000-track pass \(pass + 1): entries=\(state.cached), pending=\(state.pending), thumbnail loads=\(loads.value), metadata reads=\(MetadataEngine.rawReads.value)")
         }
         precondition(MetadataEngine.largeReads.value == 0, "list requests must bypass full artwork compression")
         precondition(MetadataEngine.rawReads.value == 4000, "second pass must reuse missing-embedded results")

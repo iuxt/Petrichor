@@ -39,9 +39,7 @@ final class ThumbnailImageView: NSView {
         guard window != nil, loadTask == nil, image == nil, let request else { return }
         let expectedRevision = revision
         loadTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 80_000_000) }
-            catch { return }
-            let image = await TrackThumbnailCache.shared.image(for: request)
+            let image = await TrackThumbnailCache.shared.image(for: request, delayIfMissing: 80_000_000)
             guard !Task.isCancelled, let self,
                   self.request == request, self.revision == expectedRevision else { return }
             self.image = image
