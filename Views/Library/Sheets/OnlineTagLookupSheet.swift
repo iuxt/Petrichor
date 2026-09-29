@@ -85,10 +85,6 @@ struct OnlineTagLookupSheet: View {
             .frame(minHeight: 20)
 
             Table(model.candidates, selection: $model.selection) {
-                TableColumn(String(appLocalized: "Source")) { candidate in
-                    Text(verbatim: candidate.provider.displayName)
-                }
-                .width(115)
                 TableColumn(String(appLocalized: "Title"), value: \.title)
                 TableColumn(String(appLocalized: "Artist"), value: \.artist)
                 TableColumn(String(appLocalized: "Album"), value: \.album)

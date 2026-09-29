@@ -61,9 +61,6 @@ struct LyricsSearchSheet: View {
             .frame(minHeight: 20)
 
             Table(model.candidates, selection: $model.selection) {
-                TableColumn(String(appLocalized: "Source")) { candidate in
-                    Text(verbatim: candidate.sourceName)
-                }.width(115)
                 TableColumn(String(appLocalized: "Format")) { candidate in
                     Text(verbatim: candidate.isTTML ? "TTML" : "LRC")
                 }.width(85)
