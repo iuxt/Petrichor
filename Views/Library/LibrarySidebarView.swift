@@ -11,7 +11,6 @@ struct LibrarySidebarView: View {
     @State private var searchText = ""
     @State private var sortAscending = true
     @State private var sortCache: SortCache?
-    @State private var globalSearchUpdateTask: Task<Void, Never>?
 
     private struct SortCache {
         let input: [LibraryFilterItem]
@@ -67,43 +66,16 @@ struct LibrarySidebarView: View {
             updateFilteredItems()
         }
         .onChange(of: libraryManager.globalSearchText) { oldValue, newValue in
-            globalSearchUpdateTask?.cancel()
-
-            globalSearchUpdateTask = Task {
-                try? await Task.sleep(nanoseconds: TimeConstants.searchDebounceDuration)
-
-                guard !Task.isCancelled else { return }
-
-                await MainActor.run {
-                    guard libraryManager.globalSearchText == newValue else { return }
-                    updateFilteredItems()
-                    
-                    // Handle transition between search and non-search modes
-                    if oldValue.isEmpty && !newValue.isEmpty {
-                        // Entering search mode - select "All" item
-                        let totalCount = libraryManager.searchResults.count
-                        let allItem = LibraryFilterItem.allItem(for: selectedFilterType, totalCount: totalCount)
-                        selectedFilterItem = allItem
-                        selectedSidebarItem = LibrarySidebarItem(allItemFor: selectedFilterType, count: totalCount)
-                    } else if !oldValue.isEmpty && newValue.isEmpty {
-                        // Exiting search mode - select first available item if current selection is "All"
-                        if let currentSelection = selectedFilterItem, currentSelection.isAllItem {
-                            if !filteredItems.isEmpty {
-                                selectedFilterItem = filteredItems.first
-                                if let filterItem = selectedFilterItem {
-                                    selectedSidebarItem = LibrarySidebarItem(filterItem: filterItem)
-                                }
-                            } else {
-                                selectedFilterItem = nil
-                                selectedSidebarItem = nil
-                            }
-                        }
-                    }
-                }
+            // Mode transitions must not be debounced: fast typing can cancel the
+            // empty → nonempty event and leave a previous category selected.
+            updateFilteredItems()
+            if oldValue.isEmpty && !newValue.isEmpty {
+                selectAllSearchResults()
+            } else if !oldValue.isEmpty && newValue.isEmpty,
+                      selectedFilterItem?.isAllItem == true {
+                selectedFilterItem = filteredItems.first
+                selectedSidebarItem = selectedFilterItem.map { LibrarySidebarItem(filterItem: $0) }
             }
-        }
-        .onDisappear {
-            globalSearchUpdateTask?.cancel()
         }
         .onChange(of: pendingSearchText) { _, newValue in
             if let searchValue = newValue {
@@ -129,6 +101,9 @@ struct LibrarySidebarView: View {
         }
         .onChange(of: libraryManager.searchResults) {
             updateFilteredItems()
+            if !libraryManager.globalSearchText.isEmpty, selectedFilterItem?.isAllItem == true {
+                selectAllSearchResults()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
             updateFilteredItems()
@@ -169,6 +144,12 @@ struct LibrarySidebarView: View {
     }
 
     // MARK: - Helper Methods
+
+    private func selectAllSearchResults() {
+        let count = libraryManager.searchResults.count
+        selectedFilterItem = LibraryFilterItem.allItem(for: selectedFilterType, totalCount: count)
+        selectedSidebarItem = LibrarySidebarItem(allItemFor: selectedFilterType, count: count)
+    }
 
     private func initializeSelection() {
         // When not in search mode and no selection exists, select the first item if available

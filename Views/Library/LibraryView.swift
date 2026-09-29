@@ -13,11 +13,9 @@ struct LibraryView: View {
     private var trackTableRowSize: TableRowSize = .expanded
 
     @State private var selectedTrackID: UUID?
-    @State private var isLibrarySearchActive = false
     @State private var isViewReady = false
     @State private var trackTableSortOrder = [KeyPathComparator(\Track.title)]
     @State private var filterUpdateTask: Task<Void, Never>?
-    @State private var globalSearchUpdateTask: Task<Void, Never>?
     @State private var lastFilterUpdateAt: Date = .distantPast
     @Binding var pendingFilter: LibraryFilterRequest?
 
@@ -28,12 +26,11 @@ struct LibraryView: View {
             tracksListView
                 .onAppear {
                     processPendingFilter()
-                    if cachedFilteredTracks.isEmpty, selectedFilterItem != nil {
+                    if !libraryManager.globalSearchText.isEmpty || cachedFilteredTracks.isEmpty {
                         updateFilteredTracks()
                     }
                 }
                 .onDisappear {
-                    globalSearchUpdateTask?.cancel()
                     filterUpdateTask?.cancel()
                     isViewReady = false
                 }
@@ -55,7 +52,10 @@ struct LibraryView: View {
                     processPendingFilter()
                 }
                 .onChange(of: libraryManager.globalSearchText) {
-                    handleGlobalSearch()
+                    updateFilteredTracks()
+                }
+                .onChange(of: libraryManager.searchResults) {
+                    updateFilteredTracks()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
                     updateFilteredTracks()
@@ -71,25 +71,6 @@ struct LibraryView: View {
         pendingFilter = nil
         selectedFilterType = request.filterType
         pendingSearchText = request.value
-    }
-
-    private func handleGlobalSearch() {
-        globalSearchUpdateTask?.cancel()
-
-        let searchText = libraryManager.globalSearchText
-        isLibrarySearchActive = !searchText.isEmpty
-
-        globalSearchUpdateTask = Task {
-            try? await Task.sleep(nanoseconds: TimeConstants.searchDebounceDuration)
-
-            guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                guard libraryManager.globalSearchText == searchText else { return }
-                updateFilteredTracks()
-                isLibrarySearchActive = false
-            }
-        }
     }
 
     init(
@@ -120,7 +101,7 @@ struct LibraryView: View {
             Divider()
 
             // Tracks list content
-            if cachedFilteredTracks.isEmpty && !isLibrarySearchActive {
+            if cachedFilteredTracks.isEmpty && !libraryManager.isSearching {
                 emptyFilterView
             } else {
                 TrackView(

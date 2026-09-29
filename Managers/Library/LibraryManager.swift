@@ -18,10 +18,13 @@ class LibraryManager: ObservableObject {
     @Published var scanStatusMessage: String = ""
     @Published var globalSearchText: String = "" {
         didSet {
+            guard globalSearchText != oldValue else { return }
             updateSearchResults()
         }
     }
     @Published var searchResults: [Track] = []
+    @Published var isSearching = false
+    internal var searchUpdateTask: Task<Void, Never>?
     @Published var discoverTracks: [Track] = []
     @Published var pinnedItems: [PinnedItem] = []
     @Published var pendingMergeRequest: MergeRequest?
@@ -179,6 +182,7 @@ class LibraryManager: ObservableObject {
     }
 
     deinit {
+        searchUpdateTask?.cancel()
         fileWatcherTimer?.invalidate()
         // Stop accessing all security scoped resources. Each retained URL is
         // released exactly once via the tracking set maintained by

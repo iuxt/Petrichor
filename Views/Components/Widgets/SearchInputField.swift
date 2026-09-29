@@ -34,7 +34,13 @@ struct SearchInputField: NSViewRepresentable {
     }
     
     func updateNSView(_ nsView: NSSearchField, context: Context) {
-        nsView.stringValue = text
+        context.coordinator.parent = self
+        // Reassigning stringValue during editing can disturb the field editor's
+        // selection and the marked text used by Chinese/Japanese input methods.
+        if nsView.stringValue != text,
+           (nsView.currentEditor() as? NSTextView)?.hasMarkedText() != true {
+            nsView.stringValue = text
+        }
         nsView.placeholderString = placeholder
         
         if shouldFocus != context.coordinator.lastFocusState {

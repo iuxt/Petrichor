@@ -27,6 +27,7 @@ struct TrackTableView: View {
     
     @State private var selection: Set<Track.ID> = []
     @State private var sortedTracks: [Track] = []
+    @State private var sortTask: Task<Void, Never>?
     @State private var artworkRevision = 0
     
     @State private var isCustomSort: Bool = false
@@ -83,19 +84,11 @@ struct TrackTableView: View {
                     )
                 }
             }
-            .onChange(of: tracks) { _, newTracks in
-                if !newTracks.isEmpty {
-                    // Re-sync custom sort state for the current playlist
-                    if let playlistID = playlistID {
-                        isCustomSort = PlaylistSortManager.shared.getSortField(for: playlistID) == .custom
-                    }
-
-                    if isCustomSort {
-                        sortedTracks = newTracks
-                    } else {
-                        performBackgroundSort(with: sortOrder)
-                    }
+            .onChange(of: tracks) {
+                if let playlistID = playlistID {
+                    isCustomSort = PlaylistSortManager.shared.getSortField(for: playlistID) == .custom
                 }
+                performBackgroundSort(with: sortOrder)
             }
             .onChange(of: selection) { _, newSelection in
                 // Follow the Track Info panel on single selection only;
@@ -112,6 +105,9 @@ struct TrackTableView: View {
             .onAppear {
                 initializeSortedTracks()
                 hasInitializedCustomization = true
+            }
+            .onDisappear {
+                sortTask?.cancel()
             }
             .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
                 Task {
@@ -156,6 +152,7 @@ struct TrackTableView: View {
     // MARK: - Helper Methods
     
     private func initializeSortedTracks() {
+        sortTask?.cancel()
         // Check for custom sort on playlists (position-based order from DB)
         if let playlistID = playlistID,
            PlaylistSortManager.shared.getSortField(for: playlistID) == .custom {
@@ -213,18 +210,24 @@ struct TrackTableView: View {
     // MARK: - Sorting Helpers
     
     private func performBackgroundSort(with newSortOrder: [KeyPathComparator<Track>]) {
-        if isCustomSort {
-            sortedTracks = tracks
-            return
-        }
+        sortTask?.cancel()
+        sortTask = nil
+
+        // Immediately replace membership (including empty results); never leave
+        // rows from the previous query visible while the new sort is running.
+        sortedTracks = tracks
+        selection.formIntersection(Set(tracks.map(\.id)))
+        guard !isCustomSort, !tracks.isEmpty else { return }
 
         let initialTracks = tracks
 
-        Task.detached(priority: .userInitiated) {
-            let sorted = initialTracks.sorted(using: newSortOrder)
-            await MainActor.run {
-                self.sortedTracks = sorted
-            }
+        sortTask = Task { @MainActor in
+            let sorted = await Task.detached(priority: .userInitiated) {
+                initialTracks.sorted(using: newSortOrder)
+            }.value
+            guard !Task.isCancelled else { return }
+            sortedTracks = sorted
+            sortTask = nil
         }
     }
 

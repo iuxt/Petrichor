@@ -50,12 +50,37 @@ extension LibraryManager {
     }
 
     func updateSearchResults() {
-        if globalSearchText.isEmpty {
-            // When not searching, don't populate searchResults with all tracks
+        // Library mutations and text bindings enter here on the main thread.
+        // Debounce the database work itself, with one owner for the whole UI.
+        MainActor.assumeIsolated {
+            searchUpdateTask?.cancel()
+            searchUpdateTask = nil
+            let query = globalSearchText
             searchResults = []
-        } else {
-            // Use LibrarySearch which uses FTS from database
-            searchResults = LibrarySearch.searchTracks(tracks, with: globalSearchText)
+            isSearching = LibrarySearch.isSearchableQuery(query)
+            guard isSearching else { return }
+
+            let database = databaseManager
+            searchUpdateTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: TimeConstants.searchDebounceDuration)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+
+                let results = await Task.detached(priority: .userInitiated) {
+                    database.searchTracksUsingFTS(query)
+                }.value
+
+                // Cancellation also distinguishes A → B → A and library refreshes
+                // with unchanged text, where comparing the query alone is insufficient.
+                guard !Task.isCancelled, let self,
+                      self.globalSearchText == query else { return }
+                self.searchResults = results
+                self.isSearching = false
+                self.searchUpdateTask = nil
+            }
         }
     }
 }

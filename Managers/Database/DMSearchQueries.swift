@@ -10,6 +10,7 @@ import GRDB
 extension DatabaseManager {
     /// Search tracks using FTS5 with language-aware query strategy
     func searchTracksUsingFTS(_ searchText: String) -> [Track] {
+        guard !searchTokens(searchText).isEmpty else { return [] }
         if needsLikeFallback(searchText) {
             return searchTracksUsingLike(searchText, excludingTrackIds: [], limit: nil)
         }
@@ -99,30 +100,31 @@ extension DatabaseManager {
     /// trigram tokenizer requires ≥3 characters per token to generate any 3-gram.
     /// Shorter tokens (e.g. "97", "林") can't be matched via FTS and must use LIKE.
     private func needsLikeFallback(_ searchText: String) -> Bool {
-        let tokens = searchText.split(separator: " ").map { String($0) }
-        return tokens.contains { $0.count < 3 }
+        searchTokens(searchText).contains { $0.unicodeScalars.count < 3 }
     }
 
     /// LIKE-based substring fallback used when FTS can't handle the query (tokens < 3 chars).
-    /// Matches any of the indexed text columns; does not honor token-AND semantics —
-    /// the whole trimmed query is treated as one substring.
+    /// Like FTS, every token must match at least one indexed column. This keeps
+    /// title + artist searches consistent as the user types short tokens.
     private func searchTracksUsingLike(_ searchText: String, excludingTrackIds: Set<Int64>, limit: Int?) -> [Track] {
-        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-
-        let escaped = trimmed
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
-        let pattern = "%\(escaped)%"
+        let tokens = searchTokens(searchText)
+        guard !tokens.isEmpty else { return [] }
+        let patterns = tokens.map { token in
+            let escaped = token
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "%", with: "\\%")
+                .replacingOccurrences(of: "_", with: "\\_")
+            return "%\(escaped)%"
+        }
 
         let searchableColumns = [
             "title", "filename_stem", "artist", "album",
             "album_artist", "composer", "genre", "year"
         ]
         let orClause = searchableColumns
-            .map { "\(($0)) LIKE ? ESCAPE '\\'" }
+            .map { "t.\($0) LIKE ? ESCAPE '\\'" }
             .joined(separator: " OR ")
+        let matchClause = Array(repeating: "(\(orClause))", count: tokens.count).joined(separator: " AND ")
 
         let duplicateClause = UserDefaults.standard.bool(forKey: "hideDuplicateTracks") ? " AND t.is_duplicate = 0" : ""
 
@@ -142,14 +144,16 @@ extension DatabaseManager {
 
         do {
             return try dbQueue.read { db in
-                var args: [DatabaseValueConvertible] = Array(repeating: pattern, count: searchableColumns.count)
+                var args: [DatabaseValueConvertible] = patterns.flatMap { pattern in
+                    Array(repeating: pattern, count: searchableColumns.count)
+                }
                 args.append(contentsOf: excludeArgs)
 
                 return try Track.fetchAll(
                     db,
                     sql: """
                     SELECT t.* FROM tracks t
-                    WHERE (\(orClause))\(duplicateClause)\(excludeClause)\(limitClause)
+                    WHERE \(matchClause)\(duplicateClause)\(excludeClause) ORDER BY t.id\(limitClause)
                     """,
                     arguments: StatementArguments(args)
                 )
@@ -167,13 +171,13 @@ extension DatabaseManager {
     /// and AND'ed together. trigram handles substring matching for tokens ≥3 chars;
     /// shorter tokens are routed to LIKE by callers before this is reached.
     private func buildFTS5Query(_ searchText: String) -> String {
-        let tokens = searchText.split(separator: " ")
-            .map { String($0) }
-            .filter { !$0.isEmpty }
-
-        return tokens
+        searchTokens(searchText)
             .map { quotedFTSToken($0) }
             .joined(separator: " AND ")
+    }
+
+    private func searchTokens(_ searchText: String) -> [String] {
+        searchText.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     }
 
     private func quotedFTSToken(_ token: String) -> String {
