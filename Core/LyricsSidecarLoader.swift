@@ -7,6 +7,17 @@ enum LyricsSource: Sendable, Equatable {
     case srt
     case embedded
     case none
+
+    func sidecarURL(for audioURL: URL) -> URL? {
+        let ext: String
+        switch self {
+        case .ksc: ext = "ksc"
+        case .lrc: ext = "lrc"
+        case .srt: ext = "srt"
+        case .embedded, .none: return nil
+        }
+        return audioURL.deletingPathExtension().appendingPathExtension(ext)
+    }
 }
 
 enum LyricsSidecarLoader {

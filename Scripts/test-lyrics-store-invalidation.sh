@@ -11,7 +11,7 @@ cat > "$TMP_DIR/Harness.swift" <<'SWIFT'
 import Foundation
 import GRDB
 struct Track: Sendable { let id: UUID; let url: URL }
-struct LyricLine: Sendable { let text: String; let startTime: Double; let endTime: Double? }
+struct LyricLine: Sendable { let text: String; let startTime: Double; let endTime: Double?; let timingSegments: [Int]? }
 enum LyricsSource { case lrc, ksc }
 actor ControlledLoader {
     var count = 0
@@ -27,7 +27,7 @@ enum LyricsLoader {
     static let controlled = ControlledLoader()
     static func loadLyrics(for track: Track, using db: DatabaseQueue) async throws -> (lyrics: [LyricLine], source: LyricsSource) {
         let text = await controlled.load()
-        return ([LyricLine(text: text, startTime: 1, endTime: nil)], .lrc)
+        return ([LyricLine(text: text, startTime: 1, endTime: nil, timingSegments: text == "downloaded" ? [1] : nil)], .lrc)
     }
 }
 func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(message) } }
@@ -54,6 +54,7 @@ func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(m
         await LyricsLoader.controlled.complete(2, "downloaded")
         let fresh = try await updated.value
         expect(fresh.lines[0].text == "downloaded", "Reload must show downloaded data")
+        expect(fresh.isKaraoke, "Timed enhanced LRC must enable karaoke playback")
         await LyricsLoader.controlled.complete(1, "stale")
         for task in [original, joining] {
             do { _ = try await task.value; fatalError("Stale reader must be rejected") }

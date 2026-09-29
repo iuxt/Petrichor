@@ -9228,6 +9228,62 @@
         }
       }
     },
+    "Download Lyrics...": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Download Lyrics..." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "下载歌词…" } }
+      }
+    },
+    "Reload Lyrics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reload Lyrics" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "重新载入歌词" } }
+      }
+    },
+    "Copy All Lyrics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy All Lyrics" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制全部歌词" } }
+      }
+    },
+    "Reveal Lyrics in Finder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reveal Lyrics in Finder" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在 Finder 中显示歌词文件" } }
+      }
+    },
+    "Delete Current Lyrics...": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delete Current Lyrics..." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除当前歌词…" } }
+      }
+    },
+    "Move current lyrics to Trash?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Move current lyrics to Trash?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "将当前歌词移到废纸篓？" } }
+      }
+    },
+    "Lyrics moved to Trash": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Lyrics moved to Trash" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "歌词已移到废纸篓" } }
+      }
+    },
+    "Could not move lyrics to Trash: %1$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not move lyrics to Trash: %1$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法将歌词移到废纸篓：%1$@" } }
+      }
+    },
     "Search Lyrics Online...": {
       "extractionState": "manual",
       "localizations": {
@@ -9245,104 +9301,53 @@
         }
       }
     },
-    "Search sends the title and artist below to the selected provider. Preview fetches lyrics for the selected song; audio files are not uploaded.": {
+    "Search sends the title and artist below to the selected provider. Saving fetches lyrics for the selected song; audio files are not uploaded.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search sends the title and artist below to the selected provider. Preview fetches lyrics for the selected song; audio files are not uploaded."
+            "value": "Search sends the title and artist below to the selected provider. Saving fetches lyrics for the selected song; audio files are not uploaded."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜索会将下方标题和艺人发送至所选平台；预览会获取所选歌曲的歌词，不会上传音频文件。"
+            "value": "搜索会将下方标题和艺人发送至所选平台；保存时会获取所选歌曲的歌词，不会上传音频文件。"
           }
         }
       }
     },
-    "Select a song, preview its lyrics, then save.": {
+    "Select a song, then save its lyrics.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select a song, preview its lyrics, then save."
+            "value": "Select a song, then save its lyrics."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择歌曲、预览歌词后保存。"
+            "value": "选择歌曲后即可保存歌词。"
           }
         }
       }
     },
-    "Preview Lyrics": {
+    "Save prefers word-timed lyrics when available and creates a same-name .lrc file. Existing KSC files keep playback priority.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preview Lyrics"
+            "value": "Save prefers word-timed lyrics when available and creates a same-name .lrc file. Existing KSC files keep playback priority."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "预览歌词"
-          }
-        }
-      }
-    },
-    "Lyrics Preview": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lyrics Preview"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "歌词预览"
-          }
-        }
-      }
-    },
-    "Select a song and click Preview Lyrics.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select a song and click Preview Lyrics."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请选择歌曲并点击“预览歌词”。"
-          }
-        }
-      }
-    },
-    "Save creates a same-name .lrc file beside the audio file. Existing KSC files keep playback priority.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Save creates a same-name .lrc file beside the audio file. Existing KSC files keep playback priority."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存会在歌曲所在文件夹创建同名 .lrc 文件；若已有同名 KSC 歌词，播放时仍优先使用 KSC。"
+            "value": "优先保存逐字歌词，若不可用则保存普通歌词；文件为歌曲旁边的同名 .lrc。已有 KSC 歌词仍优先播放。"
           }
         }
       }

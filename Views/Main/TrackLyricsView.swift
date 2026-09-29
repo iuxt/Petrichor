@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TrackLyricsView: View {
@@ -48,6 +49,12 @@ struct TrackLyricsView: View {
 /// chrome, so it can be hosted inside a custom shell (e.g. the mini player) as
 /// well as the main TrackLyricsView. Self-manages loading and line sync.
 struct TrackLyricsContent: View {
+    private struct LyricsDeletionRequest {
+        let track: Track
+        let source: LyricsSource
+        let fileURL: URL
+    }
+
     /// Optional font family for lyric lines. A nil value uses the system font.
     var fontName: String? = nil
     /// Font size for lyric lines. Larger hosts (e.g. immersive mode) pass a bigger
@@ -62,10 +69,13 @@ struct TrackLyricsContent: View {
     @EnvironmentObject var playbackManager: PlaybackManager
 
     @State private var lyricLines: [LyricLine] = []
+    @State private var lyricsSource: LyricsSource = .none
+    @State private var lyricsTrackID: UUID?
     @State private var isLoading = true
     @State private var fetchFailed = false
     @State private var loadGeneration = UUID()
     @State private var searchRequest: LyricsSearchRequest?
+    @State private var deletionRequest: LyricsDeletionRequest?
     @State private var currentLineIndex: Int = -1
     @State private var hasTimedLyrics: Bool = false
     @State private var isKaraokeLyrics = false
@@ -74,6 +84,11 @@ struct TrackLyricsContent: View {
 
     private var currentTrack: Track? {
         playbackManager.currentTrack
+    }
+
+    private var currentLyricsFileURL: URL? {
+        guard let currentTrack, lyricsTrackID == currentTrack.id else { return nil }
+        return lyricsSource.sidecarURL(for: currentTrack.url)
     }
 
     var body: some View {
@@ -86,6 +101,38 @@ struct TrackLyricsContent: View {
                 lyricsContent
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button(String(appLocalized: "Download Lyrics..."), systemImage: "text.magnifyingglass") {
+                if let track = currentTrack { searchRequest = LyricsSearchRequest(track: track) }
+            }
+            .disabled(currentTrack == nil)
+
+            Button(String(appLocalized: "Reload Lyrics"), systemImage: "arrow.clockwise") {
+                loadLyricsForCurrentTrack(forceReload: true)
+            }
+            .disabled(currentTrack == nil)
+
+            Button(String(appLocalized: "Copy All Lyrics"), systemImage: "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(lyricLines.map(\.text).joined(separator: "\n"), forType: .string)
+            }
+            .disabled(lyricLines.isEmpty || lyricsTrackID != currentTrack?.id)
+
+            if let currentLyricsFileURL {
+                Button(String(appLocalized: "Reveal Lyrics in Finder"), systemImage: "finder") {
+                    NSWorkspace.shared.selectFile(currentLyricsFileURL.path, inFileViewerRootedAtPath: "")
+                }
+            }
+
+            Divider()
+            Button(String(appLocalized: "Delete Current Lyrics..."), systemImage: "trash", role: .destructive) {
+                guard let track = currentTrack, let fileURL = currentLyricsFileURL else { return }
+                deletionRequest = LyricsDeletionRequest(track: track, source: lyricsSource, fileURL: fileURL)
+            }
+            .disabled(currentLyricsFileURL == nil)
+        }
         .onAppear {
             loadLyricsForCurrentTrack()
             // Sample the playhead at 0.5s while lyrics are on screen for tight
@@ -93,6 +140,30 @@ struct TrackLyricsContent: View {
             playbackManager.setFineProgressSampling(true)
         }
         .sheet(item: $searchRequest) { LyricsSearchSheet(track: $0.track) }
+        .alert(String(appLocalized: "Move current lyrics to Trash?"), isPresented: Binding(
+            get: { deletionRequest != nil },
+            set: { if !$0 { deletionRequest = nil } }
+        )) {
+            Button(String(appLocalized: "Move to Trash"), role: .destructive) {
+                guard let request = deletionRequest else { return }
+                deletionRequest = nil
+                Task {
+                    do {
+                        try await TrackTrashManager.moveLyricsToTrash(for: request.track, source: request.source)
+                        LyricsStore.shared.invalidate(for: request.track.url)
+                        NotificationCenter.default.post(name: .downloadedLyricsDidChange, object: request.track.url)
+                        NotificationManager.shared.addMessage(.info, String(appLocalized: "Lyrics moved to Trash"))
+                    } catch {
+                        NotificationManager.shared.addMessage(.error, String.localizedStringWithFormat(
+                            String(appLocalized: "Could not move lyrics to Trash: %1$@"), error.localizedDescription
+                        ))
+                    }
+                }
+            }
+            Button(String(appLocalized: "Cancel"), role: .cancel) { deletionRequest = nil }
+        } message: {
+            Text(verbatim: deletionRequest?.fileURL.lastPathComponent ?? "")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .downloadedLyricsDidChange)) { notification in
             guard let url = notification.object as? URL,
                   url.standardizedFileURL == currentTrack?.url.standardizedFileURL else { return }
@@ -238,6 +309,8 @@ struct TrackLyricsContent: View {
         guard let track = currentTrack else {
             boundaryScheduler.cancel()
             lyricLines = []
+            lyricsSource = .none
+            lyricsTrackID = nil
             hasTimedLyrics = false
             isKaraokeLyrics = false
             isLoading = false
@@ -250,6 +323,8 @@ struct TrackLyricsContent: View {
 
         if !forceReload, let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
             lyricLines = cached.lines
+            lyricsSource = cached.source
+            lyricsTrackID = loadedTrackId
             hasTimedLyrics = cached.hasTimed
             isKaraokeLyrics = cached.isKaraoke
             isLoading = false
@@ -263,6 +338,8 @@ struct TrackLyricsContent: View {
         boundaryScheduler.cancel()
         isLoading = true
         lyricLines = []
+        lyricsSource = .none
+        lyricsTrackID = nil
         fetchFailed = false
         hasTimedLyrics = false   // Reset until we know
         isKaraokeLyrics = false
@@ -280,6 +357,8 @@ struct TrackLyricsContent: View {
                 await MainActor.run {
                     guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     lyricLines = result.lines
+                    lyricsSource = result.source
+                    lyricsTrackID = loadedTrackId
                     hasTimedLyrics = result.hasTimed
                     isKaraokeLyrics = result.isKaraoke
                     isLoading = false
@@ -293,6 +372,8 @@ struct TrackLyricsContent: View {
                     guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     boundaryScheduler.cancel()
                     lyricLines = []
+                    lyricsSource = .none
+                    lyricsTrackID = nil
                     hasTimedLyrics = false
                     isKaraokeLyrics = false
                     isLoading = false

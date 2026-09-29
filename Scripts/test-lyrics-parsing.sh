@@ -35,6 +35,18 @@ precondition(multi.count == 2, "Expected 2 lines from multi-timestamp LRC, got \
 precondition(multi[0].startTime == 1.0 && multi[1].startTime == 5.0, "Multi-timestamp parse wrong")
 print("LRC multi-timestamp OK")
 
+// --- Enhanced LRC: word timestamps must remain available to karaoke rendering ---
+let enhanced = LyricLine.parseLRC(from: "[00:01.000]<00:01.000>你<00:01.800>好<00:03.000>\n[00:04.000]next")
+precondition(enhanced.count == 2 && enhanced[0].text == "你好", "Enhanced LRC display text is wrong")
+precondition(enhanced[0].timingSegments?.map(\.text) == ["你", "好"], "Enhanced LRC word text is wrong")
+precondition(abs((enhanced[0].timingSegments?[1].startOffset ?? 0) - 0.8) < 0.001, "Enhanced LRC word offset is wrong")
+precondition(abs((enhanced[0].timingSegments?[1].duration ?? 0) - 1.2) < 0.001, "Enhanced LRC word duration is wrong")
+precondition(enhanced[1].timingSegments == nil, "Plain LRC should stay line-timed")
+let badWordTiming = LyricLine.parseLRC(from: "[00:01.000]<00:02.000>late<00:01.000>early")
+precondition(badWordTiming.first?.text == "lateearly" && badWordTiming.first?.timingSegments == nil,
+             "Invalid word timing should keep readable line lyrics")
+print("Enhanced LRC word timing OK")
+
 // --- SRT: with sequence number (classic) ---
 let srtWithIndex = """
 1

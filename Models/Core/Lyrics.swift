@@ -167,9 +167,10 @@ extension LyricLine {
 
         // Use the regular expression to parse the time stamps
         let pattern = "\\[(\\d+):(\\d+)(?:\\.(\\d+))?\\]"
-        // Enhanced-LRC inline word timing tags, e.g. <00:12.50>, are stripped from the displayed text
+        // Enhanced LRC places a timestamp before each word and optionally after the last word.
         let wordTagPattern = "<\\d+:\\d+(?:\\.\\d+)?>"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let wordRegex = try? NSRegularExpression(pattern: wordTagPattern) else {
             return lyrics
         }
         
@@ -197,12 +198,16 @@ extension LyricLine {
             }
             
             // Get the plain text part from the lyric
-            let text = line.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
-                .replacingOccurrences(of: wordTagPattern, with: "", options: .regularExpression)
+            let body = line.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+            let text = body.replacingOccurrences(of: wordTagPattern, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
             
             for timestamp in timestamps {
-                lyrics.append(LyricLine(text: text, startTime: timestamp))
+                lyrics.append(LyricLine(
+                    text: text,
+                    startTime: timestamp,
+                    timingSegments: enhancedLRCSegments(body, lineStart: timestamp, regex: wordRegex)
+                ))
             }
         }
         
@@ -214,6 +219,59 @@ extension LyricLine {
             }
         }
         return sorted
+    }
+
+    private static func enhancedLRCSegments(_ body: String, lineStart: TimeInterval, regex: NSRegularExpression) -> [LyricTimingSegment]? {
+        let matches = regex.matches(in: body, range: NSRange(body.startIndex..., in: body))
+        guard !matches.isEmpty, let firstRange = Range(matches[0].range, in: body),
+              body[..<firstRange.lowerBound].trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+
+        var markers: [(time: TimeInterval, text: String)] = []
+        for (index, match) in matches.enumerated() {
+            guard let range = Range(match.range, in: body),
+                  let time = lrcTimestamp(String(body[range].dropFirst().dropLast())),
+                  time >= lineStart else { return nil }
+            let end = index + 1 < matches.count ? Range(matches[index + 1].range, in: body)!.lowerBound : body.endIndex
+            markers.append((time, String(body[range.upperBound..<end])))
+        }
+        guard markers.contains(where: { !$0.text.isEmpty }),
+              zip(markers, markers.dropFirst()).allSatisfy({ $0.time <= $1.time }) else { return nil }
+
+        // An empty final marker supplies the exact last-word end time.
+        var segments: [LyricTimingSegment] = []
+        for i in markers.indices where !markers[i].text.isEmpty {
+            let next = i + 1 < markers.count ? markers[i + 1].time : markers[i].time + 0.5
+            segments.append(LyricTimingSegment(
+                text: markers[i].text,
+                startOffset: markers[i].time - lineStart,
+                duration: max(0, next - markers[i].time)
+            ))
+        }
+        if let first = segments.first {
+            segments[0] = LyricTimingSegment(
+                text: String(first.text.drop(while: { $0.isWhitespace })),
+                startOffset: first.startOffset,
+                duration: first.duration
+            )
+        }
+        if let last = segments.last {
+            segments[segments.count - 1] = LyricTimingSegment(
+                text: String(last.text.reversed().drop(while: { $0.isWhitespace }).reversed()),
+                startOffset: last.startOffset,
+                duration: last.duration
+            )
+        }
+        guard segments.map(\.text).joined() ==
+                body.replacingOccurrences(of: "<\\d+:\\d+(?:\\.\\d+)?>", with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespaces) else { return nil }
+        return segments
+    }
+
+    private static func lrcTimestamp(_ raw: String) -> TimeInterval? {
+        let fields = raw.split(separator: ":", omittingEmptySubsequences: false)
+        guard fields.count == 2, let minutes = Double(fields[0]), let seconds = Double(fields[1]),
+              minutes.isFinite, seconds.isFinite, minutes >= 0, seconds >= 0, seconds < 60 else { return nil }
+        return minutes * 60 + seconds
     }
     
     /// Parse the lyrics from the SRT files

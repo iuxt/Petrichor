@@ -11,6 +11,7 @@ final class LyricsStore {
     struct Lyrics {
         let trackId: UUID
         let lines: [LyricLine]
+        let source: LyricsSource
         let hasTimed: Bool
         let isKaraoke: Bool
     }
@@ -69,8 +70,9 @@ final class LyricsStore {
             return Lyrics(
                 trackId: trackId,
                 lines: result.lyrics,
+                source: result.source,
                 hasTimed: hasTimed,
-                isKaraoke: result.source == .ksc
+                isKaraoke: result.lyrics.contains { $0.timingSegments?.isEmpty == false }
             )
         }
         inFlight[trackId] = task

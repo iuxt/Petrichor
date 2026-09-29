@@ -1,6 +1,32 @@
 import Foundation
 
 enum TrackTrashManager {
+    @MainActor
+    static func moveLyricsToTrash(for track: Track, source: LyricsSource) async throws {
+        guard let lyricsURL = source.sidecarURL(for: track.url) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        guard let coordinator = AppCoordinator.shared else {
+            throw CocoaError(.fileReadNoPermission)
+        }
+
+        let audioURL = track.url
+        let accessURL = libraryFolderAccessURL(containing: audioURL, folders: coordinator.libraryManager.folders)
+        try await Task.detached(priority: .utility) {
+            let didStartAccess = withLibraryFolderAccess(accessURL)
+            let didStartAudioAccess = audioURL.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAudioAccess { audioURL.stopAccessingSecurityScopedResource() }
+                if didStartAccess { accessURL?.stopAccessingSecurityScopedResource() }
+            }
+
+            guard FileManager.default.fileExists(atPath: lyricsURL.path) else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            try moveItemToTrash(lyricsURL, fileManager: .default)
+        }.value
+    }
+
     static func moveTrackToTrash(_ track: Track) async {
         guard let coordinator = AppCoordinator.shared else {
             await notify(.error, String(appLocalized: "Unable to access the library"))

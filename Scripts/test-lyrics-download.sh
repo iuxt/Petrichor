@@ -69,6 +69,22 @@ actor FakeWriter: DownloadedLyricsWriting {
         fatalError("Timed out")
     }
     @MainActor static func main() async throws {
+        if CommandLine.arguments.contains("--live-word") {
+            let service = OnlineLyricsService()
+            let netease = OnlineTagCandidate(provider: .netease, songID: "1392990601", title: "Live YRC", artist: "", album: "", duration: nil, trackNumber: nil)
+            let qq = OnlineTagCandidate(provider: .qqMusic, songID: "0039MnYb0qxYhV", title: "Live QRC", artist: "", album: "", duration: nil, trackNumber: nil)
+            for candidate in [netease, qq] {
+                for includeTranslation in [false, true] {
+                    let downloaded = try await service.download(candidate, includeTranslation: includeTranslation)
+                    let lines = LyricLine.parseLRC(from: downloaded.lrc)
+                    expect(lines.filter { $0.timingSegments?.count ?? 0 > 2 }.count > 10, "Live \(candidate.provider.rawValue) word timing must survive download")
+                    expect(lines.allSatisfy { line in line.timingSegments.map { $0.map(\.text).joined() == line.text } ?? true },
+                           "Live word segments must match displayed text")
+                }
+                print("Live \(candidate.provider.rawValue): word-timed lyrics received")
+            }
+            return
+        }
         if CommandLine.arguments.contains("--live") {
             let service = OnlineLyricsService()
             for provider in OnlineTagProvider.allCases {
@@ -95,6 +111,15 @@ actor FakeWriter: DownloadedLyricsWriting {
         expect(!plain.lrc.contains("你好"), "Translation toggle must be respected")
         let qq = try OnlineLyricsService.parse(Data(#"{"code":0,"lyric":"&#91;00:01.00&#93;A &amp; B","trans":""}"#.utf8), provider: .qqMusic, includeTranslation: true)
         expect(qq.lrc.contains("A & B"), "QQ entities must decode")
+        let yrc = Data(#"{"code":200,"yrc":{"lyric":"[1000,2000](1000,800,0)你(1800,1200,0)好"},"lrc":{"lyric":"[00:01.00]你好"}}"#.utf8)
+        let yrcLyrics = try OnlineLyricsService.parse(yrc, provider: .netease, includeTranslation: false)
+        let wordLines = LyricLine.parseLRC(from: yrcLyrics.lrc)
+        expect(wordLines.count == 1 && wordLines[0].text == "你好" && wordLines[0].timingSegments?.count == 2, "YRC should become word-timed enhanced LRC")
+        expect(abs((wordLines[0].timingSegments?[1].startOffset ?? 0) - 0.8) < 0.001, "YRC word offsets must survive")
+        let qrcLines = WordTimedLyrics.qrc("[1000,2000]你(1000,800)好(1800,1200)")
+        expect(LyricLine.parseLRC(from: WordTimedLyrics.enhancedLRC(qrcLines) ?? "").first?.timingSegments?.count == 2, "QRC word offsets must survive")
+        let malformed = Data(#"{"code":200,"yrc":{"lyric":"bad"},"lrc":{"lyric":"[00:01.00]Fallback"}}"#.utf8)
+        expect(try OnlineLyricsService.parse(malformed, provider: .netease, includeTranslation: false).lrc.contains("Fallback"), "Malformed YRC must fall back to LRC")
         for payload in [#"{"code":200,"pureMusic":true}"#, #"{"code":200,"lrc":{"lyric":"[ti:Song]"}}"#] {
             do { _ = try OnlineLyricsService.parse(Data(payload.utf8), provider: .netease, includeTranslation: true); fatalError("Expected no lyrics") }
             catch { expect(error as? LyricsDownloadError == .noLyrics, "Must distinguish no lyrics") }
@@ -113,6 +138,9 @@ actor FakeWriter: DownloadedLyricsWriting {
             let request = OnlineLyricsService.request(for: c)
             expect(request.url?.scheme == "https" && request.httpBody == nil, "Lyrics requests must not upload audio")
         }
+        let wordRequest = OnlineLyricsService.qqWordRequest(for: otherAlbum)
+        expect(wordRequest.httpMethod == "POST" && wordRequest.httpBody.flatMap { String(data: $0, encoding: .utf8) }?.contains("\"songMID\":\"3\"") == true,
+               "QQ word request must contain only the selected song ID")
 
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -157,27 +185,41 @@ actor FakeWriter: DownloadedLyricsWriting {
         manual.search()
         await wait { !manual.isSearching }
         manual.selection = candidate.id
-        manual.fetchPreview()
-        await wait { manual.preview != nil }
         manual.title = manual.title
         manual.artist = manual.artist
         manual.selection = manual.selection
-        expect(manual.preview != nil && !manual.candidates.isEmpty, "Unchanged control commits must preserve the preview")
-        expect(await fakeWriter.writes == 0, "Preview must not write files")
-        await fakeWriter.setExists()
+        expect(!manual.candidates.isEmpty, "Unchanged control commits must preserve search results")
+        expect(await service.downloads == 0, "Search must not download lyrics")
+        expect(await fakeWriter.writes == 0, "Search must not write lyrics")
         manual.save()
         await wait { !manual.isSaving }
-        expect(manual.needsOverwriteConfirmation, "Existing LRC must trigger confirmation")
-        manual.save(overwrite: true)
-        await wait { !manual.isSaving }
-        expect(await fakeWriter.overwrites == [true], "Only confirmed overwrite may write")
+        expect(manual.savedURL != nil, "Save must succeed without preview")
+        expect(await fakeWriter.writes == 1, "Save must write the downloaded lyrics")
+        expect(await service.downloads == 1, "Save must download the selected lyrics once")
+
+        await fakeWriter.setExists()
+        let replacement = LyricsSearchViewModel(track: track, settings: settings, service: service, writer: fakeWriter, didSave: { _ in })
+        replacement.search()
+        await wait { !replacement.isSearching }
+        replacement.selection = candidate.id
+        replacement.save()
+        await wait { !replacement.isSaving }
+        expect(replacement.needsOverwriteConfirmation, "Existing LRC must trigger confirmation")
+        expect(await fakeWriter.writes == 1, "Unconfirmed save must not replace lyrics")
+        replacement.save(overwrite: true)
+        await wait { !replacement.isSaving }
+        expect(await fakeWriter.overwrites == [false, true], "Only confirmed overwrite may replace lyrics")
+        expect(await service.downloads == 2, "Confirmed overwrite must reuse downloaded lyrics")
+
         await service.suspend()
-        manual.fetchPreview()
-        await wait { await service.downloads == 2 }
-        manual.selection = nil
+        replacement.selection = nil
+        replacement.selection = candidate.id
+        replacement.save()
+        await wait { await service.downloads == 3 }
+        replacement.selection = nil
         await service.resume()
         try? await Task.sleep(nanoseconds: 20_000_000)
-        expect(manual.preview == nil, "Old preview must not attach to a new selection")
+        expect(await fakeWriter.writes == 2, "Changing selection must cancel the pending save")
 
         let autoService = FakeService(), autoWriter = FakeWriter()
         let automatic = AutomaticLyricsDownloader(settings: settings, service: autoService, writer: autoWriter, loadLocal: { _ in false }, didSave: { _ in })
@@ -215,6 +257,8 @@ xcrun swiftc -parse-as-library \
     "$ROOT_DIR/Models/Core/Lyrics.swift" \
     "$ROOT_DIR/Core/Metadata/TrackMetadataEditModel.swift" \
     "$ROOT_DIR/Core/Metadata/OnlineTagLookup.swift" \
+    "$ROOT_DIR/Core/Lyrics/WordTimedLyrics.swift" \
+    "$ROOT_DIR/Core/Lyrics/QQMusicQRCDecoder.swift" \
     "$ROOT_DIR/Core/Lyrics/OnlineLyricsService.swift" \
     "$ROOT_DIR/Core/Lyrics/DownloadedLyricsFileStore.swift" \
     "$ROOT_DIR/Managers/LyricsDownloadSettings.swift" \

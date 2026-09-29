@@ -39,6 +39,12 @@ actor OnlineLyricsService: OnlineLyricsServing {
     }
 
     func download(_ candidate: OnlineTagCandidate, includeTranslation: Bool) async throws -> DownloadedLyrics {
+        if candidate.provider == .qqMusic {
+            if let wordTimed = try? await downloadQQWordTimed(candidate, includeTranslation: includeTranslation) {
+                return wordTimed
+            }
+            try Task.checkCancellation()
+        }
         let (data, response) = try await session.data(for: Self.request(for: candidate))
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
@@ -47,15 +53,68 @@ actor OnlineLyricsService: OnlineLyricsServing {
         return try Self.parse(data, provider: candidate.provider, includeTranslation: includeTranslation)
     }
 
+    private func downloadQQWordTimed(_ candidate: OnlineTagCandidate, includeTranslation: Bool) async throws -> DownloadedLyrics? {
+        let (data, response) = try await session.data(for: Self.qqWordRequest(for: candidate))
+        try Task.checkCancellation()
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode),
+              data.count <= 2_000_000,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let result = json["req_0"] as? [String: Any], result["code"] as? Int == 0,
+              let lyricData = result["data"] as? [String: Any],
+              let encrypted = lyricData["lyric"] as? String,
+              let xml = QQMusicQRCDecoder.decode(encrypted),
+              let raw = Self.qrcContent(xml) else { return nil }
+        let lines = WordTimedLyrics.qrc(raw)
+        guard !lines.isEmpty else { return nil }
+
+        var translations: [LyricLine] = []
+        if includeTranslation,
+           let (translationData, translationResponse) = try? await session.data(for: Self.request(for: candidate)),
+           let translationResponse = translationResponse as? HTTPURLResponse,
+           (200..<300).contains(translationResponse.statusCode),
+           translationData.count <= 2_000_000,
+           let lineJSON = (try? JSONSerialization.jsonObject(with: translationData)) as? [String: Any],
+           let translation = lineJSON["trans"] as? String {
+            translations = Self.timedLines(translation)
+        }
+        try Task.checkCancellation()
+        return WordTimedLyrics.enhancedLRC(lines, translations: translations).map(DownloadedLyrics.init(lrc:))
+    }
+
+    private static func qrcContent(_ xml: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: #"LyricContent="([^"]*)""#),
+              let match = regex.firstMatch(in: xml, range: NSRange(xml.startIndex..., in: xml)),
+              let range = Range(match.range(at: 1), in: xml) else { return nil }
+        return decodeEntities(String(xml[range]))
+    }
+
+    static func qqWordRequest(for candidate: OnlineTagCandidate) -> URLRequest {
+        var request = URLRequest(url: URL(string: "https://u.y.qq.com/cgi-bin/musicu.fcg")!)
+        request.httpMethod = "POST"
+        request.setValue("https://y.qq.com/", forHTTPHeaderField: "Referer")
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: Any] = [
+            "comm": ["ct": 19, "cv": 0, "tmeAppID": "qqmusiclight"],
+            "req_0": ["module": "music.musichallSong.PlayLyricInfo", "method": "GetPlayLyricInfo",
+                      "param": ["songMID": candidate.songID, "songID": 0, "platform": 0,
+                                "needNew": 1, "crypt": 1, "qrc": 1, "trans": 1]]
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        return request
+    }
+
     static func request(for candidate: OnlineTagCandidate) -> URLRequest {
         var components: URLComponents
         let referer: String
         switch candidate.provider {
         case .netease:
-            components = URLComponents(string: "https://music.163.com/api/song/lyric")!
+            components = URLComponents(string: "https://music.163.com/api/song/lyric/v1")!
             components.queryItems = [
-                .init(name: "id", value: candidate.songID), .init(name: "os", value: "osx"),
-                .init(name: "lv", value: "-1"), .init(name: "kv", value: "-1"), .init(name: "tv", value: "-1")
+                .init(name: "id", value: candidate.songID), .init(name: "cp", value: "false"),
+                .init(name: "lv", value: "0"), .init(name: "tv", value: "0"),
+                .init(name: "kv", value: "0"), .init(name: "yv", value: "0"),
+                .init(name: "ytv", value: "0"), .init(name: "yrv", value: "0")
             ]
             referer = "https://music.163.com/"
         case .qqMusic:
@@ -87,6 +146,13 @@ actor OnlineLyricsService: OnlineLyricsServing {
         case .netease:
             raw = (json["lrc"] as? [String: Any])?["lyric"] as? String
             translation = (json["tlyric"] as? [String: Any])?["lyric"] as? String
+            if let yrc = (json["yrc"] as? [String: Any])?["lyric"] as? String,
+               let enhanced = WordTimedLyrics.enhancedLRC(
+                   WordTimedLyrics.yrc(yrc),
+                   translations: includeTranslation ? timedLines(translation ?? "") : []
+               ) {
+                return DownloadedLyrics(lrc: enhanced)
+            }
         case .qqMusic:
             raw = json["lyric"] as? String
             translation = json["trans"] as? String

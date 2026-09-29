@@ -12,12 +12,10 @@ final class LyricsSearchViewModel: ObservableObject {
     @Published var title: String { didSet { if title != oldValue { resetSearch() } } }
     @Published var artist: String { didSet { if artist != oldValue { resetSearch() } } }
     @Published var provider: OnlineTagProvider { didSet { if provider != oldValue { resetSearch() } } }
-    @Published var includeTranslation: Bool { didSet { if includeTranslation != oldValue { clearPreview() } } }
-    @Published var selection: String? { didSet { if selection != oldValue { clearPreview() } } }
+    @Published var includeTranslation: Bool { didSet { if includeTranslation != oldValue { clearSaveState() } } }
+    @Published var selection: String? { didSet { if selection != oldValue { clearSaveState() } } }
     @Published private(set) var candidates: [OnlineTagCandidate] = []
-    @Published private(set) var preview: DownloadedLyrics?
     @Published private(set) var isSearching = false
-    @Published private(set) var isDownloading = false
     @Published private(set) var isSaving = false
     @Published private(set) var hasSearched = false
     @Published private(set) var errorMessage: String?
@@ -28,9 +26,10 @@ final class LyricsSearchViewModel: ObservableObject {
     private let writer: any DownloadedLyricsWriting
     private let didSave: @MainActor (URL) -> Void
     private var searchTask: Task<Void, Never>?
-    private var downloadTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
     private var searchGeneration = 0
-    private var previewGeneration = 0
+    private var saveGeneration = 0
+    private var pendingOverwrite: DownloadedLyrics?
 
     init(track: Track, settings: LyricsDownloadSettings? = nil,
          service: any OnlineLyricsServing = OnlineLyricsService(),
@@ -77,51 +76,51 @@ final class LyricsSearchViewModel: ObservableObject {
         }
     }
 
-    func fetchPreview() {
-        guard let candidate = selectedCandidate, !isSaving else { return }
-        clearPreview()
-        isDownloading = true
-        let generation = previewGeneration
-        let service = service, includeTranslation = includeTranslation
-        downloadTask = Task { [weak self] in
-            do {
-                let lyrics = try await service.download(candidate, includeTranslation: includeTranslation)
-                guard let self, !Task.isCancelled, self.previewGeneration == generation else { return }
-                self.preview = lyrics
-                self.isDownloading = false
-            } catch {
-                guard let self, !Task.isCancelled, self.previewGeneration == generation else { return }
-                self.isDownloading = false
-                self.errorMessage = lyricsDownloadMessage(for: error)
-            }
-        }
-    }
-
     func save(overwrite: Bool = false) {
-        guard let preview, !isSaving else { return }
+        guard !isSaving, savedURL == nil else { return }
+        guard let candidate = selectedCandidate, !overwrite || pendingOverwrite != nil else { return }
         isSaving = true
         errorMessage = nil
         needsOverwriteConfirmation = false
-        Task {
-            defer { isSaving = false }
+        let generation = saveGeneration
+        let service = service, writer = writer, includeTranslation = includeTranslation
+        saveTask = Task { [weak self] in
+            var lyrics = overwrite ? self?.pendingOverwrite : nil
+            defer {
+                if let self, self.saveGeneration == generation {
+                    self.isSaving = false
+                    self.saveTask = nil
+                }
+            }
             do {
-                savedURL = try await writer.save(preview, for: track.url, overwrite: overwrite, automatic: false)
-                didSave(track.url)
+                if lyrics == nil {
+                    lyrics = try await service.download(candidate, includeTranslation: includeTranslation)
+                }
+                guard let self, let lyrics, !Task.isCancelled, self.saveGeneration == generation else { return }
+                let url = try await writer.save(lyrics, for: self.track.url, overwrite: overwrite, automatic: false)
+                guard !Task.isCancelled, self.saveGeneration == generation else { return }
+                self.savedURL = url
+                self.pendingOverwrite = nil
+                self.didSave(self.track.url)
             } catch LyricsDownloadError.existingFile {
-                needsOverwriteConfirmation = true
+                guard let self, !Task.isCancelled, self.saveGeneration == generation else { return }
+                self.pendingOverwrite = lyrics
+                self.needsOverwriteConfirmation = true
             } catch {
-                errorMessage = String.localizedStringWithFormat(
-                    String(appLocalized: "Could not save the LRC file. Check folder write access: %1$@"), error.localizedDescription
-                )
+                guard let self, !Task.isCancelled, self.saveGeneration == generation else { return }
+                self.errorMessage = lyrics == nil ? lyricsDownloadMessage(for: error) :
+                    String.localizedStringWithFormat(
+                        String(appLocalized: "Could not save the LRC file. Check folder write access: %1$@"), error.localizedDescription
+                    )
             }
         }
     }
 
     func cancel() {
         searchTask?.cancel()
-        downloadTask?.cancel()
+        saveTask?.cancel()
         searchGeneration += 1
-        previewGeneration += 1
+        saveGeneration += 1
     }
 
     private func resetSearch() {
@@ -131,16 +130,16 @@ final class LyricsSearchViewModel: ObservableObject {
         hasSearched = false
         candidates = []
         selection = nil
-        clearPreview()
+        clearSaveState()
     }
 
-    private func clearPreview() {
-        downloadTask?.cancel()
-        previewGeneration += 1
-        preview = nil
+    private func clearSaveState() {
+        saveTask?.cancel()
+        saveGeneration += 1
+        pendingOverwrite = nil
         savedURL = nil
         errorMessage = nil
         needsOverwriteConfirmation = false
-        isDownloading = false
+        isSaving = false
     }
 }
