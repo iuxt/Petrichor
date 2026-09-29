@@ -2396,6 +2396,17 @@
         }
       }
     },
+    "Embedded Lyrics": {
+      "comment": "Format label for lyrics stored inside the audio file.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内嵌歌词"
+          }
+        }
+      }
+    },
     "Empty Playlist": {
       "comment": "Empty-state title for an empty playlist.",
       "localizations": {

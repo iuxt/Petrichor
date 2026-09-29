@@ -6,6 +6,7 @@ struct TrackLyricsView: View {
     let onClose: () -> Void
     @EnvironmentObject private var playbackManager: PlaybackManager
     @State private var searchRequest: LyricsSearchRequest?
+    @State private var displayedLyricsSource: LyricsSource?
 
     @AppStorage("sidePanelLyricsFontName")
     private var sidePanelLyricsFontName = LyricsFontSettings.systemFontName
@@ -23,6 +24,18 @@ struct TrackLyricsView: View {
             )
         }
         .sheet(item: $searchRequest) { LyricsSearchSheet(track: $0.track) }
+        .onPreferenceChange(LyricsSourcePreferenceKey.self) { displayedLyricsSource = $0 }
+    }
+
+    private var lyricsFormatLabel: String? {
+        switch displayedLyricsSource {
+        case .some(.ttml): "TTML"
+        case .some(.ksc): "KSC"
+        case .some(.lrc): "LRC"
+        case .some(.srt): "SRT"
+        case .some(.embedded): String(appLocalized: "Embedded Lyrics")
+        case .some(.none), nil: nil
+        }
     }
 
     // MARK: - Header
@@ -38,6 +51,12 @@ struct TrackLyricsView: View {
 
                 Text("Lyrics")
                     .headerTitleStyle()
+
+                if let lyricsFormatLabel {
+                    Text(verbatim: lyricsFormatLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Button {
@@ -113,6 +132,11 @@ struct TrackLyricsContent: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .preference(
+            key: LyricsSourcePreferenceKey.self,
+            value: !isLoading && !lyricLines.isEmpty && lyricsTrackID == currentTrack?.id
+                ? lyricsSource : nil
+        )
         .contentShape(Rectangle())
         .contextMenu {
             Button(String(appLocalized: "Download Lyrics..."), systemImage: "text.magnifyingglass") {
@@ -447,6 +471,14 @@ struct TrackLyricsContent: View {
         }
         sampledPlaybackTime = transitionTime
         updateCurrentLine(for: transitionTime)
+    }
+}
+
+private struct LyricsSourcePreferenceKey: PreferenceKey {
+    static var defaultValue: LyricsSource? = nil
+
+    static func reduce(value: inout LyricsSource?, nextValue: () -> LyricsSource?) {
+        value = nextValue()
     }
 }
 
