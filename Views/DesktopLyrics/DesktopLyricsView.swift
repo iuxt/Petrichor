@@ -74,12 +74,7 @@ struct DesktopLyricsView: View {
             VStack(spacing: 8) {
                 currentLyricsLine(lines.current)
 
-                Text(lines.next?.text ?? " ")
-                    .font(nextLineFont)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity)
+                nextLyricsLine(lines.next)
             }
             .padding(.horizontal, 24)
             .textShadowForDesktopLyrics()
@@ -100,14 +95,42 @@ struct DesktopLyricsView: View {
                 inactiveColor: .secondary,
                 lineLimit: 1
             )
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: line.frameAlignment)
         } else {
             Text(line.text)
                 .font(currentLineFont)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(line.swiftUITextAlignment)
+                .frame(maxWidth: .infinity, alignment: line.frameAlignment)
+        }
+    }
+
+    @ViewBuilder
+    private func nextLyricsLine(_ line: LyricLine?) -> some View {
+        if let line, line.duetSide != nil, line.isActive(at: provider.rendererSampleTime),
+           line.timingSegments?.isEmpty == false {
+            KaraokeLyricText(
+                line: line,
+                sampleTime: provider.rendererSampleTime,
+                isPlaying: playbackManager.isPlaying,
+                fontName: desktopLyricsFontName == LyricsFontSettings.systemFontName ? nil : desktopLyricsFontName,
+                fontSize: CGFloat(desktopLyricsFontSize) * 0.85,
+                fontWeight: .regular,
+                activeColor: .primary,
+                inactiveColor: .secondary,
+                lineLimit: 1
+            )
+            .frame(maxWidth: .infinity, alignment: line.frameAlignment)
+        } else {
+            Text(line?.text ?? " ")
+                .font(nextLineFont)
+                .foregroundStyle(line?.duetSide != nil && line?.isActive(at: provider.rendererSampleTime) == true ? .primary : .secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .multilineTextAlignment(line?.swiftUITextAlignment ?? .center)
+                .frame(maxWidth: .infinity, alignment: line?.frameAlignment ?? .center)
         }
     }
 

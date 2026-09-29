@@ -6,23 +6,36 @@ struct LyricTimingSegment: Codable, Equatable, Sendable {
     let duration: TimeInterval
 }
 
+enum LyricDuetSide: String, Codable, Sendable {
+    case left
+    case right
+}
+
 struct LyricLine: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     let text: String
     let startTime: TimeInterval // seconds
     var endTime: TimeInterval?  // seconds; nil for the last line
     let timingSegments: [LyricTimingSegment]?
+    let duetSide: LyricDuetSide?
     
     init(
         text: String,
         startTime: TimeInterval,
         endTime: TimeInterval? = nil,
-        timingSegments: [LyricTimingSegment]? = nil
+        timingSegments: [LyricTimingSegment]? = nil,
+        duetSide: LyricDuetSide? = nil
     ) {
         self.text = text
         self.startTime = startTime
         self.endTime = endTime
         self.timingSegments = timingSegments
+        self.duetSide = duetSide
+    }
+
+    func isActive(at time: TimeInterval) -> Bool {
+        guard time >= startTime else { return false }
+        return endTime.map { time < $0 } ?? true
     }
 }
 

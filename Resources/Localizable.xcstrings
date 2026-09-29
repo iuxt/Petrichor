@@ -9075,19 +9075,19 @@
         }
       }
     },
-    "Could not save the LRC file. Check folder write access: %1$@": {
+    "Could not save the lyrics file. Check folder write access: %1$@": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Could not save the LRC file. Check folder write access: %1$@"
+            "value": "Could not save the lyrics file. Check folder write access: %1$@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法保存 LRC 文件，请检查文件夹写入权限：%1$@"
+            "value": "无法保存歌词文件，请检查文件夹写入权限：%1$@"
           }
         }
       }
@@ -9211,19 +9211,19 @@
         }
       }
     },
-    "When enabled, playing songs without local or embedded lyrics sends their title and artist to the selected provider. Confident matches are saved as UTF-8 LRC files beside the songs. Existing lyrics are never automatically replaced.": {
+    "When enabled, playing songs without lyrics sends title and artist to the selected provider, then the matched song ID to AMLL for TTML. Confident matches are saved as TTML when available, otherwise LRC. Existing lyrics are never automatically replaced. The translation option applies to LRC; TTML is saved as provided.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When enabled, playing songs without local or embedded lyrics sends their title and artist to the selected provider. Confident matches are saved as UTF-8 LRC files beside the songs. Existing lyrics are never automatically replaced."
+            "value": "When enabled, playing songs without lyrics sends title and artist to the selected provider, then the matched song ID to AMLL for TTML. Confident matches are saved as TTML when available, otherwise LRC. Existing lyrics are never automatically replaced. The translation option applies to LRC; TTML is saved as provided."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启后，播放没有本地或内嵌歌词的歌曲时，会将标题和艺人发送至所选平台。匹配可靠时，将 UTF-8 格式的同名 LRC 文件保存到歌曲所在文件夹，不会自动覆盖已有歌词。"
+            "value": "开启后，播放没有歌词的歌曲时，会将标题和艺人发送至所选平台，再将匹配歌曲的 ID 发送至 AMLL 获取 TTML。可靠匹配优先保存同名 TTML，否则保存 LRC；不会自动覆盖已有歌词。翻译选项仅适用于 LRC，TTML 按原样保存。"
           }
         }
       }
@@ -9301,19 +9301,19 @@
         }
       }
     },
-    "Search sends the title and artist below to the selected provider. Saving fetches lyrics for the selected song; audio files are not uploaded.": {
+    "Search sends the title and artist to the selected music provider and AMLL TTML library. Saving fetches the selected lyrics; audio files are not uploaded.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search sends the title and artist below to the selected provider. Saving fetches lyrics for the selected song; audio files are not uploaded."
+            "value": "Search sends the title and artist to the selected music provider and AMLL TTML library. Saving fetches the selected lyrics; audio files are not uploaded."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜索会将下方标题和艺人发送至所选平台；保存时会获取所选歌曲的歌词，不会上传音频文件。"
+            "value": "搜索会将标题和艺人发送至所选音乐平台及 AMLL TTML 歌词库；保存时获取所选歌词，不会上传音频文件。"
           }
         }
       }
@@ -9335,19 +9335,19 @@
         }
       }
     },
-    "Save prefers word-timed lyrics when available and creates a same-name .lrc file. Existing KSC files keep playback priority.": {
+    "TTML is preferred when available; otherwise lyrics are saved as LRC. Files are saved beside the song without automatically replacing existing lyrics. The translation option applies to LRC; TTML is saved as provided.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Save prefers word-timed lyrics when available and creates a same-name .lrc file. Existing KSC files keep playback priority."
+            "value": "TTML is preferred when available; otherwise lyrics are saved as LRC. Files are saved beside the song without automatically replacing existing lyrics. The translation option applies to LRC; TTML is saved as provided."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "优先保存逐字歌词，若不可用则保存普通歌词；文件为歌曲旁边的同名 .lrc。已有 KSC 歌词仍优先播放。"
+            "value": "优先保存 TTML，若不可用则保存 LRC。歌词文件保存在歌曲旁边，不会自动覆盖已有歌词。翻译选项仅适用于 LRC，TTML 按原样保存。"
           }
         }
       }
@@ -9369,19 +9369,19 @@
         }
       }
     },
-    "Replace the existing LRC file?": {
+    "Replace the existing lyrics file?": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Replace the existing LRC file?"
+            "value": "Replace the existing lyrics file?"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "替换已有的 LRC 歌词文件？"
+            "value": "替换已有的歌词文件？"
           }
         }
       }

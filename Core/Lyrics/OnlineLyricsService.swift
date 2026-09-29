@@ -1,7 +1,13 @@
 import Foundation
 
 struct DownloadedLyrics: Equatable, Sendable {
-    let lrc: String
+    enum Format: String, Sendable { case lrc, ttml }
+    let content: String
+    let format: Format
+
+    init(lrc: String) { content = lrc; format = .lrc }
+    init(ttml: String) { content = ttml; format = .ttml }
+    var lrc: String { format == .lrc ? content : "" }
 }
 
 enum LyricsDownloadError: Error, Equatable {
@@ -14,6 +20,8 @@ enum LyricsDownloadError: Error, Equatable {
 }
 
 protocol OnlineLyricsServing: OnlineTagSearching {
+    func searchTTML(title: String, artist: String) async throws -> [AMLLTTMLCandidate]
+    func downloadTTML(_ candidate: AMLLTTMLCandidate) async throws -> DownloadedLyrics
     func download(_ candidate: OnlineTagCandidate, includeTranslation: Bool) async throws -> DownloadedLyrics
 }
 
@@ -38,7 +46,19 @@ actor OnlineLyricsService: OnlineLyricsServing {
         try await searchService.search(provider: provider, title: title, artist: artist)
     }
 
+    func searchTTML(title: String, artist: String) async throws -> [AMLLTTMLCandidate] {
+        try await AMLLTTMLService.search(title: title, artist: artist, session: session)
+    }
+
+    func downloadTTML(_ candidate: AMLLTTMLCandidate) async throws -> DownloadedLyrics {
+        try await AMLLTTMLService.download(candidate, session: session)
+    }
+
     func download(_ candidate: OnlineTagCandidate, includeTranslation: Bool) async throws -> DownloadedLyrics {
+        if let ttml = try? await AMLLTTMLService.download(for: candidate, session: session) {
+            return ttml
+        }
+        try Task.checkCancellation()
         if candidate.provider == .qqMusic {
             if let wordTimed = try? await downloadQQWordTimed(candidate, includeTranslation: includeTranslation) {
                 return wordTimed

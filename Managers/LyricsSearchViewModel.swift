@@ -6,6 +6,31 @@ struct LyricsSearchRequest: Identifiable {
     let track: Track
 }
 
+enum LyricsSearchCandidate: Identifiable, Equatable {
+    case ttml(AMLLTTMLCandidate)
+    case provider(OnlineTagCandidate)
+
+    var id: String {
+        switch self {
+        case .ttml(let item): "ttml:\(item.id)"
+        case .provider(let item): item.id
+        }
+    }
+    var title: String {
+        switch self { case .ttml(let item): item.title; case .provider(let item): item.title }
+    }
+    var artist: String {
+        switch self { case .ttml(let item): item.artist; case .provider(let item): item.artist }
+    }
+    var album: String {
+        switch self { case .ttml(let item): item.album; case .provider(let item): item.album }
+    }
+    var duration: Double? {
+        switch self { case .ttml: nil; case .provider(let item): item.duration }
+    }
+    var isTTML: Bool { if case .ttml = self { true } else { false } }
+}
+
 @MainActor
 final class LyricsSearchViewModel: ObservableObject {
     let track: Track
@@ -14,7 +39,7 @@ final class LyricsSearchViewModel: ObservableObject {
     @Published var provider: OnlineTagProvider { didSet { if provider != oldValue { resetSearch() } } }
     @Published var includeTranslation: Bool { didSet { if includeTranslation != oldValue { clearSaveState() } } }
     @Published var selection: String? { didSet { if selection != oldValue { clearSaveState() } } }
-    @Published private(set) var candidates: [OnlineTagCandidate] = []
+    @Published private(set) var candidates: [LyricsSearchCandidate] = []
     @Published private(set) var isSearching = false
     @Published private(set) var isSaving = false
     @Published private(set) var hasSearched = false
@@ -49,7 +74,10 @@ final class LyricsSearchViewModel: ObservableObject {
         self.didSave = didSave
     }
 
-    var selectedCandidate: OnlineTagCandidate? { candidates.first { $0.id == selection } }
+    var selectedCandidate: LyricsSearchCandidate? { candidates.first { $0.id == selection } }
+    var overwriteURL: URL? {
+        pendingOverwrite.map { track.url.deletingPathExtension().appendingPathExtension($0.format.rawValue) }
+    }
     var canSearch: Bool {
         !isSearching && !isSaving && ![title, artist].allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
@@ -62,9 +90,13 @@ final class LyricsSearchViewModel: ObservableObject {
         let service = service, provider = provider, title = title, artist = artist
         searchTask = Task { [weak self] in
             do {
-                let result = try await service.search(provider: provider, title: title, artist: artist)
+                async let ttml = try? service.searchTTML(title: title, artist: artist)
+                async let platform = try? service.search(provider: provider, title: title, artist: artist)
+                let (ttmlResults, platformResults) = await (ttml, platform)
                 guard let self, !Task.isCancelled, self.searchGeneration == generation else { return }
-                self.candidates = result
+                guard ttmlResults != nil || platformResults != nil else { throw LyricsDownloadError.unavailable }
+                self.candidates = (ttmlResults ?? []).map(LyricsSearchCandidate.ttml) +
+                    (platformResults ?? []).map(LyricsSearchCandidate.provider)
                 self.isSearching = false
                 self.hasSearched = true
             } catch {
@@ -94,7 +126,12 @@ final class LyricsSearchViewModel: ObservableObject {
             }
             do {
                 if lyrics == nil {
-                    lyrics = try await service.download(candidate, includeTranslation: includeTranslation)
+                    switch candidate {
+                    case .ttml(let item):
+                        lyrics = try await service.downloadTTML(item)
+                    case .provider(let item):
+                        lyrics = try await service.download(item, includeTranslation: includeTranslation)
+                    }
                 }
                 guard let self, let lyrics, !Task.isCancelled, self.saveGeneration == generation else { return }
                 let url = try await writer.save(lyrics, for: self.track.url, overwrite: overwrite, automatic: false)
@@ -110,7 +147,7 @@ final class LyricsSearchViewModel: ObservableObject {
                 guard let self, !Task.isCancelled, self.saveGeneration == generation else { return }
                 self.errorMessage = lyrics == nil ? lyricsDownloadMessage(for: error) :
                     String.localizedStringWithFormat(
-                        String(appLocalized: "Could not save the LRC file. Check folder write access: %1$@"), error.localizedDescription
+                        String(appLocalized: "Could not save the lyrics file. Check folder write access: %1$@"), error.localizedDescription
                     )
             }
         }

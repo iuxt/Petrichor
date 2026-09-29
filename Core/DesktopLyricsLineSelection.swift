@@ -18,12 +18,9 @@ enum DesktopLyricsLineSelection {
     ) -> DesktopLyricsDisplayLines? {
         guard !lines.isEmpty else { return nil }
 
-        let activeIndex = lines.lastIndex { line in
-            if let endTime = line.endTime {
-                return time >= line.startTime && time < endTime
-            }
-            return time >= line.startTime
-        }
+        let activeIndices = lines.indices.filter { lines[$0].isActive(at: time) }
+        let duetPair = overlappingDuetPair(in: lines, activeIndices: activeIndices)
+        let activeIndex = duetPair?.first ?? activeIndices.last
 
         let currentIndex: Int?
         if let activeIndex {
@@ -39,7 +36,7 @@ enum DesktopLyricsLineSelection {
         guard let currentIndex else {
             return nil
         }
-        let nextIndex = nonEmptyIndex(in: lines, from: currentIndex + 1)
+        let nextIndex = duetPair?.second ?? nonEmptyIndex(in: lines, from: currentIndex + 1)
 
         return DesktopLyricsDisplayLines(
             current: lines[currentIndex],
@@ -66,6 +63,16 @@ enum DesktopLyricsLineSelection {
             return index
         }
         return nil
+    }
+
+    private static func overlappingDuetPair(
+        in lines: [LyricLine], activeIndices: [Int]
+    ) -> (first: Int, second: Int)? {
+        guard let left = activeIndices.first(where: { lines[$0].duetSide == .left && !trimmedText(lines[$0]).isEmpty }),
+              let right = activeIndices.first(where: { lines[$0].duetSide == .right && !trimmedText(lines[$0]).isEmpty }) else {
+            return nil
+        }
+        return left < right ? (left, right) : (right, left)
     }
 
     private static func lastStartedNonEmptyIndex(

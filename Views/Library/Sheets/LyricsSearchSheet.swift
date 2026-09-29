@@ -16,7 +16,7 @@ struct LyricsSearchSheet: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .help(model.track.url.path)
-            Text(verbatim: String(appLocalized: "Search sends the title and artist below to the selected provider. Saving fetches lyrics for the selected song; audio files are not uploaded."))
+            Text(verbatim: String(appLocalized: "Search sends the title and artist to the selected music provider and AMLL TTML library. Saving fetches the selected lyrics; audio files are not uploaded."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -60,6 +60,9 @@ struct LyricsSearchSheet: View {
             .frame(minHeight: 20)
 
             Table(model.candidates, selection: $model.selection) {
+                TableColumn(String(appLocalized: "Format")) { candidate in
+                    Text(verbatim: candidate.isTTML ? "TTML" : "TTML / LRC")
+                }.width(85)
                 TableColumn(String(appLocalized: "Title"), value: \.title)
                 TableColumn(String(appLocalized: "Artist"), value: \.artist)
                 TableColumn(String(appLocalized: "Album"), value: \.album)
@@ -72,7 +75,7 @@ struct LyricsSearchSheet: View {
 
             Toggle(String(appLocalized: "Include lyric translations"), isOn: $model.includeTranslation)
                 .toggleStyle(.checkbox)
-                .disabled(model.isSaving)
+                .disabled(model.isSaving || model.selectedCandidate?.isTTML == true)
 
             if let error = model.errorMessage {
                 Text(verbatim: error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
@@ -80,7 +83,7 @@ struct LyricsSearchSheet: View {
                 Text(verbatim: String.localizedStringWithFormat(String(appLocalized: "Lyrics saved: %1$@"), url.path))
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            Text(verbatim: String(appLocalized: "Save prefers word-timed lyrics when available and creates a same-name .lrc file. Existing KSC files keep playback priority."))
+            Text(verbatim: String(appLocalized: "TTML is preferred when available; otherwise lyrics are saved as LRC. Files are saved beside the song without automatically replacing existing lyrics. The translation option applies to LRC; TTML is saved as provided."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -98,11 +101,11 @@ struct LyricsSearchSheet: View {
         .frame(width: 820, height: 520)
         .interactiveDismissDisabled(model.isSaving)
         .onDisappear { model.cancel() }
-        .alert(String(appLocalized: "Replace the existing LRC file?"), isPresented: $model.needsOverwriteConfirmation) {
+        .alert(String(appLocalized: "Replace the existing lyrics file?"), isPresented: $model.needsOverwriteConfirmation) {
             Button(String(appLocalized: "Cancel"), role: .cancel) {}
             Button(String(appLocalized: "Replace"), role: .destructive) { model.save(overwrite: true) }
         } message: {
-            Text(verbatim: model.track.url.deletingPathExtension().appendingPathExtension("lrc").path)
+            Text(verbatim: model.overwriteURL?.path ?? "")
         }
     }
 }

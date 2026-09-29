@@ -5,12 +5,48 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-touch "$TMP_DIR/Priority.flac" "$TMP_DIR/Fallback.flac" "$TMP_DIR/GBK.flac" \
+touch "$TMP_DIR/Priority.flac" "$TMP_DIR/Fallback.flac" "$TMP_DIR/TTML.flac" "$TMP_DIR/Duet.flac" \
+    "$TMP_DIR/InvalidTTML.flac" "$TMP_DIR/UTF16TTML.flac" "$TMP_DIR/GBK.flac" \
     "$TMP_DIR/UTF16LEBOMKSC.flac" "$TMP_DIR/UTF16BEBOMSRT.flac" \
     "$TMP_DIR/UTF16LEBOMLRC.flac" "$TMP_DIR/UTF16BEBomlessKSC.flac" \
     "$TMP_DIR/NonFiniteFallback.flac"
 printf "%s\n" "karaoke.add('00:01.000','00:02.000','KSC','1000');" > "$TMP_DIR/Priority.ksc"
 printf "%s\n" "[00:01.00]LRC" > "$TMP_DIR/Priority.lrc"
+cat > "$TMP_DIR/Priority.ttml" <<'TTML'
+<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="1s" end="2s"><span begin="1s" end="2s">TTML</span></p></div></body></tt>
+TTML
+cat > "$TMP_DIR/TTML.ttml" <<'TTML'
+<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word">
+  <head><metadata><title>Ignore this</title></metadata></head>
+  <body><div>
+    <p begin="00:10.000" end="00:13.000" itunes:key="L1">
+      <span begin="10s" end="10.5s">Hello </span><span begin="10.5s" end="11.25s">world</span>
+      <span ttm:role="x-translation" xml:lang="zh-CN">你好世界</span>
+      <span ttm:role="x-bg"><span begin="12s" end="13s">(yeah)</span></span>
+    </p>
+    <p begin="00:14.000" end="00:15.000">Plain &amp; timed</p>
+  </div></body>
+</tt>
+TTML
+cat > "$TMP_DIR/Duet.ttml" <<'TTML'
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+  <head><metadata>
+    <ttm:agent type="person" xml:id="v1"/><ttm:agent type="person" xml:id="v2"/>
+    <ttm:agent type="group" xml:id="v1000"/>
+  </metadata></head>
+  <body><div>
+    <p begin="1s" end="3s" ttm:agent="v2"><span begin="1s" end="3s">Singer B</span></p>
+    <p begin="2s" end="4s" ttm:agent="v1"><span begin="2s" end="4s">Singer A</span></p>
+    <p begin="4s" end="5s" ttm:agent="v1000">Together</p>
+  </div></body>
+</tt>
+TTML
+printf '%s\n' '<tt><body><p begin="1s"><span>broken</p></body></tt>' > "$TMP_DIR/InvalidTTML.ttml"
+printf "%s\n" "[00:03.00]LRC fallback" > "$TMP_DIR/InvalidTTML.lrc"
+printf '\xFF\xFE' > "$TMP_DIR/UTF16TTML.ttml"
+printf '%s\n' '<?xml version="1.0" encoding="UTF-16"?><tt><body><p begin="2s" end="3s">UTF16 XML</p></body></tt>' \
+    | iconv -f UTF-8 -t UTF-16LE >> "$TMP_DIR/UTF16TTML.ttml"
 printf "%s\n" "not valid ksc" > "$TMP_DIR/Fallback.ksc"
 printf "%s\n" "[00:02.00]fallback" > "$TMP_DIR/Fallback.lrc"
 printf "%s\n" "karaoke.add('00:03.000','00:04.000','中文','500,500');" \
@@ -43,7 +79,26 @@ func require(_ name: String) -> LyricsSidecarLoader.Result {
 }
 
 let priority = require("Priority")
-precondition(priority.source == .ksc && priority.lyrics.first?.text == "KSC", "KSC must outrank LRC")
+precondition(priority.source == .ttml && priority.lyrics.first?.text == "TTML", "TTML must outrank KSC and LRC")
+
+let ttml = require("TTML")
+precondition(ttml.source == .ttml && ttml.lyrics.count == 2, "TTML sidecar should load both lines")
+precondition(ttml.lyrics[0].text == "Hello world(yeah)", "Auxiliary translation must not enter the sung line")
+precondition(ttml.lyrics[0].timingSegments?.map(\.text) == ["Hello ", "world", "(yeah)"], "TTML word text should survive")
+precondition(ttml.lyrics[0].timingSegments?.map(\.startOffset) == [0, 0.5, 2], "TTML word timing should survive")
+precondition(ttml.lyrics[1].text == "Plain & timed" && ttml.lyrics[1].timingSegments == nil, "Line-timed TTML should display")
+
+let duet = require("Duet")
+precondition(duet.lyrics.map(\.duetSide) == [.right, .left, nil], "Agent definitions should keep singers on stable opposite sides")
+precondition(duet.lyrics[0].isActive(at: 2.5) && duet.lyrics[1].isActive(at: 2.5), "Overlapping duet lines should both be active")
+let solo = TTMLLyricsParser.parse(Data("<tt><body><p begin=\"1s\" end=\"2s\" ttm:agent=\"v1\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\">Solo</p></body></tt>".utf8))
+precondition(solo.first?.duetSide == nil, "A solo performer must remain centered")
+
+let invalidTTML = require("InvalidTTML")
+precondition(invalidTTML.source == .lrc && invalidTTML.lyrics.first?.text == "LRC fallback", "Malformed TTML must fall back")
+
+let utf16TTML = require("UTF16TTML")
+precondition(utf16TTML.source == .ttml && utf16TTML.lyrics.first?.text == "UTF16 XML", "TTML XML declaration and BOM should be honored")
 
 let fallback = require("Fallback")
 precondition(fallback.source == .lrc && fallback.lyrics.first?.text == "fallback", "Invalid KSC must fall back to LRC")
@@ -86,6 +141,7 @@ SWIFT
 
 xcrun swiftc \
     "$ROOT_DIR/Models/Core/Lyrics.swift" \
+    "$ROOT_DIR/Core/Lyrics/TTMLLyricsParser.swift" \
     "$ROOT_DIR/Core/LyricsSidecarLoader.swift" \
     "$TMP_DIR/main.swift" \
     -o "$TMP_DIR/lyrics-sidecar-test"

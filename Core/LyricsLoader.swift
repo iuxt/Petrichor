@@ -14,7 +14,7 @@ struct LyricsLoader {
         var lines: [LyricLine]?
         var source: LyricsSource = .none
         
-        // 1. External KSC/LRC/SRT files
+        // 1. External TTML/KSC/LRC/SRT files
         let audioURL = track.url
         let external = await Task.detached(priority: .utility) {
             LyricsSidecarLoader.load(forAudioURL: audioURL)

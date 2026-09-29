@@ -27,37 +27,65 @@ cat > "$TMP_DIR/Harness.swift" <<'SWIFT'
 import Foundation
 
 func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(message) } }
+final class MockLyricsURLProtocol: URLProtocol {
+    static var reply: (URLRequest) -> (Int, Data) = { _ in (404, Data()) }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let (status, data) = Self.reply(request)
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
 let candidate = OnlineTagCandidate(provider: .netease, songID: "1", title: "Song", artist: "Artist", album: "Album", duration: 120, trackNumber: nil)
 let content = DownloadedLyrics(lrc: "[00:01.000]First\n[00:02.000]Second\n")
 actor FakeService: OnlineLyricsServing {
     private(set) var searches = 0
+    private(set) var ttmlSearches = 0
     private(set) var downloads = 0
+    private(set) var ttmlDownloads = 0
     var results: [OnlineTagCandidate] = [candidate]
+    var ttmlResults: [AMLLTTMLCandidate] = []
+    var downloaded = content
     var suspended = false
     var continuation: CheckedContinuation<DownloadedLyrics, Never>?
     func search(provider: OnlineTagProvider, title: String, artist: String) async throws -> [OnlineTagCandidate] {
         searches += 1
         return results
     }
+    func searchTTML(title: String, artist: String) async throws -> [AMLLTTMLCandidate] {
+        ttmlSearches += 1
+        return ttmlResults
+    }
+    func downloadTTML(_ candidate: AMLLTTMLCandidate) async throws -> DownloadedLyrics {
+        ttmlDownloads += 1
+        return DownloadedLyrics(ttml: "<tt><body><p begin=\"1s\" end=\"2s\">TTML</p></body></tt>")
+    }
     func download(_ candidate: OnlineTagCandidate, includeTranslation: Bool) async throws -> DownloadedLyrics {
         downloads += 1
         if suspended { return await withCheckedContinuation { continuation = $0 } }
-        return content
+        return downloaded
     }
     func suspend() { suspended = true }
-    func resume() { continuation?.resume(returning: content); continuation = nil }
+    func resume() { continuation?.resume(returning: downloaded); continuation = nil }
     func setResults(_ results: [OnlineTagCandidate]) { self.results = results }
+    func setTTMLResults(_ results: [AMLLTTMLCandidate]) { ttmlResults = results }
+    func setDownloaded(_ lyrics: DownloadedLyrics) { downloaded = lyrics }
 }
 actor FakeWriter: DownloadedLyricsWriting {
     private(set) var writes = 0
     private(set) var overwrites: [Bool] = []
     private(set) var automaticFlags: [Bool] = []
+    private(set) var formats: [DownloadedLyrics.Format] = []
     var exists = false
     func setExists() { exists = true }
     func save(_ lyrics: DownloadedLyrics, for audioURL: URL, overwrite: Bool, automatic: Bool) async throws -> URL {
         if exists && !overwrite { throw LyricsDownloadError.existingFile }
-        writes += 1; overwrites.append(overwrite); automaticFlags.append(automatic)
-        return audioURL.deletingPathExtension().appendingPathExtension("lrc")
+        writes += 1; overwrites.append(overwrite); automaticFlags.append(automatic); formats.append(lyrics.format)
+        return audioURL.deletingPathExtension().appendingPathExtension(lyrics.format.rawValue)
     }
 }
 @main struct Harness {
@@ -69,6 +97,36 @@ actor FakeWriter: DownloadedLyricsWriting {
         fatalError("Timed out")
     }
     @MainActor static func main() async throws {
+        let xml = "<tt><body><p begin=\"1s\" end=\"2s\"><span begin=\"1s\" end=\"2s\">TTML</span></p></body></tt>"
+        let ttmlPayload = try JSONSerialization.data(withJSONObject: ["status": 200, "data": [
+            "id": 123, "ncmMusicIds": ["1"], "lyrics": xml
+        ]])
+        let searchPayload = try JSONSerialization.data(withJSONObject: ["status": 200, "data": ["items": [[
+            "id": 123, "musicNames": ["Song"], "artistNames": ["Artist"], "albumNames": ["Album"]
+        ]] ]])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockLyricsURLProtocol.self]
+        let networkService = OnlineLyricsService(session: URLSession(configuration: configuration))
+        MockLyricsURLProtocol.reply = { request in
+            if request.url?.path == "/v1/lyrics/search" { return (200, searchPayload) }
+            if request.url?.path == "/v1/lyrics/get" { return (200, ttmlPayload) }
+            fatalError("TTML should be tried before provider lyrics")
+        }
+        let ttmlMatches = try await networkService.searchTTML(title: "Song", artist: "Artist")
+        expect(ttmlMatches.first?.id == "123", "AMLL search must return a selectable TTML result")
+        let directTTML = try await networkService.downloadTTML(ttmlMatches[0])
+        expect(directTTML.format == .ttml && directTTML.content == xml, "Selected TTML must retain its source")
+        let preferredTTML = try await networkService.download(candidate, includeTranslation: false)
+        expect(preferredTTML.format == .ttml, "A provider song ID must prefer AMLL TTML")
+        let providerPayload = try JSONSerialization.data(withJSONObject: [
+            "code": 200, "lrc": ["lyric": "[00:01.000]Fallback"]
+        ])
+        MockLyricsURLProtocol.reply = { request in
+            request.url?.path == "/v1/lyrics/get" ? (404, Data()) : (200, providerPayload)
+        }
+        let fallbackLRC = try await networkService.download(candidate, includeTranslation: false)
+        expect(fallbackLRC.format == .lrc && fallbackLRC.lrc.contains("Fallback"), "Missing TTML must fall back to provider LRC")
+
         if CommandLine.arguments.contains("--live-word") {
             let service = OnlineLyricsService()
             let netease = OnlineTagCandidate(provider: .netease, songID: "1392990601", title: "Live YRC", artist: "", album: "", duration: nil, trackNumber: nil)
@@ -76,7 +134,9 @@ actor FakeWriter: DownloadedLyricsWriting {
             for candidate in [netease, qq] {
                 for includeTranslation in [false, true] {
                     let downloaded = try await service.download(candidate, includeTranslation: includeTranslation)
-                    let lines = LyricLine.parseLRC(from: downloaded.lrc)
+                    let lines = downloaded.format == .ttml
+                        ? TTMLLyricsParser.parse(Data(downloaded.content.utf8))
+                        : LyricLine.parseLRC(from: downloaded.lrc)
                     expect(lines.filter { $0.timingSegments?.count ?? 0 > 2 }.count > 10, "Live \(candidate.provider.rawValue) word timing must survive download")
                     expect(lines.allSatisfy { line in line.timingSegments.map { $0.map(\.text).joined() == line.text } ?? true },
                            "Live word segments must match displayed text")
@@ -93,7 +153,10 @@ actor FakeWriter: DownloadedLyricsWriting {
                 for result in found.prefix(3) {
                     do {
                         let lyrics = try await service.download(result, includeTranslation: true)
-                        expect(!LyricLine.parseLRC(from: lyrics.lrc).isEmpty, "Live lyrics must parse")
+                        let lines = lyrics.format == .ttml
+                            ? TTMLLyricsParser.parse(Data(lyrics.content.utf8))
+                            : LyricLine.parseLRC(from: lyrics.lrc)
+                        expect(!lines.isEmpty, "Live lyrics must parse")
                         print("Live \(provider.rawValue): synchronized lyrics received")
                         downloaded = true
                         break
@@ -149,8 +212,15 @@ actor FakeWriter: DownloadedLyricsWriting {
         let audioBytes = Data("test audio must stay unchanged".utf8)
         try audioBytes.write(to: audio)
         let writer = DownloadedLyricsFileStore()
+        let ttmlURL = try await writer.save(DownloadedLyrics(ttml: xml), for: audio, overwrite: false, automatic: false)
+        let savedTTML = try String(contentsOf: ttmlURL, encoding: .utf8)
+        expect(ttmlURL.pathExtension == "ttml" && savedTTML == xml,
+               "TTML must be written beside the audio as UTF-8")
+        try FileManager.default.removeItem(at: ttmlURL)
         let url = try await writer.save(content, for: audio, overwrite: false, automatic: true)
         expect(try String(contentsOf: url, encoding: .utf8) == content.lrc, "UTF-8 sidecar must contain downloaded lyrics")
+        do { _ = try await writer.save(DownloadedLyrics(ttml: xml), for: audio, overwrite: false, automatic: true); fatalError("Expected existing LRC protection") }
+        catch { expect(error as? LyricsDownloadError == .existingSidecar, "Automatic TTML must not replace existing LRC") }
         do { _ = try await writer.save(translated, for: audio, overwrite: false, automatic: false); fatalError("Expected overwrite protection") }
         catch { expect(error as? LyricsDownloadError == .existingFile, "Manual overwrite requires confirmation") }
         _ = try await writer.save(translated, for: audio, overwrite: true, automatic: false)
@@ -162,6 +232,11 @@ actor FakeWriter: DownloadedLyricsWriting {
         do { _ = try await writer.save(content, for: audio, overwrite: false, automatic: true); fatalError("Expected existing sidecar protection") }
         catch { expect(error as? LyricsDownloadError == .existingSidecar, "Automatic download must preserve all sidecar formats") }
         try FileManager.default.removeItem(at: srt)
+        let ttml = audio.deletingPathExtension().appendingPathExtension("ttml")
+        try Data("<tt/>".utf8).write(to: ttml)
+        do { _ = try await writer.save(content, for: audio, overwrite: false, automatic: true); fatalError("Expected TTML sidecar protection") }
+        catch { expect(error as? LyricsDownloadError == .existingSidecar, "Automatic download must preserve TTML") }
+        try FileManager.default.removeItem(at: ttml)
         try FileManager.default.createSymbolicLink(at: url, withDestinationURL: audio)
         do { _ = try await writer.save(content, for: audio, overwrite: true, automatic: false); fatalError("Expected symlink protection") }
         catch { expect(error as? LyricsDownloadError == .unsafeDestination, "Do not follow a lyrics symlink") }
@@ -197,6 +272,28 @@ actor FakeWriter: DownloadedLyricsWriting {
         expect(await fakeWriter.writes == 1, "Save must write the downloaded lyrics")
         expect(await service.downloads == 1, "Save must download the selected lyrics once")
 
+        let directService = FakeService(), directWriter = FakeWriter()
+        await directService.setTTMLResults([AMLLTTMLCandidate(id: "123", title: "Song", artist: "Artist", album: "Album")])
+        let directSearch = LyricsSearchViewModel(track: track, settings: settings, service: directService, writer: directWriter, didSave: { _ in })
+        directSearch.search()
+        await wait { !directSearch.isSearching }
+        expect(directSearch.candidates.first?.isTTML == true, "Manual search must list TTML before provider results")
+        directSearch.selection = directSearch.candidates.first?.id
+        directSearch.save()
+        await wait { !directSearch.isSaving }
+        expect(directSearch.savedURL?.pathExtension == "ttml", "Selecting TTML must save a TTML file")
+        expect(await directService.ttmlDownloads == 1, "Selected TTML should download once")
+        await directWriter.setExists()
+        directSearch.selection = nil
+        directSearch.selection = directSearch.candidates.first?.id
+        directSearch.save()
+        await wait { !directSearch.isSaving }
+        expect(directSearch.needsOverwriteConfirmation && directSearch.overwriteURL?.pathExtension == "ttml",
+               "TTML replacement must name the existing TTML file")
+        directSearch.save(overwrite: true)
+        await wait { !directSearch.isSaving }
+        expect(await directService.ttmlDownloads == 2, "Confirmed TTML replacement must reuse the downloaded file")
+
         await fakeWriter.setExists()
         let replacement = LyricsSearchViewModel(track: track, settings: settings, service: service, writer: fakeWriter, didSave: { _ in })
         replacement.search()
@@ -230,6 +327,12 @@ actor FakeWriter: DownloadedLyricsWriting {
         await wait { await autoWriter.writes == 1 }
         expect(await autoWriter.automaticFlags == [true], "Automatic flag must reach writer")
         expect(await autoWriter.overwrites == [false], "Automatic write must never overwrite")
+        let autoTTMLService = FakeService(), autoTTMLWriter = FakeWriter()
+        await autoTTMLService.setDownloaded(DownloadedLyrics(ttml: xml))
+        let autoTTML = AutomaticLyricsDownloader(settings: settings, service: autoTTMLService, writer: autoTTMLWriter, loadLocal: { _ in false }, didSave: { _ in })
+        autoTTML.update(track: track, isPlaying: true)
+        await wait { await autoTTMLWriter.writes == 1 }
+        expect(await autoTTMLWriter.formats == [.ttml], "Automatic download must save preferred TTML")
         automatic.update(track: nil, isPlaying: false)
         automatic.update(track: track, isPlaying: true)
         try? await Task.sleep(nanoseconds: 600_000_000)
@@ -255,6 +358,8 @@ actor FakeWriter: DownloadedLyricsWriting {
 SWIFT
 xcrun swiftc -parse-as-library \
     "$ROOT_DIR/Models/Core/Lyrics.swift" \
+    "$ROOT_DIR/Core/Lyrics/TTMLLyricsParser.swift" \
+    "$ROOT_DIR/Core/Lyrics/AMLLTTMLService.swift" \
     "$ROOT_DIR/Core/Metadata/TrackMetadataEditModel.swift" \
     "$ROOT_DIR/Core/Metadata/OnlineTagLookup.swift" \
     "$ROOT_DIR/Core/Lyrics/WordTimedLyrics.swift" \

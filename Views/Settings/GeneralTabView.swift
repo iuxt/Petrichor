@@ -62,7 +62,7 @@ struct GeneralTabView: View {
                     Text(verbatim: String(appLocalized: "QQ Music")).tag(OnlineTagProvider.qqMusic)
                 }
                 Toggle(String(appLocalized: "Include lyric translations"), isOn: $lyricsSettings.includeTranslation)
-                Text(verbatim: String(appLocalized: "When enabled, playing songs without local or embedded lyrics sends their title and artist to the selected provider. Confident matches are saved as UTF-8 LRC files beside the songs. Existing lyrics are never automatically replaced."))
+                Text(verbatim: String(appLocalized: "When enabled, playing songs without lyrics sends title and artist to the selected provider, then the matched song ID to AMLL for TTML. Confident matches are saved as TTML when available, otherwise LRC. Existing lyrics are never automatically replaced. The translation option applies to LRC; TTML is saved as provided."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

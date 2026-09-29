@@ -2,6 +2,7 @@ import CoreFoundation
 import Foundation
 
 enum LyricsSource: Sendable, Equatable {
+    case ttml
     case ksc
     case lrc
     case srt
@@ -11,6 +12,7 @@ enum LyricsSource: Sendable, Equatable {
     func sidecarURL(for audioURL: URL) -> URL? {
         let ext: String
         switch self {
+        case .ttml: ext = "ttml"
         case .ksc: ext = "ksc"
         case .lrc: ext = "lrc"
         case .srt: ext = "srt"
@@ -32,6 +34,7 @@ enum LyricsSidecarLoader {
     ) -> Result? {
         let baseURL = audioURL.deletingPathExtension()
         let candidates: [(extension: String, source: LyricsSource)] = [
+            ("ttml", .ttml),
             ("ksc", .ksc),
             ("lrc", .lrc),
             ("srt", .srt),
@@ -39,20 +42,22 @@ enum LyricsSidecarLoader {
 
         for candidate in candidates {
             let url = baseURL.appendingPathExtension(candidate.extension)
-            guard fileManager.fileExists(atPath: url.path),
-                  let content = loadFileWithEncodingDetection(url, source: candidate.source),
-                  !content.isEmpty else {
-                continue
-            }
+            guard fileManager.fileExists(atPath: url.path) else { continue }
 
             let lyrics: [LyricLine]
             switch candidate.source {
+            case .ttml:
+                // Pass XML bytes through unchanged so its declared encoding and BOM agree.
+                lyrics = (try? Data(contentsOf: url)).map(TTMLLyricsParser.parse) ?? []
             case .ksc:
-                lyrics = LyricLine.parseKSC(from: content)
+                lyrics = loadFileWithEncodingDetection(url, source: candidate.source)
+                    .map(LyricLine.parseKSC) ?? []
             case .lrc:
-                lyrics = LyricLine.parseLRC(from: content)
+                lyrics = loadFileWithEncodingDetection(url, source: candidate.source)
+                    .map(LyricLine.parseLRC) ?? []
             case .srt:
-                lyrics = LyricLine.parseSRT(from: content)
+                lyrics = loadFileWithEncodingDetection(url, source: candidate.source)
+                    .map(LyricLine.parseSRT) ?? []
             case .embedded, .none:
                 lyrics = []
             }

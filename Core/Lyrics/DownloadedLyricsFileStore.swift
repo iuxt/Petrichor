@@ -20,11 +20,11 @@ actor DownloadedLyricsFileStore: DownloadedLyricsWriting {
         }
         let manager = FileManager.default
         guard manager.fileExists(atPath: audioURL.path) else { throw CocoaError(.fileNoSuchFile) }
-        let destination = audioURL.deletingPathExtension().appendingPathExtension("lrc")
+        let destination = audioURL.deletingPathExtension().appendingPathExtension(lyrics.format.rawValue)
         if automatic {
             let base = audioURL.deletingPathExtension().lastPathComponent.lowercased()
             let names = try manager.contentsOfDirectory(atPath: directory.path).map { $0.lowercased() }
-            if ["ksc", "lrc", "srt"].contains(where: { names.contains(base + "." + $0) }) {
+            if ["ttml", "ksc", "lrc", "srt"].contains(where: { names.contains(base + "." + $0) }) {
                 throw LyricsDownloadError.existingSidecar
             }
         }
@@ -32,10 +32,10 @@ actor DownloadedLyricsFileStore: DownloadedLyricsWriting {
             guard attributes[.type] as? FileAttributeType == .typeRegular else { throw LyricsDownloadError.unsafeDestination }
             guard overwrite && !automatic else { throw LyricsDownloadError.existingFile }
         }
-        guard !lyrics.lrc.isEmpty else { throw LyricsDownloadError.noLyrics }
+        guard !lyrics.content.isEmpty else { throw LyricsDownloadError.noLyrics }
         let temporary = directory.appendingPathComponent(".petrichor-lyrics-\(UUID().uuidString).tmp")
         defer { try? manager.removeItem(at: temporary) }
-        try Data(lyrics.lrc.utf8).write(to: temporary, options: .withoutOverwriting)
+        try Data(lyrics.content.utf8).write(to: temporary, options: .withoutOverwriting)
         try Task.checkCancellation()
         // Atomic publish; exclusive rename never replaces an existing file, including a racing
         // manual download. rename() replaces the directory entry, never a symlink target.

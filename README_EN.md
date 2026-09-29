@@ -15,7 +15,7 @@
   - DSF/DFF (Direct Stream Digital)
   - ... MOD, IT, S3M, XM, and AU
 - Map your music folders and browse your library in an organized view.
-- Show local lyrics of a playing track when available.
+- Show local TTML, KSC, LRC, SRT, and embedded lyrics, with word-level highlighting and left/right placement for TTML duets.
 - Create, import or export playlists.
 - Manage the play queue interactively using drag and drop
 - Browse music using folder view when needed.
@@ -47,8 +47,22 @@ sudo xattr -r -d com.apple.quarantine /Applications/Petrichor.app
     - To read and write into user-selected files and folders,
       write access is used for exporting M3U playlist files.
 - It doesn't (and never will) have any analytics on how you use the app.
-- It never changes your audio files or folder structure in any way.
-- Your library data remains offline always.
+- Audio files are changed only when you explicitly save track properties. Lyrics are stored as separate files beside the songs.
+- Your library stays local. Online tag lookup and lyric search run only when requested; automatic lyric downloads are off by default.
+
+### 🎵 TTML Lyrics
+
+Place a `.ttml` file beside the audio file with the same base name, such as `Song.ttml` for `Song.flac`. Local sidecars are read in **TTML → KSC → LRC → SRT** order. An invalid file falls through to the next format, then to embedded lyrics. TTML word timing drives the karaoke highlight. For a duet, lines marked with different `ttm:agent` performers appear on opposite sides; solo and group lines remain centered.
+
+The online TTML source is the [AMLL TTML DataBase Git repository](https://github.com/amll-dev/amll-ttml-db.git), accessed through its [official API](https://amll.dev/reference/http-api/native). Manual lyric search queries AMLL and the selected NetEase Cloud Music or QQ Music provider, with TTML results listed first. When saving a provider result, Petrichor tries TTML using that song's platform ID before falling back to the provider's synchronized lyrics. Automatic download uses the same priority only for the currently playing song when lyrics are missing, the match is confident, and the user has enabled it in Settings.
+
+#### Design
+
+- **One display model:** Each format becomes lyric lines with optional word timing. The main window, mini player, immersive view, and desktop lyrics share the same highlighting logic.
+- **Preserve the source format:** TTML is saved unchanged as a same-name `.ttml` file; fallback lyrics are saved as UTF-8 `.lrc`. Both remain separate from audio tags.
+- **Control network use and writes:** Manual search runs only when requested. Automatic downloads are off by default and only check the currently playing song when lyrics are missing. They never replace existing lyrics; manual replacement of a file in the same format asks for confirmation. Audio is never uploaded or rewritten by lyric downloads.
+
+Manual search sends the entered title and artist to AMLL and the selected music provider. Automatic lookup sends title and artist to that provider, then the matched song ID to AMLL. The translation option applies to LRC; TTML keeps its original content. TTML translations, romanization, and singer styling are not yet shown in the interface.
  
 ## 🏗️ Development
  
@@ -63,7 +77,7 @@ along the way!
  
 - Built with Swift and SwiftUI with some parts in AppKit for the best macOS integration.
 - Once folders containing music files are added, the app scans them, extracts required metadata, and populates the SQLite database.
-- The app does **not** alter your music files, it only reads from the directories you add.
+- The app reads added folders by default. It changes audio tags only when you explicitly save track properties; lyrics are separate sidecar files.
 - Tracks searching is handled by [SQLite FTS5](https://www.sqlite.org/fts5.html).
 - Playback is handled by [AVFoundation](https://developer.apple.com/av-foundation/) and third-party audio decoders.
  

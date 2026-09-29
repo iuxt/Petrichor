@@ -267,7 +267,8 @@ struct TrackLyricsContent: View {
 
     @ViewBuilder
     private func lyricRow(line: LyricLine, index: Int) -> some View {
-        let isCurrent = hasTimedLyrics && currentLineIndex == index
+        let isCurrent = hasTimedLyrics && (currentLineIndex == index ||
+            (line.duetSide != nil && line.isActive(at: sampledPlaybackTime)))
 
         if isCurrent, line.timingSegments?.isEmpty == false {
             KaraokeLyricText(
@@ -281,16 +282,17 @@ struct TrackLyricsContent: View {
                 inactiveColor: inactiveColor,
                 lineSpacing: 6
             )
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: line.frameAlignment)
             .scaleEffect(1.1)
-            .multilineTextAlignment(.center)
+            .multilineTextAlignment(line.swiftUITextAlignment)
         } else {
             Text(line.text.isEmpty ? " " : line.text)
                 .font(lyricsFont(weight: isCurrent ? .bold : .regular))
                 .scaleEffect(isCurrent ? 1.1 : 1.0)
                 .foregroundColor(isCurrent ? activeColor : inactiveColor)
-                .multilineTextAlignment(.center)
+                .multilineTextAlignment(line.swiftUITextAlignment)
                 .lineSpacing(6)
+                .frame(maxWidth: .infinity, alignment: line.frameAlignment)
         }
     }
 

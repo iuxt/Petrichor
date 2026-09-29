@@ -29,6 +29,22 @@ let timed = [
     LyricLine(text: "third", startTime: 20, endTime: nil)
 ]
 
+let duet = [
+    LyricLine(text: "left", startTime: 1, endTime: 4, duetSide: .left),
+    LyricLine(text: "right", startTime: 2, endTime: 5, duetSide: .right),
+    LyricLine(text: "next", startTime: 5, endTime: 6, duetSide: .left)
+]
+assertEqual(
+    DesktopLyricsLineSelection.syncedDisplayLines(lines: duet, at: 2.5),
+    DesktopLyricsDisplayLines(current: duet[0], next: duet[1]),
+    "overlapping duet voices should occupy both desktop lyric rows"
+)
+assertEqual(
+    DesktopLyricsLineSelection.syncedDisplayLines(lines: duet, at: 4.5),
+    DesktopLyricsDisplayLines(current: duet[1], next: duet[2]),
+    "after an overlap ends, the remaining voice should stay on its side"
+)
+
 assertEqual(
     DesktopLyricsLineSelection.syncedDisplayLines(lines: timed, at: 4),
     DesktopLyricsDisplayLines(current: timed[0], next: timed[2]),

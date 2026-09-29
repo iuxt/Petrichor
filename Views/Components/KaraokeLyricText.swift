@@ -16,6 +16,32 @@ enum KaraokeFontWeight: Equatable {
     }
 }
 
+extension LyricLine {
+    var frameAlignment: Alignment {
+        switch duetSide {
+        case .left: .leading
+        case .right: .trailing
+        case nil: .center
+        }
+    }
+
+    var swiftUITextAlignment: TextAlignment {
+        switch duetSide {
+        case .left: .leading
+        case .right: .trailing
+        case nil: .center
+        }
+    }
+
+    var appKitTextAlignment: NSTextAlignment {
+        switch duetSide {
+        case .left: .left
+        case .right: .right
+        case nil: .center
+        }
+    }
+}
+
 struct KaraokeLyricText: View {
     let line: LyricLine
     let sampleTime: TimeInterval
@@ -316,7 +342,7 @@ final class KaraokeTextRendererView: NSView {
 
         let font = makeFont(name: fontName, size: fontSize, weight: fontWeight.nsWeight)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
+        paragraph.alignment = line.appKitTextAlignment
         paragraph.lineSpacing = lineSpacing
         paragraph.lineBreakMode = lineLimit == 1 ? .byTruncatingTail : .byWordWrapping
 
