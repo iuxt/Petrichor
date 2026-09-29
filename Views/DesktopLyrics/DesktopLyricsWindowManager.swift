@@ -33,7 +33,7 @@ final class DesktopLyricsWindowManager: NSObject {
             .environmentObject(coordinator.playbackManager)
             .environmentObject(coordinator.playbackManager.playbackProgressState)
 
-        let hostingView = NSHostingView(rootView: root)
+        let hostingView = DesktopLyricsHostingView(rootView: root)
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
 
@@ -108,4 +108,8 @@ extension DesktopLyricsWindowManager: NSWindowDelegate {
 final class DesktopLyricsWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+private final class DesktopLyricsHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
