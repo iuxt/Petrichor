@@ -12,7 +12,7 @@ struct TrackLyricsView: View {
     private var sidePanelLyricsFontName = LyricsFontSettings.systemFontName
 
     @AppStorage("sidePanelLyricsFontSize")
-    private var sidePanelLyricsFontSize = 14.0
+    private var sidePanelLyricsFontSize = LyricsFontSettings.sidePanelFontSize
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,7 +20,8 @@ struct TrackLyricsView: View {
             Divider()
             TrackLyricsContent(
                 fontName: sidePanelLyricsFontName == LyricsFontSettings.systemFontName ? nil : sidePanelLyricsFontName,
-                fontSize: CGFloat(sidePanelLyricsFontSize)
+                fontSize: CGFloat(sidePanelLyricsFontSize),
+                usesSidePanelStyle: true
             )
         }
         .sheet(item: $searchRequest) { LyricsSearchSheet(track: $0.track) }
@@ -54,8 +55,11 @@ struct TrackLyricsView: View {
 
                 if let lyricsFormatLabel {
                     Text(verbatim: lyricsFormatLabel)
-                        .font(.caption2)
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.primary.opacity(0.05), in: Capsule())
                 }
             }
             Spacer()
@@ -93,6 +97,8 @@ struct TrackLyricsContent: View {
     var activeColor: Color = .primary
     /// Color for inactive lines.
     var inactiveColor: Color = .secondary
+    /// Roomier typography and a stable highlight for the main-window sidebar.
+    var usesSidePanelStyle = false
 
     @EnvironmentObject var libraryManager: LibraryManager
     @EnvironmentObject var playbackManager: PlaybackManager
@@ -279,7 +285,7 @@ struct TrackLyricsContent: View {
     // MARK: - Lyrics Content with Conditional Synced Highlight
     private var lyricsContent: some View {
         ScrollView {
-            VStack(spacing: fontSize * 0.7) {
+            VStack(spacing: usesSidePanelStyle ? 6 : fontSize * 0.7) {
                 ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
                     lyricRow(line: line, index: index)
                         .background {
@@ -295,41 +301,53 @@ struct TrackLyricsContent: View {
                         }
                 }
             }
-            .padding(20)
+            .padding(.horizontal, usesSidePanelStyle ? 16 : 20)
+            .padding(.vertical, usesSidePanelStyle ? 28 : 20)
             .frame(maxWidth: .infinity)
-            .textSelection(.enabled)
+            .textSelection(.disabled)
         }
     }
 
-    @ViewBuilder
     private func lyricRow(line: LyricLine, index: Int) -> some View {
         let isCurrent = hasTimedLyrics && (currentLineIndex == index ||
             (line.duetSide != nil && line.isActive(at: sampledPlaybackTime)))
 
-        if isCurrent, line.timingSegments?.isEmpty == false {
-            KaraokeLyricText(
-                line: line,
-                sampleTime: sampledPlaybackTime,
-                isPlaying: playbackManager.isPlaying,
-                fontName: fontName,
-                fontSize: fontSize,
-                fontWeight: .bold,
-                activeColor: activeColor,
-                inactiveColor: inactiveColor,
-                lineSpacing: 6
-            )
-            .frame(maxWidth: .infinity, alignment: line.frameAlignment)
-            .scaleEffect(1.1)
-            .multilineTextAlignment(line.swiftUITextAlignment)
-        } else {
-            Text(line.text.isEmpty ? " " : line.text)
-                .font(lyricsFont(weight: isCurrent ? .bold : .regular))
-                .scaleEffect(isCurrent ? 1.1 : 1.0)
-                .foregroundColor(isCurrent ? activeColor : inactiveColor)
-                .multilineTextAlignment(line.swiftUITextAlignment)
-                .lineSpacing(6)
+        return Group {
+            if isCurrent, line.timingSegments?.isEmpty == false {
+                KaraokeLyricText(
+                    line: line,
+                    sampleTime: sampledPlaybackTime,
+                    isPlaying: playbackManager.isPlaying,
+                    fontName: fontName,
+                    fontSize: fontSize,
+                    fontWeight: usesSidePanelStyle ? .semibold : .bold,
+                    activeColor: activeColor,
+                    inactiveColor: inactiveColor,
+                    lineSpacing: lyricLineSpacing
+                )
                 .frame(maxWidth: .infinity, alignment: line.frameAlignment)
+                .scaleEffect(usesSidePanelStyle ? 1 : 1.1)
+                .multilineTextAlignment(line.swiftUITextAlignment)
+            } else {
+                Text(line.text.isEmpty ? " " : line.text)
+                    .font(lyricsFont(weight: usesSidePanelStyle
+                        ? (isCurrent ? .semibold : .medium)
+                        : (isCurrent ? .bold : .regular)))
+                    .scaleEffect(isCurrent && !usesSidePanelStyle ? 1.1 : 1.0)
+                    .foregroundColor(isCurrent || (usesSidePanelStyle && !hasTimedLyrics)
+                        ? activeColor : inactiveColor)
+                    .multilineTextAlignment(line.swiftUITextAlignment)
+                    .lineSpacing(lyricLineSpacing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: line.frameAlignment)
+            }
         }
+        .padding(.horizontal, usesSidePanelStyle ? 12 : 0)
+        .padding(.vertical, usesSidePanelStyle ? 10 : 0)
+    }
+
+    private var lyricLineSpacing: CGFloat {
+        usesSidePanelStyle ? max(6, fontSize * 0.4) : 6
     }
 
     private func lyricsFont(weight: Font.Weight) -> Font {

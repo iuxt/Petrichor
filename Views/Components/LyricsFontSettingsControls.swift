@@ -4,6 +4,7 @@ import SwiftUI
 enum LyricsFontSettings {
     static let systemFontName = "System"
     static let fontSizeRange = 18.0...48.0
+    static let sidePanelFontSize = 18.0
 
     static var availableFontFamilies: [String] {
         [systemFontName] + NSFontManager.shared.availableFontFamilies.sorted()

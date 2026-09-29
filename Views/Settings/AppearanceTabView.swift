@@ -50,7 +50,7 @@ struct AppearanceTabView: View {
     private var sidePanelLyricsFontName = LyricsFontSettings.systemFontName
 
     @AppStorage("sidePanelLyricsFontSize")
-    private var sidePanelLyricsFontSize = 14.0
+    private var sidePanelLyricsFontSize = LyricsFontSettings.sidePanelFontSize
 
     @State private var showTrackInfoHelp = false
 
