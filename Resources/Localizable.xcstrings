@@ -8139,6 +8139,17 @@
         }
       }
     },
+    "Right Side Lyrics Panel": {
+      "comment": "A settings section for configuring the lyrics panel on the right side of the main window.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右侧歌词面板"
+          }
+        }
+      }
+    },
     "Show desktop lyrics": {
       "comment": "A toggle that shows or hides the desktop lyrics window.",
       "localizations": {

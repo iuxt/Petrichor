@@ -6,11 +6,20 @@ struct TrackLyricsView: View {
     @EnvironmentObject private var playbackManager: PlaybackManager
     @State private var searchRequest: LyricsSearchRequest?
 
+    @AppStorage("sidePanelLyricsFontName")
+    private var sidePanelLyricsFontName = LyricsFontSettings.systemFontName
+
+    @AppStorage("sidePanelLyricsFontSize")
+    private var sidePanelLyricsFontSize = 14.0
+
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            TrackLyricsContent()
+            TrackLyricsContent(
+                fontName: sidePanelLyricsFontName == LyricsFontSettings.systemFontName ? nil : sidePanelLyricsFontName,
+                fontSize: CGFloat(sidePanelLyricsFontSize)
+            )
         }
         .sheet(item: $searchRequest) { LyricsSearchSheet(track: $0.track) }
     }

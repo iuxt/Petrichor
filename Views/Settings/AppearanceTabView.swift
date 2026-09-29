@@ -46,6 +46,12 @@ struct AppearanceTabView: View {
     @AppStorage("immersiveLyricsFontSize")
     private var immersiveLyricsFontSize = 20.0
 
+    @AppStorage("sidePanelLyricsFontName")
+    private var sidePanelLyricsFontName = LyricsFontSettings.systemFontName
+
+    @AppStorage("sidePanelLyricsFontSize")
+    private var sidePanelLyricsFontSize = 14.0
+
     @State private var showTrackInfoHelp = false
 
     /// Leading inset used to nest the options that depend on the master tint toggle.
@@ -122,6 +128,14 @@ struct AppearanceTabView: View {
                 LyricsFontSettingsControls(
                     fontName: $immersiveLyricsFontName,
                     fontSize: $immersiveLyricsFontSize
+                )
+            }
+
+            Section("Right Side Lyrics Panel") {
+                LyricsFontSettingsControls(
+                    fontName: $sidePanelLyricsFontName,
+                    fontSize: $sidePanelLyricsFontSize,
+                    fontSizeRange: 10.0...28.0
                 )
             }
 

@@ -13,6 +13,7 @@ enum LyricsFontSettings {
 struct LyricsFontSettingsControls: View {
     @Binding var fontName: String
     @Binding var fontSize: Double
+    var fontSizeRange: ClosedRange<Double> = LyricsFontSettings.fontSizeRange
 
     var body: some View {
         Group {
@@ -24,7 +25,7 @@ struct LyricsFontSettingsControls: View {
             }
 
             HStack {
-                Slider(value: $fontSize, in: LyricsFontSettings.fontSizeRange, step: 1) {
+                Slider(value: $fontSize, in: fontSizeRange, step: 1) {
                     Text("Size")
                 }
 
