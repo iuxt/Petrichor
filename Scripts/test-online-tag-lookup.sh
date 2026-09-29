@@ -20,16 +20,27 @@ func expectError(_ expected: OnlineTagLookupError, _ operation: () throws -> Voi
 }
 
 actor ControlledSearch: OnlineTagSearching {
-    private var requests: [Int: CheckedContinuation<[OnlineTagCandidate], Error>] = [:]
+    private var requests: [String: CheckedContinuation<[OnlineTagCandidate], Error>] = [:]
     private(set) var count = 0
     func search(provider: OnlineTagProvider, title: String, artist: String) async throws -> [OnlineTagCandidate] {
         count += 1
-        let index = count
         // Intentionally ignores cancellation to exercise stale-response protection.
-        return try await withCheckedThrowingContinuation { requests[index] = $0 }
+        return try await withCheckedThrowingContinuation { requests["\(title):\(provider.rawValue)"] = $0 }
     }
-    func complete(_ index: Int, with result: Result<[OnlineTagCandidate], Error>) {
-        requests.removeValue(forKey: index)?.resume(with: result)
+    func complete(_ title: String, provider: OnlineTagProvider, with result: Result<[OnlineTagCandidate], Error>) {
+        requests.removeValue(forKey: "\(title):\(provider.rawValue)")?.resume(with: result)
+    }
+}
+
+actor FixedSearch: OnlineTagSearching {
+    let netease: OnlineTagCandidate
+    let qqMusic: OnlineTagCandidate
+    init(netease: OnlineTagCandidate, qqMusic: OnlineTagCandidate) {
+        self.netease = netease
+        self.qqMusic = qqMusic
+    }
+    func search(provider: OnlineTagProvider, title: String, artist: String) async throws -> [OnlineTagCandidate] {
+        [provider == .netease ? netease : qqMusic]
     }
 }
 
@@ -134,26 +145,31 @@ struct Harness {
         expect(!model.isSearching && model.candidates.isEmpty, "Editing query invalidates previous search")
         model.search()
         await settle { await controlled.count == 2 }
-        await controlled.complete(2, with: .success([qqCandidate]))
+        await controlled.complete("Second", provider: .netease, with: .success(results))
         await settle { !model.isSearching }
-        await controlled.complete(1, with: .success(results))
+        await controlled.complete("First", provider: .netease, with: .success(results))
         try? await Task.sleep(nanoseconds: 10_000_000)
-        expect(model.candidates == [qqCandidate], "Old response must not overwrite new results")
-        model.selection = qqCandidate.id
-        expect(model.selectedCandidate == qqCandidate, "Selection must resolve to a current candidate")
+        expect(model.candidates == results, "Old response must not overwrite new results")
+        model.selection = candidate.id
+        expect(model.selectedCandidate == candidate, "Selection must resolve to a current candidate")
         model.provider = .qqMusic
-        expect(model.selectedCandidate == nil && model.candidates.isEmpty, "Changing provider clears stale selection")
+        expect(model.selectedCandidate == nil && model.candidates.isEmpty, "Changing source clears stale selection")
         model.search()
         await settle { await controlled.count == 3 }
-        await controlled.complete(3, with: .failure(URLError(.timedOut)))
+        await controlled.complete("Second", provider: .qqMusic, with: .failure(URLError(.timedOut)))
         await settle { !model.isSearching }
-        expect(model.errorMessage?.contains("timed out") == true, "Timeout must be actionable")
+        expect(model.errorMessage?.contains("timed out") == true, "Selected source timeout must be actionable")
         model.search()
         await settle { await controlled.count == 4 }
         model.invalidateSearch()
-        await controlled.complete(4, with: .success(results))
+        await controlled.complete("Second", provider: .qqMusic, with: .success([qqCandidate]))
         try? await Task.sleep(nanoseconds: 10_000_000)
         expect(model.candidates.isEmpty && model.errorMessage == nil, "Closing must discard pending work")
+        let qqModel = OnlineTagLookupViewModel(title: "QQ", artist: "", service: FixedSearch(netease: candidate, qqMusic: qqCandidate))
+        qqModel.provider = .qqMusic
+        qqModel.search()
+        await settle { !qqModel.isSearching }
+        expect(qqModel.candidates.map(\.id) == [qqCandidate.id], "Tag search must use the selected provider")
         print("Online tag lookup checks passed")
     }
 }

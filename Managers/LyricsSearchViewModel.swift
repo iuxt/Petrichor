@@ -29,6 +29,13 @@ enum LyricsSearchCandidate: Identifiable, Equatable {
         switch self { case .ttml: nil; case .provider(let item): item.duration }
     }
     var isTTML: Bool { if case .ttml = self { true } else { false } }
+
+    var sourceName: String {
+        switch self {
+        case .ttml: "AMLL"
+        case .provider(let item): item.provider.displayName
+        }
+    }
 }
 
 @MainActor
@@ -36,7 +43,7 @@ final class LyricsSearchViewModel: ObservableObject {
     let track: Track
     @Published var title: String { didSet { if title != oldValue { resetSearch() } } }
     @Published var artist: String { didSet { if artist != oldValue { resetSearch() } } }
-    @Published var provider: OnlineTagProvider { didSet { if provider != oldValue { resetSearch() } } }
+    @Published var source: LyricsSearchSource { didSet { if source != oldValue { resetSearch() } } }
     @Published var includeTranslation: Bool { didSet { if includeTranslation != oldValue { clearSaveState() } } }
     @Published var selection: String? { didSet { if selection != oldValue { clearSaveState() } } }
     @Published private(set) var candidates: [LyricsSearchCandidate] = []
@@ -67,7 +74,7 @@ final class LyricsSearchViewModel: ObservableObject {
         self.track = track
         title = track.title.isEmpty ? track.url.deletingPathExtension().lastPathComponent : track.title
         artist = track.artist == "Unknown Artist" ? "" : track.artist
-        provider = settings.provider
+        source = settings.source
         includeTranslation = settings.includeTranslation
         self.service = service
         self.writer = writer
@@ -87,16 +94,19 @@ final class LyricsSearchViewModel: ObservableObject {
         resetSearch()
         isSearching = true
         let generation = searchGeneration
-        let service = service, provider = provider, title = title, artist = artist
+        let service = service, source = source, title = title, artist = artist
         searchTask = Task { [weak self] in
             do {
-                async let ttml = try? service.searchTTML(title: title, artist: artist)
-                async let platform = try? service.search(provider: provider, title: title, artist: artist)
-                let (ttmlResults, platformResults) = await (ttml, platform)
+                let results: [LyricsSearchCandidate]
+                if let provider = source.tagProvider {
+                    results = try await service.search(provider: provider, title: title, artist: artist)
+                        .map(LyricsSearchCandidate.provider)
+                } else {
+                    results = try await service.searchTTML(title: title, artist: artist)
+                        .map(LyricsSearchCandidate.ttml)
+                }
                 guard let self, !Task.isCancelled, self.searchGeneration == generation else { return }
-                guard ttmlResults != nil || platformResults != nil else { throw LyricsDownloadError.unavailable }
-                self.candidates = (ttmlResults ?? []).map(LyricsSearchCandidate.ttml) +
-                    (platformResults ?? []).map(LyricsSearchCandidate.provider)
+                self.candidates = results
                 self.isSearching = false
                 self.hasSearched = true
             } catch {

@@ -1,14 +1,38 @@
 import Combine
 import Foundation
 
+enum LyricsSearchSource: String, CaseIterable, Identifiable, Sendable {
+    case amll
+    case netease
+    case qqMusic
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .amll: "AMLL"
+        case .netease: String(appLocalized: "NetEase Cloud Music")
+        case .qqMusic: String(appLocalized: "QQ Music")
+        }
+    }
+
+    var tagProvider: OnlineTagProvider? {
+        switch self {
+        case .amll: nil
+        case .netease: .netease
+        case .qqMusic: .qqMusic
+        }
+    }
+}
+
 @MainActor
 final class LyricsDownloadSettings: ObservableObject {
     static let shared = LyricsDownloadSettings()
     @Published var automaticallyDownload: Bool {
         didSet { defaults.set(automaticallyDownload, forKey: "lyricsAutoDownload") }
     }
-    @Published var provider: OnlineTagProvider {
-        didSet { defaults.set(provider.rawValue, forKey: "lyricsDownloadProvider") }
+    @Published var source: LyricsSearchSource {
+        didSet { defaults.set(source.rawValue, forKey: "lyricsDownloadSource") }
     }
     @Published var includeTranslation: Bool {
         didSet { defaults.set(includeTranslation, forKey: "lyricsDownloadTranslation") }
@@ -18,7 +42,7 @@ final class LyricsDownloadSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         automaticallyDownload = defaults.bool(forKey: "lyricsAutoDownload")
-        provider = OnlineTagProvider(rawValue: defaults.string(forKey: "lyricsDownloadProvider") ?? "") ?? .netease
+        source = LyricsSearchSource(rawValue: defaults.string(forKey: "lyricsDownloadSource") ?? "") ?? .amll
         includeTranslation = defaults.object(forKey: "lyricsDownloadTranslation") as? Bool ?? true
     }
 }

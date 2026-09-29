@@ -54,8 +54,8 @@ final class AutomaticLyricsDownloader: ObservableObject {
             return
         }
         let query = LyricsMatchQuery(title: track.title, artist: track.artist, album: track.album, duration: track.duration)
-        let provider = settings.provider, includeTranslation = settings.includeTranslation
-        let key = [track.url.path, track.title, track.artist, track.album, String(track.duration), provider.rawValue, String(includeTranslation)].joined(separator: "\u{0}")
+        let source = settings.source, includeTranslation = settings.includeTranslation
+        let key = [track.url.path, track.title, track.artist, track.album, String(track.duration), source.rawValue, String(includeTranslation)].joined(separator: "\u{0}")
         guard key != activeKey else { return }
         task?.cancel()
         activeKey = key
@@ -69,14 +69,26 @@ final class AutomaticLyricsDownloader: ObservableObject {
                 try await Task.sleep(nanoseconds: 500_000_000)
                 if try await loadLocal(track) { return }
                 try Task.checkCancellation()
-                let candidates = try await service.search(provider: provider, title: track.title, artist: track.artist)
-                try Task.checkCancellation()
-                guard let candidate = query.automaticMatch(in: candidates) else {
-                    self?.recordAttempt(key)
-                    self?.status = String(appLocalized: "No confident lyrics match. Use Search Lyrics Online to choose a result.")
-                    return
+                let lyrics: DownloadedLyrics
+                if let provider = source.tagProvider {
+                    let candidates = try await service.search(provider: provider, title: track.title, artist: track.artist)
+                    try Task.checkCancellation()
+                    guard let candidate = query.automaticMatch(in: candidates) else {
+                        self?.recordAttempt(key)
+                        self?.status = String(appLocalized: "No confident lyrics match. Use Search Lyrics Online to choose a result.")
+                        return
+                    }
+                    lyrics = try await service.download(candidate, includeTranslation: includeTranslation)
+                } else {
+                    let candidates = try await service.searchTTML(title: track.title, artist: track.artist)
+                    try Task.checkCancellation()
+                    guard let candidate = query.automaticTTMLMatch(in: candidates) else {
+                        self?.recordAttempt(key)
+                        self?.status = String(appLocalized: "No confident lyrics match. Use Search Lyrics Online to choose a result.")
+                        return
+                    }
+                    lyrics = try await service.downloadTTML(candidate)
                 }
-                let lyrics = try await service.download(candidate, includeTranslation: includeTranslation)
                 try Task.checkCancellation()
                 // A manual download or new embedded lyrics may have arrived meanwhile.
                 if try await loadLocal(track) { return }

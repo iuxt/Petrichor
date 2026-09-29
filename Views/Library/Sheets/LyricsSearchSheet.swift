@@ -16,7 +16,7 @@ struct LyricsSearchSheet: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .help(model.track.url.path)
-            Text(verbatim: String(appLocalized: "Search sends the title and artist to the selected music provider and AMLL TTML library. Saving fetches the selected lyrics; audio files are not uploaded."))
+            Text(verbatim: String(appLocalized: "Search sends the title and artist to the selected lyrics source. Saving fetches the selected lyrics; audio files are not uploaded."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -32,9 +32,10 @@ struct LyricsSearchSheet: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: String(appLocalized: "Source"))
-                    Picker(String(appLocalized: "Source"), selection: $model.provider) {
-                        Text(verbatim: String(appLocalized: "NetEase Cloud Music")).tag(OnlineTagProvider.netease)
-                        Text(verbatim: String(appLocalized: "QQ Music")).tag(OnlineTagProvider.qqMusic)
+                    Picker(String(appLocalized: "Source"), selection: $model.source) {
+                        ForEach(LyricsSearchSource.allCases) { source in
+                            Text(verbatim: source.displayName).tag(source)
+                        }
                     }.labelsHidden()
                 }.frame(width: 190)
                 Button(String(appLocalized: "Search")) { model.search() }.disabled(!model.canSearch)
@@ -60,8 +61,11 @@ struct LyricsSearchSheet: View {
             .frame(minHeight: 20)
 
             Table(model.candidates, selection: $model.selection) {
+                TableColumn(String(appLocalized: "Source")) { candidate in
+                    Text(verbatim: candidate.sourceName)
+                }.width(115)
                 TableColumn(String(appLocalized: "Format")) { candidate in
-                    Text(verbatim: candidate.isTTML ? "TTML" : "TTML / LRC")
+                    Text(verbatim: candidate.isTTML ? "TTML" : "LRC")
                 }.width(85)
                 TableColumn(String(appLocalized: "Title"), value: \.title)
                 TableColumn(String(appLocalized: "Artist"), value: \.artist)
@@ -83,7 +87,7 @@ struct LyricsSearchSheet: View {
                 Text(verbatim: String.localizedStringWithFormat(String(appLocalized: "Lyrics saved: %1$@"), url.path))
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            Text(verbatim: String(appLocalized: "TTML is preferred when available; otherwise lyrics are saved as LRC. Files are saved beside the song without automatically replacing existing lyrics. The translation option applies to LRC; TTML is saved as provided."))
+            Text(verbatim: String(appLocalized: "AMLL lyrics are saved as TTML; QQ Music and NetEase Cloud Music lyrics are saved as LRC. Files are saved beside the song without automatically replacing existing lyrics. The translation option applies to LRC; TTML is saved as provided."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

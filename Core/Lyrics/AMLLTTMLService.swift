@@ -43,12 +43,6 @@ enum AMLLTTMLService {
         return try parseLyrics(data, expectedID: candidate.id)
     }
 
-    static func download(for candidate: OnlineTagCandidate, session: URLSession) async throws -> DownloadedLyrics {
-        let parameter = candidate.provider == .netease ? "ncmMusicId" : "qqMusicId"
-        let data = try await fetch(path: "get", query: [.init(name: parameter, value: candidate.songID)], session: session)
-        return try parseLyrics(data, expectedPlatform: (parameter + "s", candidate.songID))
-    }
-
     private static func fetch(path: String, query: [URLQueryItem], session: URLSession) async throws -> Data {
         var components = URLComponents(string: baseURL + path)!
         components.queryItems = query
@@ -70,17 +64,12 @@ enum AMLLTTMLService {
 
     private static func parseLyrics(
         _ data: Data,
-        expectedID: String? = nil,
-        expectedPlatform: (key: String, id: String)? = nil
+        expectedID: String? = nil
     ) throws -> DownloadedLyrics {
         guard let payload = responseData(data),
               let source = payload["lyrics"] as? String,
               !TTMLLyricsParser.parse(Data(source.utf8)).isEmpty else { throw LyricsDownloadError.noLyrics }
         if let expectedID, (payload["id"] as? NSNumber)?.stringValue != expectedID {
-            throw LyricsDownloadError.invalidResponse
-        }
-        if let expectedPlatform,
-           (payload[expectedPlatform.key] as? [String])?.contains(expectedPlatform.id) != true {
             throw LyricsDownloadError.invalidResponse
         }
         return DownloadedLyrics(ttml: source)

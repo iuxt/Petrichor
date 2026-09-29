@@ -5,7 +5,7 @@ import Foundation
 final class OnlineTagLookupViewModel: ObservableObject {
     @Published var title: String { didSet { invalidateSearch() } }
     @Published var artist: String { didSet { invalidateSearch() } }
-    @Published var provider: OnlineTagProvider = .netease { didSet { invalidateSearch() } }
+    @Published var provider: OnlineTagProvider = .netease { didSet { if provider != oldValue { invalidateSearch() } } }
     @Published var selection: String?
     @Published private(set) var candidates: [OnlineTagCandidate] = []
     @Published private(set) var isSearching = false
@@ -57,9 +57,9 @@ final class OnlineTagLookupViewModel: ObservableObject {
                 if (error as? URLError)?.code == .timedOut {
                     self.errorMessage = String(appLocalized: "The tag search timed out. Please try again.")
                 } else if let error = error as? OnlineTagLookupError, error == .invalidResponse {
-                    self.errorMessage = String(appLocalized: "The provider returned an unreadable response. Try another source.")
+                    self.errorMessage = String(appLocalized: "A tag source returned an unreadable response. Please try again.")
                 } else {
-                    self.errorMessage = String(appLocalized: "Could not search for tags. Check your connection or try another source.")
+                    self.errorMessage = String(appLocalized: "Could not search for tags. Check your connection and try again.")
                 }
             }
         }
@@ -75,4 +75,5 @@ final class OnlineTagLookupViewModel: ObservableObject {
         selection = nil
         errorMessage = nil
     }
+
 }

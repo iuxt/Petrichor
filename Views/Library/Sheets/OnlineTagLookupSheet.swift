@@ -51,10 +51,8 @@ struct OnlineTagLookupSheet: View {
                     Picker(String(appLocalized: "Source"), selection: $model.provider) {
                         Text(verbatim: String(appLocalized: "NetEase Cloud Music")).tag(OnlineTagProvider.netease)
                         Text(verbatim: String(appLocalized: "QQ Music")).tag(OnlineTagProvider.qqMusic)
-                    }
-                    .labelsHidden()
-                }
-                .frame(width: 190)
+                    }.labelsHidden()
+                }.frame(width: 190)
                 Button(String(appLocalized: "Search")) { model.search() }
                     .disabled(!model.canSearch)
             }
@@ -87,6 +85,10 @@ struct OnlineTagLookupSheet: View {
             .frame(minHeight: 20)
 
             Table(model.candidates, selection: $model.selection) {
+                TableColumn(String(appLocalized: "Source")) { candidate in
+                    Text(verbatim: candidate.provider.displayName)
+                }
+                .width(115)
                 TableColumn(String(appLocalized: "Title"), value: \.title)
                 TableColumn(String(appLocalized: "Artist"), value: \.artist)
                 TableColumn(String(appLocalized: "Album"), value: \.album)

@@ -5,6 +5,13 @@ enum OnlineTagProvider: String, CaseIterable, Identifiable, Sendable {
     case qqMusic
 
     var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .netease: String(appLocalized: "NetEase Cloud Music")
+        case .qqMusic: String(appLocalized: "QQ Music")
+        }
+    }
 }
 
 struct OnlineTagCandidate: Identifiable, Equatable, Sendable {

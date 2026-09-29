@@ -8820,6 +8820,40 @@
         }
       }
     },
+    "A tag source returned an unreadable response. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A tag source returned an unreadable response. Please try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签来源返回了无法读取的响应，请重试。"
+          }
+        }
+      }
+    },
+    "Could not search for tags. Check your connection and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not search for tags. Check your connection and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法搜索标签，请检查网络连接后重试。"
+          }
+        }
+      }
+    },
     "Search sends only the title and artist entered below to the selected provider. Audio files are not uploaded.": {
       "extractionState": "manual",
       "localizations": {
@@ -9211,6 +9245,23 @@
         }
       }
     },
+    "When enabled, playing songs without lyrics searches the selected source. AMLL needs an exact title, artist, and album match; QQ Music and NetEase Cloud Music also check duration. Existing lyrics are never automatically replaced. The translation option applies to LRC; TTML is saved as provided.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, playing songs without lyrics searches the selected source. AMLL needs an exact title, artist, and album match; QQ Music and NetEase Cloud Music also check duration. Existing lyrics are never automatically replaced. The translation option applies to LRC; TTML is saved as provided."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，仅为当前播放且缺少歌词的歌曲搜索所选来源。AMLL 需要标题、艺人和专辑完全匹配；QQ 音乐和网易云音乐还会核对时长。不会自动覆盖已有歌词。翻译选项仅适用于 LRC，TTML 按原样保存。"
+          }
+        }
+      }
+    },
     "When enabled, playing songs without lyrics sends title and artist to the selected provider, then the matched song ID to AMLL for TTML. Confident matches are saved as TTML when available, otherwise LRC. Existing lyrics are never automatically replaced. The translation option applies to LRC; TTML is saved as provided.": {
       "extractionState": "manual",
       "localizations": {
@@ -9301,6 +9352,23 @@
         }
       }
     },
+    "Search sends the title and artist to the selected lyrics source. Saving fetches the selected lyrics; audio files are not uploaded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search sends the title and artist to the selected lyrics source. Saving fetches the selected lyrics; audio files are not uploaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索会将标题和艺人发送至所选歌词来源；保存时获取所选歌词，不会上传音频文件。"
+          }
+        }
+      }
+    },
     "Search sends the title and artist to the selected music provider and AMLL TTML library. Saving fetches the selected lyrics; audio files are not uploaded.": {
       "extractionState": "manual",
       "localizations": {
@@ -9331,6 +9399,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择歌曲后即可保存歌词。"
+          }
+        }
+      }
+    },
+    "AMLL lyrics are saved as TTML; QQ Music and NetEase Cloud Music lyrics are saved as LRC. Files are saved beside the song without automatically replacing existing lyrics. The translation option applies to LRC; TTML is saved as provided.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AMLL lyrics are saved as TTML; QQ Music and NetEase Cloud Music lyrics are saved as LRC. Files are saved beside the song without automatically replacing existing lyrics. The translation option applies to LRC; TTML is saved as provided."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AMLL 歌词保存为 TTML；QQ 音乐和网易云音乐歌词保存为 LRC。文件保存在歌曲旁边，不会自动替换已有歌词。翻译选项仅适用于 LRC；TTML 按原样保存。"
           }
         }
       }

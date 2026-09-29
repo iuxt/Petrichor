@@ -55,10 +55,6 @@ actor OnlineLyricsService: OnlineLyricsServing {
     }
 
     func download(_ candidate: OnlineTagCandidate, includeTranslation: Bool) async throws -> DownloadedLyrics {
-        if let ttml = try? await AMLLTTMLService.download(for: candidate, session: session) {
-            return ttml
-        }
-        try Task.checkCancellation()
         if candidate.provider == .qqMusic {
             if let wordTimed = try? await downloadQQWordTimed(candidate, includeTranslation: includeTranslation) {
                 return wordTimed
@@ -240,8 +236,8 @@ actor OnlineLyricsService: OnlineLyricsServing {
     }
 }
 
-/// Automatic downloads require agreement on title, artist and duration. Versions such
-/// as live/remix are not stripped, and tied candidates from different albums are skipped.
+/// Automatic downloads require exact title and artists. Music platform matches also
+/// require duration; AMLL matches require album because AMLL has no duration.
 struct LyricsMatchQuery: Sendable {
     let title: String
     let artist: String
@@ -271,8 +267,20 @@ struct LyricsMatchQuery: Sendable {
         return preferred.min { abs(($0.duration ?? 0) - duration) < abs(($1.duration ?? 0) - duration) }
     }
 
+    /// AMLL has no duration, so require an exact album as well as title and artists.
+    /// Ambiguous lyric entries are left for manual selection.
+    func automaticTTMLMatch(in candidates: [AMLLTTMLCandidate]) -> AMLLTTMLCandidate? {
+        guard isComplete, !normalized(album).isEmpty else { return nil }
+        let matches = candidates.filter {
+            normalized($0.title) == normalized(title) &&
+                artists($0.artist) == artists(artist) &&
+                normalized($0.album) == normalized(album)
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
     private func artists(_ value: String) -> Set<String> {
-        Set(value.components(separatedBy: CharacterSet(charactersIn: ";；/、")).map(normalized).filter { !$0.isEmpty })
+        Set(value.components(separatedBy: CharacterSet(charactersIn: ";；/、,，")).map(normalized).filter { !$0.isEmpty })
     }
 
     private func normalized(_ value: String) -> String {

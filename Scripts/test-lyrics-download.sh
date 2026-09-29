@@ -41,6 +41,7 @@ final class MockLyricsURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 let candidate = OnlineTagCandidate(provider: .netease, songID: "1", title: "Song", artist: "Artist", album: "Album", duration: 120, trackNumber: nil)
+let qqCandidate = OnlineTagCandidate(provider: .qqMusic, songID: "qq1", title: "Song", artist: "Artist", album: "Album", duration: 120, trackNumber: nil)
 let content = DownloadedLyrics(lrc: "[00:01.000]First\n[00:02.000]Second\n")
 actor FakeService: OnlineLyricsServing {
     private(set) var searches = 0
@@ -49,12 +50,14 @@ actor FakeService: OnlineLyricsServing {
     private(set) var ttmlDownloads = 0
     var results: [OnlineTagCandidate] = [candidate]
     var ttmlResults: [AMLLTTMLCandidate] = []
+    var failingProvider: OnlineTagProvider?
     var downloaded = content
     var suspended = false
     var continuation: CheckedContinuation<DownloadedLyrics, Never>?
     func search(provider: OnlineTagProvider, title: String, artist: String) async throws -> [OnlineTagCandidate] {
         searches += 1
-        return results
+        if provider == failingProvider { throw LyricsDownloadError.unavailable }
+        return results.filter { $0.provider == provider }
     }
     func searchTTML(title: String, artist: String) async throws -> [AMLLTTMLCandidate] {
         ttmlSearches += 1
@@ -73,6 +76,7 @@ actor FakeService: OnlineLyricsServing {
     func resume() { continuation?.resume(returning: downloaded); continuation = nil }
     func setResults(_ results: [OnlineTagCandidate]) { self.results = results }
     func setTTMLResults(_ results: [AMLLTTMLCandidate]) { ttmlResults = results }
+    func setFailingProvider(_ provider: OnlineTagProvider?) { failingProvider = provider }
     func setDownloaded(_ lyrics: DownloadedLyrics) { downloaded = lyrics }
 }
 actor FakeWriter: DownloadedLyricsWriting {
@@ -110,22 +114,21 @@ actor FakeWriter: DownloadedLyricsWriting {
         MockLyricsURLProtocol.reply = { request in
             if request.url?.path == "/v1/lyrics/search" { return (200, searchPayload) }
             if request.url?.path == "/v1/lyrics/get" { return (200, ttmlPayload) }
-            fatalError("TTML should be tried before provider lyrics")
+            fatalError("Direct AMLL selection should only use AMLL")
         }
         let ttmlMatches = try await networkService.searchTTML(title: "Song", artist: "Artist")
         expect(ttmlMatches.first?.id == "123", "AMLL search must return a selectable TTML result")
         let directTTML = try await networkService.downloadTTML(ttmlMatches[0])
         expect(directTTML.format == .ttml && directTTML.content == xml, "Selected TTML must retain its source")
-        let preferredTTML = try await networkService.download(candidate, includeTranslation: false)
-        expect(preferredTTML.format == .ttml, "A provider song ID must prefer AMLL TTML")
         let providerPayload = try JSONSerialization.data(withJSONObject: [
-            "code": 200, "lrc": ["lyric": "[00:01.000]Fallback"]
+            "code": 200, "lrc": ["lyric": "[00:01.000]Provider"]
         ])
         MockLyricsURLProtocol.reply = { request in
-            request.url?.path == "/v1/lyrics/get" ? (404, Data()) : (200, providerPayload)
+            if request.url?.path == "/v1/lyrics/get" { fatalError("Provider selection must not query AMLL") }
+            return (200, providerPayload)
         }
-        let fallbackLRC = try await networkService.download(candidate, includeTranslation: false)
-        expect(fallbackLRC.format == .lrc && fallbackLRC.lrc.contains("Fallback"), "Missing TTML must fall back to provider LRC")
+        let providerLRC = try await networkService.download(candidate, includeTranslation: false)
+        expect(providerLRC.format == .lrc && providerLRC.lrc.contains("Provider"), "Provider selection must save LRC")
 
         if CommandLine.arguments.contains("--live-word") {
             let service = OnlineLyricsService()
@@ -191,6 +194,11 @@ actor FakeWriter: DownloadedLyricsWriting {
         catch { expect(error as? LyricsDownloadError == .invalidResponse, "Invalid data is not no lyrics") }
         let query = LyricsMatchQuery(title: "Song", artist: "Artist", album: "Album", duration: 120)
         expect(query.automaticMatch(in: [candidate]) == candidate, "Exact match should download")
+        let exactTTML = AMLLTTMLCandidate(id: "123", title: "Song", artist: "Artist", album: "Album")
+        expect(query.automaticTTMLMatch(in: [exactTTML]) == exactTTML, "Exact AMLL metadata should match")
+        expect(query.automaticTTMLMatch(in: [exactTTML, exactTTML]) == nil, "Ambiguous AMLL entries must not auto-download")
+        expect(LyricsMatchQuery(title: "Song", artist: "Artist", album: "", duration: 120)
+            .automaticTTMLMatch(in: [exactTTML]) == nil, "AMLL needs an album without duration metadata")
         let wrong = OnlineTagCandidate(provider: .netease, songID: "2", title: "Song (Live)", artist: "Artist", album: "Album", duration: 120, trackNumber: nil)
         expect(query.automaticMatch(in: [wrong]) == nil, "Live version must not silently replace studio lyrics")
         expect(LyricsMatchQuery(title: "Song", artist: "Artist", album: "Album", duration: 130).automaticMatch(in: [candidate]) == nil, "Duration mismatch must be skipped")
@@ -253,12 +261,21 @@ actor FakeWriter: DownloadedLyricsWriting {
         let defaults = UserDefaults(suiteName: "petrichor.lyrics.test.\(UUID())")!
         let settings = LyricsDownloadSettings(defaults: defaults)
         expect(!settings.automaticallyDownload, "Automatic download is opt-in")
+        expect(settings.source == .amll, "AMLL must be the default lyrics source")
+        settings.source = .netease
         let service = FakeService(), fakeWriter = FakeWriter()
+        await service.setResults([candidate, qqCandidate])
         let track = Track(url: audio)
         let manual = LyricsSearchViewModel(track: track, settings: settings, service: service, writer: fakeWriter, didSave: { _ in })
         expect(await service.searches == 0, "Opening manual search must not contact the network")
         manual.search()
         await wait { !manual.isSearching }
+        let platformSearches = await service.searches
+        let ttmlSearches = await service.ttmlSearches
+        expect(platformSearches == 1 && ttmlSearches == 0,
+               "Manual lyrics search must query only the selected source")
+        expect(manual.candidates.map(\.sourceName) == ["NetEase Cloud Music"],
+               "Manual results must retain their source")
         manual.selection = candidate.id
         manual.title = manual.title
         manual.artist = manual.artist
@@ -272,12 +289,27 @@ actor FakeWriter: DownloadedLyricsWriting {
         expect(await fakeWriter.writes == 1, "Save must write the downloaded lyrics")
         expect(await service.downloads == 1, "Save must download the selected lyrics once")
 
+        let partialService = FakeService()
+        await partialService.setResults([candidate, qqCandidate])
+        await partialService.setFailingProvider(.netease)
+        let partialSearch = LyricsSearchViewModel(track: track, settings: settings, service: partialService, writer: fakeWriter, didSave: { _ in })
+        partialSearch.search()
+        await wait { !partialSearch.isSearching }
+        expect(partialSearch.errorMessage != nil, "A failed selected source must show an error")
+        partialSearch.source = .qqMusic
+        partialSearch.search()
+        await wait { !partialSearch.isSearching }
+        expect(partialSearch.candidates.map(\.id) == [qqCandidate.id],
+               "Changing source must search the new provider")
+
         let directService = FakeService(), directWriter = FakeWriter()
         await directService.setTTMLResults([AMLLTTMLCandidate(id: "123", title: "Song", artist: "Artist", album: "Album")])
+        settings.source = .amll
         let directSearch = LyricsSearchViewModel(track: track, settings: settings, service: directService, writer: directWriter, didSave: { _ in })
         directSearch.search()
         await wait { !directSearch.isSearching }
-        expect(directSearch.candidates.first?.isTTML == true, "Manual search must list TTML before provider results")
+        expect(directSearch.candidates.first?.isTTML == true, "AMLL selection must list TTML results")
+        expect(await directService.searches == 0, "AMLL selection must not search music providers")
         directSearch.selection = directSearch.candidates.first?.id
         directSearch.save()
         await wait { !directSearch.isSaving }
@@ -295,6 +327,7 @@ actor FakeWriter: DownloadedLyricsWriting {
         expect(await directService.ttmlDownloads == 2, "Confirmed TTML replacement must reuse the downloaded file")
 
         await fakeWriter.setExists()
+        settings.source = .netease
         let replacement = LyricsSearchViewModel(track: track, settings: settings, service: service, writer: fakeWriter, didSave: { _ in })
         replacement.search()
         await wait { !replacement.isSearching }
@@ -328,11 +361,14 @@ actor FakeWriter: DownloadedLyricsWriting {
         expect(await autoWriter.automaticFlags == [true], "Automatic flag must reach writer")
         expect(await autoWriter.overwrites == [false], "Automatic write must never overwrite")
         let autoTTMLService = FakeService(), autoTTMLWriter = FakeWriter()
-        await autoTTMLService.setDownloaded(DownloadedLyrics(ttml: xml))
+        await autoTTMLService.setTTMLResults([AMLLTTMLCandidate(id: "123", title: "Song", artist: "Artist", album: "Album")])
+        settings.source = .amll
         let autoTTML = AutomaticLyricsDownloader(settings: settings, service: autoTTMLService, writer: autoTTMLWriter, loadLocal: { _ in false }, didSave: { _ in })
         autoTTML.update(track: track, isPlaying: true)
         await wait { await autoTTMLWriter.writes == 1 }
-        expect(await autoTTMLWriter.formats == [.ttml], "Automatic download must save preferred TTML")
+        expect(await autoTTMLWriter.formats == [.ttml], "AMLL automatic download must save TTML")
+        expect(await autoTTMLService.searches == 0, "AMLL automatic download must not search music providers")
+        settings.source = .netease
         automatic.update(track: nil, isPlaying: false)
         automatic.update(track: track, isPlaying: true)
         try? await Task.sleep(nanoseconds: 600_000_000)
