@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 struct TrackLyricsView: View {
@@ -89,6 +90,7 @@ struct TrackLyricsContent: View {
     @State private var hasTimedLyrics: Bool = false
     @State private var isKaraokeLyrics = false
     @State private var sampledPlaybackTime: TimeInterval = 0
+    @State private var lastScrolledTrackID: UUID?
     @StateObject private var boundaryScheduler = KaraokeLineBoundaryScheduler()
 
     private var currentTrack: Track? {
@@ -252,25 +254,26 @@ struct TrackLyricsContent: View {
 
     // MARK: - Lyrics Content with Conditional Synced Highlight
     private var lyricsContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: fontSize * 0.7) {
-                    ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
-                        lyricRow(line: line, index: index)
-                            .id(index)   // For scrollTo
-                    }
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity)
-                .textSelection(.enabled)
-            }
-            .onChange(of: currentLineIndex) { _, newIndex in
-                // Auto-scroll only for timed lyrics
-                guard hasTimedLyrics else { return }
-                withAnimation {
-                    proxy.scrollTo(newIndex, anchor: .center)
+        ScrollView {
+            VStack(spacing: fontSize * 0.7) {
+                ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
+                    lyricRow(line: line, index: index)
+                        .background {
+                            if hasTimedLyrics, currentLineIndex == index, let lyricsTrackID {
+                                LyricsScrollAnchor(
+                                    trackID: lyricsTrackID,
+                                    lineIndex: index,
+                                    animated: lastScrolledTrackID == lyricsTrackID
+                                ) {
+                                    lastScrolledTrackID = lyricsTrackID
+                                }
+                            }
+                        }
                 }
             }
+            .padding(20)
+            .frame(maxWidth: .infinity)
+            .textSelection(.enabled)
         }
     }
 
@@ -444,5 +447,91 @@ struct TrackLyricsContent: View {
         }
         sampledPlaybackTime = transitionTime
         updateCurrentLine(for: transitionTime)
+    }
+}
+
+/// SwiftUI's ScrollViewReader can jump immediately on macOS even inside
+/// withAnimation. Center the active row through the underlying clip view instead.
+private struct LyricsScrollAnchor: NSViewRepresentable {
+    let trackID: UUID
+    let lineIndex: Int
+    let animated: Bool
+    let onScroll: () -> Void
+
+    func makeNSView(context: Context) -> LyricsScrollAnchorView {
+        let view = LyricsScrollAnchorView()
+        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, onScroll: onScroll)
+        return view
+    }
+
+    func updateNSView(_ view: LyricsScrollAnchorView, context: Context) {
+        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, onScroll: onScroll)
+    }
+}
+
+private final class LyricsScrollAnchorView: NSView {
+    private var target: (trackID: UUID, lineIndex: Int)?
+    private var animated = false
+    private var onScroll: (() -> Void)?
+    private var scrollScheduled = false
+    private var hasScrolled = false
+
+    func configure(trackID: UUID, lineIndex: Int, animated: Bool, onScroll: @escaping () -> Void) {
+        if target?.trackID != trackID || target?.lineIndex != lineIndex {
+            target = (trackID, lineIndex)
+            hasScrolled = false
+        }
+        self.animated = animated
+        self.onScroll = onScroll
+        scheduleScroll()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        scheduleScroll()
+    }
+
+    override func layout() {
+        super.layout()
+        scheduleScroll()
+    }
+
+    private func scheduleScroll() {
+        guard !hasScrolled, !scrollScheduled, window != nil else { return }
+        scrollScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.scrollScheduled = false
+            self?.scrollToCenter()
+        }
+    }
+
+    private func scrollToCenter() {
+        guard !hasScrolled, bounds.height > 0,
+              let scrollView = enclosingScrollView,
+              let documentView = scrollView.documentView else { return }
+
+        let clipView = scrollView.contentView
+        let row = convert(bounds, to: documentView)
+        let proposedOrigin = NSPoint(
+            x: clipView.bounds.origin.x,
+            y: row.midY - clipView.bounds.height / 2
+        )
+        let origin = clipView.constrainBoundsRect(NSRect(
+            origin: proposedOrigin,
+            size: clipView.bounds.size
+        )).origin
+        hasScrolled = true
+
+        if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.45
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                clipView.animator().setBoundsOrigin(origin)
+            }
+        } else {
+            clipView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(clipView)
+        }
+        onScroll?()
     }
 }

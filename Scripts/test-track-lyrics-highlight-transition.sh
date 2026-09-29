@@ -18,8 +18,18 @@ if ! rg -n '^[[:space:]]*currentLineIndex = newIndex$' "$source_file" >/dev/null
     exit 1
 fi
 
-if ! rg -nU '(?s)\.onChange\(of: currentLineIndex\).*?withAnimation[[:space:]]*\{.*?proxy\.scrollTo\(newIndex, anchor: \.center\)' "$source_file" >/dev/null; then
-    printf 'Lyric auto-scrolling must remain animated.\n' >&2
+if ! rg -n 'clipView\.animator\(\)\.setBoundsOrigin\(origin\)' "$source_file" >/dev/null; then
+    printf 'Lyric auto-scrolling must animate the macOS clip view.\n' >&2
+    exit 1
+fi
+
+if ! rg -n 'accessibilityDisplayShouldReduceMotion' "$source_file" >/dev/null; then
+    printf 'Lyric auto-scrolling must respect Reduce Motion.\n' >&2
+    exit 1
+fi
+
+if rg -n 'proxy\.scrollTo\(' "$source_file" >/dev/null; then
+    printf 'Lyric auto-scrolling must not use the jumping SwiftUI scrollTo path.\n' >&2
     exit 1
 fi
 
