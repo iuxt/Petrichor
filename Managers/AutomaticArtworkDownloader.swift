@@ -165,4 +165,5 @@ final class AutomaticArtworkDownloader {
 
 extension Notification.Name {
     static let downloadedArtworkDidChange = Notification.Name("DownloadedArtworkDidChange")
+    static let searchArtworkOnline = Notification.Name("SearchArtworkOnline")
 }

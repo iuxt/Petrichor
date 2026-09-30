@@ -84,6 +84,25 @@ func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(m
         try FileManager.default.removeItem(at: albumURL)
         let songURL = try await store.save(image, for: audio, album: "Different", matchedAlbum: "Other")
         expect(songURL.lastPathComponent == "Song.jpg", "Mismatched albums should use the song filename")
+        do {
+            _ = try await store.saveManual(Data("new".utf8), for: audio, overwrite: false)
+            fatalError("Manual artwork must ask before replacing a same-name JPEG")
+        } catch ArtworkDownloadError.existingArtwork { }
+        let replacement = Data("new".utf8)
+        expect(try await store.saveManual(replacement, for: audio, overwrite: true) == songURL,
+               "Confirmed manual artwork should use the song's filename")
+        expect(try Data(contentsOf: songURL) == replacement,
+               "Confirmed manual artwork should replace only the same-name JPEG")
+        expect(try Data(contentsOf: audio) == Data("audio".utf8), "Manual artwork must not change audio")
+        try FileManager.default.removeItem(at: songURL)
+        let other = root.appendingPathComponent("Other.jpg")
+        try Data("other".utf8).write(to: other)
+        try FileManager.default.createSymbolicLink(at: songURL, withDestinationURL: other)
+        do {
+            _ = try await store.saveManual(replacement, for: audio, overwrite: true)
+            fatalError("Manual artwork must not replace a symlink")
+        } catch ArtworkDownloadError.unsafeDestination { }
+        expect(try Data(contentsOf: other) == Data("other".utf8), "Manual artwork must not follow symlinks")
         print("Artwork endpoint and sidecar storage checks passed")
     }
 }

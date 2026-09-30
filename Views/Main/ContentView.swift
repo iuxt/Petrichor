@@ -85,6 +85,7 @@ struct ContentView: View {
     @State private var pendingLibraryFilter: LibraryFilterRequest?
     @State private var trackMetadataEditorRequest: TrackMetadataEditorRequest?
     @State private var lyricsSearchRequest: LyricsSearchRequest?
+    @State private var artworkSearchRequest: ArtworkSearchRequest?
     @State private var windowDelegate = WindowDelegate()
     @State private var shouldFocusSearch = false
 
@@ -163,6 +164,14 @@ struct ContentView: View {
         }
         .sheet(item: $lyricsSearchRequest) { request in
             LyricsSearchSheet(track: request.track)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .searchArtworkOnline)) { notification in
+            if let track = notification.object as? Track, artworkSearchRequest == nil {
+                artworkSearchRequest = ArtworkSearchRequest(track: track)
+            }
+        }
+        .sheet(item: $artworkSearchRequest) { request in
+            ArtworkSearchSheet(track: request.track)
         }
         .contentViewNotificationHandlers(
             shouldFocusSearch: $shouldFocusSearch,

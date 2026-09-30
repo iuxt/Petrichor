@@ -224,6 +224,18 @@ struct TrackDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
             .id(fullTrack.id)
+            Button {
+                NotificationCenter.default.post(name: .searchArtworkOnline, object: track)
+            } label: {
+                Image(systemName: "photo.badge.plus")
+                    .font(.system(size: 13))
+                    .padding(8)
+                    .background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help(String(appLocalized: "Search Artwork Online..."))
+            .accessibilityLabel(String(appLocalized: "Search Artwork Online..."))
+            .offset(x: 105, y: 105)
         }
         .padding(.top, 10)
     }

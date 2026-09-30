@@ -45,7 +45,7 @@ struct NativeTrackTable: NSViewRepresentable {
         table.allowsEmptySelection = true
         table.allowsColumnReordering = true
         table.allowsColumnResizing = true
-        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        table.columnAutoresizingStyle = .reverseSequentialColumnAutoresizingStyle
         table.style = .inset
         table.backgroundColor = .clear
         table.rowHeight = rowSize.rowHeight
@@ -57,6 +57,13 @@ struct NativeTrackTable: NSViewRepresentable {
             column.title = definition.title
             column.width = definition.width
             column.minWidth = definition.id == "title" ? 200 : 40
+            // Keep short values compact while longer text columns fill the table.
+            if ["title", "artist", "album", "genre", "composer", "filename", "dateAdded"].contains(definition.id) {
+                column.resizingMask = [.userResizingMask, .autoresizingMask]
+            } else {
+                column.resizingMask = .userResizingMask
+            }
+            if definition.id == "duration" { column.maxWidth = 100 }
             column.sortDescriptorPrototype = NSSortDescriptor(key: definition.id, ascending: true)
             table.addTableColumn(column)
         }

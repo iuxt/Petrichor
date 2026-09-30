@@ -9653,6 +9653,104 @@
           }
         }
       }
+    },
+    "Search Artwork Online...": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search Artwork Online..." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在线搜索封面…" } }
+      }
+    },
+    "Search sends the title and artist to the selected music source. Selecting a result loads its cover preview. Audio files are not uploaded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search sends the title and artist to the selected music source. Selecting a result loads its cover preview. Audio files are not uploaded." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "搜索会将标题和艺人发送到所选音乐平台；选择结果后会加载封面预览。不会上传音频文件。" } }
+      }
+    },
+    "Searching for artwork...": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Searching for artwork..." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在搜索封面…" } }
+      }
+    },
+    "Select a song to preview its artwork.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Select a song to preview its artwork." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择一首歌曲以预览封面。" } }
+      }
+    },
+    "This song has embedded artwork. External artwork cannot replace it here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This song has embedded artwork. External artwork cannot replace it here." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这首歌曲已有内嵌封面，无法在此用外部封面替换。" } }
+      }
+    },
+    "Saving another cover will use it for this song. Shared folder artwork is kept.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Saving another cover will use it for this song. Shared folder artwork is kept." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "保存新封面后，这首歌曲会优先使用它；文件夹共用封面仍会保留。" } }
+      }
+    },
+    "Artwork saved: %1$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Artwork saved: %1$@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "封面已保存：%1$@" } }
+      }
+    },
+    "The selected cover is saved as a same-name JPEG beside this song. It takes priority over shared folder artwork; the audio file is unchanged.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The selected cover is saved as a same-name JPEG beside this song. It takes priority over shared folder artwork; the audio file is unchanged." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选封面会以与歌曲同名的 JPEG 保存在旁边，优先于文件夹共用封面；音频文件不会改变。" } }
+      }
+    },
+    "Save Artwork": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Save Artwork" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "保存封面" } }
+      }
+    },
+    "Use the downloaded artwork for this song?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use the downloaded artwork for this song?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "为这首歌曲使用下载的封面？" } }
+      }
+    },
+    "The selected cover will take priority for this song. A same-name JPEG file may be replaced; shared folder artwork and the audio file are kept.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The selected cover will take priority for this song. A same-name JPEG file may be replaced; shared folder artwork and the audio file are kept." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选封面将优先用于这首歌曲；同名 JPEG 文件可能被替换。文件夹共用封面和音频文件会保留。" } }
+      }
+    },
+    "Could not search for artwork. Check your connection and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not search for artwork. Check your connection and try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法搜索封面，请检查网络连接后重试。" } }
+      }
+    },
+    "Could not save the selected artwork. Check folder write access.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not save the selected artwork. Check folder write access." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法保存所选封面，请检查文件夹写入权限。" } }
+      }
+    },
+    "Could not load the selected artwork. Try another song or source.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not load the selected artwork. Try another song or source." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法加载所选封面，请尝试其他歌曲或来源。" } }
+      }
     }
   },
   "version": "1.1"
