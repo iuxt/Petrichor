@@ -14,6 +14,7 @@ struct TrackMetadataEditorSheet: View {
     @StateObject private var model: TrackMetadataEditorViewModel
     @State private var didFinishSuccessfully = false
     @State private var showingOnlineTagLookup = false
+    @State private var didStartOnlineArtworkDownload = false
 
     init(request: TrackMetadataEditorRequest) {
         _model = StateObject(
@@ -41,6 +42,9 @@ struct TrackMetadataEditorSheet: View {
         }
         .onChange(of: model.allSelectedItemsSaved) { _, completed in
             finishAfterSuccessfulSave(completed)
+        }
+        .onChange(of: model.savedCount) { _, count in
+            if count > 0 { startOnlineArtworkDownloadIfNeeded() }
         }
         .sheet(isPresented: $showingOnlineTagLookup) {
             if let form = model.form, let snapshot = model.snapshots.first {
@@ -758,12 +762,25 @@ struct TrackMetadataEditorSheet: View {
               !didFinishSuccessfully else {
             return
         }
+        startOnlineArtworkDownloadIfNeeded()
         didFinishSuccessfully = true
         NotificationManager.shared.addMessage(
             .info,
             String(appLocalized: "Saved")
         )
         dismiss()
+    }
+
+    private func startOnlineArtworkDownloadIfNeeded() {
+        guard !didStartOnlineArtworkDownload,
+              let candidate = model.appliedOnlineTagCandidate,
+              let snapshot = model.snapshots.first,
+              let coordinator = AppCoordinator.shared else { return }
+        didStartOnlineArtworkDownload = true
+        coordinator.automaticArtworkDownloader.downloadAfterTagSave(
+            candidate, audioURL: snapshot.target.url,
+            album: snapshot.tags.album ?? "", playbackManager: playbackManager
+        )
     }
 
     private func aggregate(

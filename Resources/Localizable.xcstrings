@@ -8927,19 +8927,19 @@
         }
       }
     },
-    "Selected tags fill the properties form. Click Save there to write them to the audio file.": {
+    "Selected tags fill the properties form. After you click Save, missing artwork is downloaded from this source and saved beside the song.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Selected tags fill the properties form. Click Save there to write them to the audio file."
+            "value": "Selected tags fill the properties form. After you click Save, missing artwork is downloaded from this source and saved beside the song."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "所选标签将填入歌曲属性，返回后点击“保存”才会写入音频文件。"
+            "value": "所选标签将填入歌曲属性。返回后点击“保存”，才会写入音频文件；如果缺少封面，也会从该来源下载并保存到歌曲旁。"
           }
         }
       }
@@ -9182,6 +9182,116 @@
         }
       }
     },
+    "Lyrics downloaded for %1$@: %2$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lyrics downloaded for %1$@: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已为 %1$@ 下载歌词：%2$@"
+          }
+        }
+      }
+    },
+    "Could not download lyrics for %1$@: %2$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not download lyrics for %1$@: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法为 %1$@ 下载歌词：%2$@"
+          }
+        }
+      }
+    },
+    "Artwork downloaded for %1$@: %2$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artwork downloaded for %1$@: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已为 %1$@ 下载封面：%2$@"
+          }
+        }
+      }
+    },
+    "Could not download artwork for %1$@: %2$@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not download artwork for %1$@: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法为 %1$@ 下载封面：%2$@"
+          }
+        }
+      }
+    },
+    "No confident song match was found.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No confident song match was found." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有找到可靠的歌曲匹配。" } }
+      }
+    },
+    "The artwork source returned no usable image.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The artwork source returned no usable image." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "封面来源未返回可用图片。" } }
+      }
+    },
+    "The artwork source is unavailable.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The artwork source is unavailable." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "封面来源暂时不可用。" } }
+      }
+    },
+    "The artwork could not be saved beside the song.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The artwork could not be saved beside the song." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法将封面保存到歌曲旁。" } }
+      }
+    },
+    "Check your connection and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Check your connection and try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请检查网络连接后重试。" } }
+      }
+    },
+    "Check the song folder's write access and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Check the song folder's write access and try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请检查歌曲文件夹的写入权限后重试。" } }
+      }
+    },
     "Automatic lyrics download failed. You can retry with Search Lyrics Online.": {
       "extractionState": "manual",
       "localizations": {
@@ -9199,36 +9309,36 @@
         }
       }
     },
-    "Lyrics Downloads": {
+    "Lyrics and Artwork Downloads": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lyrics Downloads"
+            "value": "Lyrics and Artwork Downloads"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "歌词下载"
+            "value": "歌词与封面下载"
           }
         }
       }
     },
-    "Automatically download missing lyrics": {
+    "Automatically download missing lyrics and artwork": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Automatically download missing lyrics"
+            "value": "Automatically download missing lyrics and artwork"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "自动下载缺失歌词"
+            "value": "自动下载缺失歌词与封面"
           }
         }
       }
@@ -9263,6 +9373,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "包含歌词翻译"
+          }
+        }
+      }
+    },
+    "Artwork source": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artwork source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面来源"
+          }
+        }
+      }
+    },
+    "When automatic downloads are enabled, missing artwork for the playing song is downloaded from the selected artwork source. Existing embedded or nearby artwork is kept. Downloads are saved as JPEG beside the song, using the album name for an exact album match or the song filename otherwise.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When automatic downloads are enabled, missing artwork for the playing song is downloaded from the selected artwork source. Existing embedded or nearby artwork is kept. Downloads are saved as JPEG beside the song, using the album name for an exact album match or the song filename otherwise."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启自动下载后，会从所选封面来源为正在播放且缺少封面的歌曲下载封面。已有内嵌封面或旁车封面不会被替换。下载的封面以 JPEG 保存到歌曲旁，专辑名完全匹配时使用专辑名，否则使用歌曲文件名。"
           }
         }
       }

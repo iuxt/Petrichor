@@ -149,6 +149,7 @@ final class LyricsSearchViewModel: ObservableObject {
                 self.savedURL = url
                 self.pendingOverwrite = nil
                 self.didSave(self.track.url)
+                LyricsDownloadNotice.success(url, for: self.track.url)
             } catch LyricsDownloadError.existingFile {
                 guard let self, !Task.isCancelled, self.saveGeneration == generation else { return }
                 self.pendingOverwrite = lyrics
@@ -159,6 +160,7 @@ final class LyricsSearchViewModel: ObservableObject {
                     String.localizedStringWithFormat(
                         String(appLocalized: "Could not save the lyrics file. Check folder write access: %1$@"), error.localizedDescription
                     )
+                LyricsDownloadNotice.failure(for: self.track.url, reason: self.errorMessage ?? "")
             }
         }
     }

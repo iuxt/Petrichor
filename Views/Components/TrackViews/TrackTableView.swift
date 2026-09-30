@@ -116,6 +116,9 @@ struct TrackTableView: View {
                     artworkRevision += 1
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .downloadedArtworkDidChange)) { _ in
+                artworkRevision += 1
+            }
             .onReceive(NotificationCenter.default.publisher(for: .playEntityTracks)) { notification in
                 handlePlayEntityNotification(notification)
             }

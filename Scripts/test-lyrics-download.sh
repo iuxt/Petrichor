@@ -22,6 +22,12 @@ struct Track: Sendable {
     @Published var currentTrack: Track?
     @Published var isPlaying = false
 }
+enum NotificationType: Equatable { case info, error }
+@MainActor final class NotificationManager {
+    static let shared = NotificationManager()
+    private(set) var messages: [(NotificationType, String)] = []
+    func addMessage(_ type: NotificationType, _ title: String) { messages.append((type, title)) }
+}
 SWIFT
 cat > "$TMP_DIR/Harness.swift" <<'SWIFT'
 import Foundation
@@ -261,6 +267,11 @@ actor FakeWriter: DownloadedLyricsWriting {
         let defaults = UserDefaults(suiteName: "petrichor.lyrics.test.\(UUID())")!
         let settings = LyricsDownloadSettings(defaults: defaults)
         expect(!settings.automaticallyDownload, "Automatic download is opt-in")
+        expect(settings.artworkSource == .netease, "Artwork source defaults to NetEase")
+        settings.artworkSource = .qqMusic
+        let restoredSettings = LyricsDownloadSettings(defaults: defaults)
+        expect(restoredSettings.artworkSource == .qqMusic,
+               "Artwork download preferences must persist")
         expect(settings.source == .amll, "AMLL must be the default lyrics source")
         settings.source = .netease
         let service = FakeService(), fakeWriter = FakeWriter()
@@ -288,6 +299,8 @@ actor FakeWriter: DownloadedLyricsWriting {
         expect(manual.savedURL != nil, "Save must succeed without preview")
         expect(await fakeWriter.writes == 1, "Save must write the downloaded lyrics")
         expect(await service.downloads == 1, "Save must download the selected lyrics once")
+        expect(NotificationManager.shared.messages.contains { $0.0 == .info && $0.1.contains(track.url.lastPathComponent) },
+               "Manual lyrics success must reach the notification tray")
 
         let partialService = FakeService()
         await partialService.setResults([candidate, qqCandidate])
@@ -358,6 +371,7 @@ actor FakeWriter: DownloadedLyricsWriting {
         settings.automaticallyDownload = true
         automatic.update(track: track, isPlaying: true)
         await wait { await autoWriter.writes == 1 }
+        await wait { NotificationManager.shared.messages.filter { $0.0 == .info }.count >= 2 }
         expect(await autoWriter.automaticFlags == [true], "Automatic flag must reach writer")
         expect(await autoWriter.overwrites == [false], "Automatic write must never overwrite")
         let autoTTMLService = FakeService(), autoTTMLWriter = FakeWriter()
@@ -368,6 +382,13 @@ actor FakeWriter: DownloadedLyricsWriting {
         await wait { await autoTTMLWriter.writes == 1 }
         expect(await autoTTMLWriter.formats == [.ttml], "AMLL automatic download must save TTML")
         expect(await autoTTMLService.searches == 0, "AMLL automatic download must not search music providers")
+        let failureService = FakeService(), failureWriter = FakeWriter()
+        await failureService.setFailingProvider(.netease)
+        settings.source = .netease
+        let failingAuto = AutomaticLyricsDownloader(settings: settings, service: failureService,
+                                                     writer: failureWriter, loadLocal: { _ in false }, didSave: { _ in })
+        failingAuto.update(track: track, isPlaying: true)
+        await wait { NotificationManager.shared.messages.contains { $0.0 == .error && $0.1.contains(track.url.lastPathComponent) } }
         settings.source = .netease
         automatic.update(track: nil, isPlaying: false)
         automatic.update(track: track, isPlaying: true)

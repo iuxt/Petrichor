@@ -42,6 +42,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     @Published private(set) var isAwaitingPlaybackRestoration = false
     @Published private(set) var allSelectedItemsSaved = false
     @Published private(set) var form: TrackMetadataEditForm?
+    private(set) var appliedOnlineTagCandidate: OnlineTagCandidate?
 
     let tracks: [Track]
 
@@ -105,9 +106,10 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     }
 
     func applyOnlineTags(_ candidate: OnlineTagCandidate, fields: Set<TrackMetadataEditableField>) {
-        guard canLookUpTags, var form else { return }
+        guard canLookUpTags, !fields.isEmpty, var form else { return }
         candidate.apply(to: &form, fields: fields)
         self.form = form
+        appliedOnlineTagCandidate = candidate
         recomputeValidationError()
     }
 
@@ -192,6 +194,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
             self.unavailableResults = unavailable
             self.saveResults = []
             self.form = TrackMetadataEditForm(tags: loadedSnapshots.map(\.tags))
+            self.appliedOnlineTagCandidate = nil
             self.validationError = nil
             self.playbackRestorationError = nil
             self.playbackRestorationErrorTarget = nil

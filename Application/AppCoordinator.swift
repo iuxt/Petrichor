@@ -14,6 +14,7 @@ class AppCoordinator: ObservableObject {
     let playbackManager: PlaybackManager
     let menuBarManager: MenuBarManager
     let automaticLyricsDownloader: AutomaticLyricsDownloader
+    let automaticArtworkDownloader: AutomaticArtworkDownloader
     
     private var hadFoldersAtStartup: Bool = false
     private let playbackStateKey = "SavedPlaybackState"
@@ -39,6 +40,8 @@ class AppCoordinator: ObservableObject {
             return !result.lyrics.isEmpty
         })
         automaticLyricsDownloader.connect(playbackManager: playbackManager)
+        automaticArtworkDownloader = AutomaticArtworkDownloader()
+        automaticArtworkDownloader.connect(playbackManager: playbackManager)
         
         // Connect managers
         playlistManager.setAudioPlayer(playbackManager)

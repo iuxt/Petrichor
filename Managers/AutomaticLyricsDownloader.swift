@@ -38,8 +38,11 @@ final class AutomaticLyricsDownloader: ObservableObject {
         settings.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self, weak playbackManager] _ in
-                guard let playbackManager else { return }
-                self?.update(track: playbackManager.currentTrack, isPlaying: playbackManager.isPlaying)
+                // objectWillChange fires before the setting is stored.
+                Task { @MainActor [weak self, weak playbackManager] in
+                    guard let playbackManager else { return }
+                    self?.update(track: playbackManager.currentTrack, isPlaying: playbackManager.isPlaying)
+                }
             }
             .store(in: &subscriptions)
     }
@@ -74,8 +77,11 @@ final class AutomaticLyricsDownloader: ObservableObject {
                     let candidates = try await service.search(provider: provider, title: track.title, artist: track.artist)
                     try Task.checkCancellation()
                     guard let candidate = query.automaticMatch(in: candidates) else {
-                        self?.recordAttempt(key)
-                        self?.status = String(appLocalized: "No confident lyrics match. Use Search Lyrics Online to choose a result.")
+                        guard let self else { return }
+                        self.recordAttempt(key)
+                        let message = String(appLocalized: "No confident lyrics match. Use Search Lyrics Online to choose a result.")
+                        self.status = message
+                        LyricsDownloadNotice.failure(for: track.url, reason: message)
                         return
                     }
                     lyrics = try await service.download(candidate, includeTranslation: includeTranslation)
@@ -83,8 +89,11 @@ final class AutomaticLyricsDownloader: ObservableObject {
                     let candidates = try await service.searchTTML(title: track.title, artist: track.artist)
                     try Task.checkCancellation()
                     guard let candidate = query.automaticTTMLMatch(in: candidates) else {
-                        self?.recordAttempt(key)
-                        self?.status = String(appLocalized: "No confident lyrics match. Use Search Lyrics Online to choose a result.")
+                        guard let self else { return }
+                        self.recordAttempt(key)
+                        let message = String(appLocalized: "No confident lyrics match. Use Search Lyrics Online to choose a result.")
+                        self.status = message
+                        LyricsDownloadNotice.failure(for: track.url, reason: message)
                         return
                     }
                     lyrics = try await service.downloadTTML(candidate)
@@ -98,11 +107,13 @@ final class AutomaticLyricsDownloader: ObservableObject {
                 self.recordAttempt(key)
                 self.didSave(track.url)
                 self.status = String.localizedStringWithFormat(String(appLocalized: "Lyrics saved: %1$@"), url.lastPathComponent)
+                LyricsDownloadNotice.success(url, for: track.url)
             } catch {
                 guard let self, !Task.isCancelled, self.activeKey == key else { return }
                 self.recordAttempt(key)
                 if let error = error as? LyricsDownloadError, error == .existingFile || error == .existingSidecar { return }
                 self.status = String(appLocalized: "Automatic lyrics download failed. You can retry with Search Lyrics Online.")
+                LyricsDownloadNotice.failure(for: track.url, reason: lyricsDownloadMessage(for: error))
             }
         }
     }

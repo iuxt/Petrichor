@@ -1244,6 +1244,12 @@ final class PlaybackManager: NSObject, ObservableObject {
         }
     }
 
+    func refreshCurrentTrackArtworkAfterDownload(for audioURL: URL) {
+        guard currentTrack?.url.standardizedFileURL == audioURL.standardizedFileURL else { return }
+        currentArtworkIdentity = nil
+        refreshCurrentTrackArtworkIfNeeded()
+    }
+
     private func shouldAcceptPlayPauseToggle() -> Bool {
         let now = Date().timeIntervalSinceReferenceDate
         guard now - lastPlayPauseToggleTime >= playPauseToggleThrottleInterval else {

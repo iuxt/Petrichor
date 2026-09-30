@@ -98,7 +98,7 @@ struct OnlineTagLookupSheet: View {
 
             preview
 
-            Text(verbatim: String(appLocalized: "Selected tags fill the properties form. Click Save there to write them to the audio file."))
+            Text(verbatim: String(appLocalized: "Selected tags fill the properties form. After you click Save, missing artwork is downloaded from this source and saved beside the song."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

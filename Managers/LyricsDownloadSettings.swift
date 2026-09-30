@@ -37,6 +37,9 @@ final class LyricsDownloadSettings: ObservableObject {
     @Published var includeTranslation: Bool {
         didSet { defaults.set(includeTranslation, forKey: "lyricsDownloadTranslation") }
     }
+    @Published var artworkSource: OnlineTagProvider {
+        didSet { defaults.set(artworkSource.rawValue, forKey: "artworkDownloadSource") }
+    }
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -44,6 +47,7 @@ final class LyricsDownloadSettings: ObservableObject {
         automaticallyDownload = defaults.bool(forKey: "lyricsAutoDownload")
         source = LyricsSearchSource(rawValue: defaults.string(forKey: "lyricsDownloadSource") ?? "") ?? .amll
         includeTranslation = defaults.object(forKey: "lyricsDownloadTranslation") as? Bool ?? true
+        artworkSource = OnlineTagProvider(rawValue: defaults.string(forKey: "artworkDownloadSource") ?? "") ?? .netease
     }
 }
 
@@ -65,5 +69,22 @@ func lyricsDownloadMessage(for error: Error) -> String {
             return String(appLocalized: "The lyrics request timed out. Please try again.")
         }
         return String(appLocalized: "Could not download lyrics. Check your connection or try another source.")
+    }
+}
+
+@MainActor
+enum LyricsDownloadNotice {
+    static func success(_ savedURL: URL, for audioURL: URL) {
+        NotificationManager.shared.addMessage(.info, String.localizedStringWithFormat(
+            String(appLocalized: "Lyrics downloaded for %1$@: %2$@"),
+            audioURL.lastPathComponent, savedURL.lastPathComponent
+        ))
+    }
+
+    static func failure(for audioURL: URL, reason: String) {
+        NotificationManager.shared.addMessage(.error, String.localizedStringWithFormat(
+            String(appLocalized: "Could not download lyrics for %1$@: %2$@"),
+            audioURL.lastPathComponent, reason
+        ))
     }
 }

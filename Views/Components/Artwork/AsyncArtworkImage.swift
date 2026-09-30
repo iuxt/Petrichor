@@ -8,6 +8,7 @@ struct AsyncArtworkImage<Placeholder: View>: View {
     @ViewBuilder let placeholder: () -> Placeholder
 
     @State private var image: NSImage?
+    @State private var artworkRevision = 0
 
     init(
         request: ArtworkRequest?,
@@ -34,11 +35,17 @@ struct AsyncArtworkImage<Placeholder: View>: View {
         .task(id: taskID) { [expectedTaskID = taskID] in
             await loadArtwork(expectedTaskID: expectedTaskID)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .downloadedArtworkDidChange)) { notice in
+            guard let savedAudioURL = notice.object as? URL, let request,
+                  request.audioURL.deletingLastPathComponent().standardizedFileURL ==
+                    savedAudioURL.deletingLastPathComponent().standardizedFileURL else { return }
+            artworkRevision += 1
+        }
     }
 
     private var taskID: String {
         guard let request else { return "nil" }
-        return "\(request.kind.rawValue)-\(request.identity)-\(request.audioURL.path)"
+        return "\(request.kind.rawValue)-\(request.identity)-\(request.audioURL.path)-\(artworkRevision)"
     }
 
     @MainActor

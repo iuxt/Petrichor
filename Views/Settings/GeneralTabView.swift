@@ -55,8 +55,8 @@ struct GeneralTabView: View {
                 }
             }
 
-            Section(String(appLocalized: "Lyrics Downloads")) {
-                Toggle(String(appLocalized: "Automatically download missing lyrics"), isOn: $lyricsSettings.automaticallyDownload)
+            Section(String(appLocalized: "Lyrics and Artwork Downloads")) {
+                Toggle(String(appLocalized: "Automatically download missing lyrics and artwork"), isOn: $lyricsSettings.automaticallyDownload)
                 Picker(String(appLocalized: "Lyrics source"), selection: $lyricsSettings.source) {
                     ForEach(LyricsSearchSource.allCases) { source in
                         Text(verbatim: source.displayName).tag(source)
@@ -64,6 +64,15 @@ struct GeneralTabView: View {
                 }
                 Toggle(String(appLocalized: "Include lyric translations"), isOn: $lyricsSettings.includeTranslation)
                 Text(verbatim: String(appLocalized: "When enabled, playing songs without lyrics searches the selected source. AMLL needs an exact title, artist, and album match; QQ Music and NetEase Cloud Music also check duration. Existing lyrics are never automatically replaced. The translation option applies to LRC; TTML is saved as provided."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Picker(String(appLocalized: "Artwork source"), selection: $lyricsSettings.artworkSource) {
+                    ForEach(OnlineTagProvider.allCases) { provider in
+                        Text(verbatim: provider.displayName).tag(provider)
+                    }
+                }
+                Text(verbatim: String(appLocalized: "When automatic downloads are enabled, missing artwork for the playing song is downloaded from the selected artwork source. Existing embedded or nearby artwork is kept. Downloads are saved as JPEG beside the song, using the album name for an exact album match or the song filename otherwise."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
