@@ -113,12 +113,8 @@ struct TrackLyricsContent: View {
     @State private var loadGeneration = UUID()
     @State private var searchRequest: LyricsSearchRequest?
     @State private var deletionRequest: LyricsDeletionRequest?
-    @State private var currentLineIndex: Int = -1
     @State private var hasTimedLyrics: Bool = false
     @State private var isKaraokeLyrics = false
-    @State private var sampledPlaybackTime: TimeInterval = 0
-    @State private var lastScrolledTrackID: UUID?
-    @StateObject private var boundaryScheduler = KaraokeLineBoundaryScheduler()
 
     private var currentTrack: Track? {
         playbackManager.currentTrack
@@ -136,7 +132,17 @@ struct TrackLyricsContent: View {
             } else if lyricLines.isEmpty {
                 emptyLyricsView
             } else {
-                lyricsContent
+                TrackLyricsDisplay(
+                    lyricLines: lyricLines,
+                    lyricsTrackID: lyricsTrackID,
+                    hasTimedLyrics: hasTimedLyrics,
+                    isKaraokeLyrics: isKaraokeLyrics,
+                    fontName: fontName,
+                    fontSize: fontSize,
+                    activeColor: activeColor,
+                    inactiveColor: inactiveColor,
+                    usesSidePanelStyle: usesSidePanelStyle
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -157,7 +163,10 @@ struct TrackLyricsContent: View {
             }
             .disabled(currentTrack == nil)
 
-            scriptMenu
+            LyricsScriptMenu(
+                preference: scriptSettings.preference,
+                availableScripts: availableScripts
+            )
 
             Button(String(appLocalized: "Copy All Lyrics"), systemImage: "doc.on.doc") {
                 NSPasteboard.general.clearContents()
@@ -220,21 +229,10 @@ struct TrackLyricsContent: View {
             loadLyricsForCurrentTrack()
         }
         .onDisappear {
-            boundaryScheduler.cancel()
             playbackManager.setFineProgressSampling(false)
         }
         .onChange(of: playbackManager.currentTrack?.id) { _, _ in
-            boundaryScheduler.cancel()
             loadLyricsForCurrentTrack()
-        }
-        .onChange(of: playbackManager.isPlaying) { _, isPlaying in
-            transitionKaraokeBoundarySchedule(isPlaying: isPlaying)
-        }
-        // Listen for playback time changes and update the current line in real time.
-        .onReceive(playbackManager.playbackProgressState.$currentTime) { newTime in
-            sampledPlaybackTime = newTime
-            updateCurrentLine(for: newTime)
-            resetKaraokeBoundarySchedule(at: newTime)
         }
     }
 
@@ -291,8 +289,105 @@ struct TrackLyricsContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Helper Methods
+
+    private func loadLyricsForCurrentTrack(forceReload: Bool = false) {
+        let generation = UUID()
+        loadGeneration = generation
+        guard let track = currentTrack else {
+            lyricLines = []
+            lyricsSource = .none
+            availableScripts = [.original]
+            lyricsTrackID = nil
+            hasTimedLyrics = false
+            isKaraokeLyrics = false
+            isLoading = false
+            fetchFailed = false
+            return
+        }
+
+        let loadedTrackId = track.id
+
+        if !forceReload, let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
+            lyricLines = cached.lines
+            lyricsSource = cached.source
+            availableScripts = cached.availableScripts
+            lyricsTrackID = loadedTrackId
+            hasTimedLyrics = cached.hasTimed
+            isKaraokeLyrics = cached.isKaraoke
+            isLoading = false
+            fetchFailed = false
+            return
+        }
+
+        isLoading = true
+        lyricLines = []
+        lyricsSource = .none
+        availableScripts = [.original]
+        lyricsTrackID = nil
+        fetchFailed = false
+        hasTimedLyrics = false   // Reset until we know
+        isKaraokeLyrics = false
+
+        Task {
+            do {
+                // Shared cache + single-flight: concurrent lyrics views (main window,
+                // mini player, immersive) for the same track load only once.
+                let result = try await LyricsStore.shared.lyrics(
+                    for: track,
+                    using: libraryManager.databaseManager.dbQueue,
+                    forceReload: forceReload
+                )
+
+                await MainActor.run {
+                    guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
+                    lyricLines = result.lines
+                    lyricsSource = result.source
+                    availableScripts = result.availableScripts
+                    lyricsTrackID = loadedTrackId
+                    hasTimedLyrics = result.hasTimed
+                    isKaraokeLyrics = result.isKaraoke
+                    isLoading = false
+                    fetchFailed = false
+                }
+            } catch {
+                await MainActor.run {
+                    guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
+                    lyricLines = []
+                    lyricsSource = .none
+                    availableScripts = [.original]
+                    lyricsTrackID = nil
+                    hasTimedLyrics = false
+                    isKaraokeLyrics = false
+                    isLoading = false
+                    fetchFailed = true
+                }
+            }
+        }
+    }
+}
+
+/// Owns playback-driven highlighting and scrolling so progress samples do
+/// not rebuild the native context menu attached to TrackLyricsContent.
+private struct TrackLyricsDisplay: View {
+    let lyricLines: [LyricLine]
+    let lyricsTrackID: UUID?
+    let hasTimedLyrics: Bool
+    let isKaraokeLyrics: Bool
+    let fontName: String?
+    let fontSize: CGFloat
+    let activeColor: Color
+    let inactiveColor: Color
+    let usesSidePanelStyle: Bool
+
+    @EnvironmentObject private var playbackManager: PlaybackManager
+    @State private var currentLineIndex = -1
+    @State private var sampledPlaybackTime: TimeInterval = 0
+    @State private var lastScrolledTrackID: UUID?
+    @StateObject private var boundaryScheduler = KaraokeLineBoundaryScheduler()
+
     // MARK: - Lyrics Content with Conditional Synced Highlight
-    private var lyricsContent: some View {
+    var body: some View {
         ScrollView {
             VStack(spacing: usesSidePanelStyle ? 6 : fontSize * 0.7) {
                 ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
@@ -314,6 +409,19 @@ struct TrackLyricsContent: View {
             .padding(.vertical, usesSidePanelStyle ? 28 : 20)
             .frame(maxWidth: .infinity)
             .textSelection(.disabled)
+        }
+        .onAppear { refreshPlaybackSample() }
+        .onChange(of: lyricLines) { _, _ in refreshPlaybackSample() }
+        .onChange(of: lyricsTrackID) { _, _ in refreshPlaybackSample() }
+        .onDisappear { boundaryScheduler.cancel() }
+        .onChange(of: playbackManager.isPlaying) { _, isPlaying in
+            transitionKaraokeBoundarySchedule(isPlaying: isPlaying)
+        }
+        // Listen for playback time changes and update the current line in real time.
+        .onReceive(playbackManager.playbackProgressState.$currentTime) { newTime in
+            sampledPlaybackTime = newTime
+            updateCurrentLine(for: newTime)
+            resetKaraokeBoundarySchedule(at: newTime)
         }
     }
 
@@ -366,123 +474,10 @@ struct TrackLyricsContent: View {
         return .system(size: fontSize, weight: weight)
     }
 
-    // MARK: - Script Selection
-
-    private var scriptMenu: some View {
-        Menu {
-            ForEach(LyricsScriptPreference.allCases) { preference in
-                Button {
-                    scriptSettings.select(preference)
-                } label: {
-                    HStack {
-                        if scriptSettings.preference == preference {
-                            Image(systemName: "checkmark")
-                        }
-                        Text(preference.title)
-                    }
-                }
-                .disabled(!isSelectable(preference))
-            }
-        } label: {
-            Label(String(appLocalized: "Lyrics Script"), systemImage: "character.textbox")
-        }
-    }
-
-    /// Scripts the current lyrics actually carry; follow/original always work
-    /// because the parser falls back to the body script per line.
-    private func isSelectable(_ preference: LyricsScriptPreference) -> Bool {
-        switch preference {
-        case .followAppLanguage, .original: true
-        case .simplified: availableScripts.contains(.simplified)
-        case .traditional: availableScripts.contains(.traditional)
-        }
-    }
-
-    // MARK: - Helper Methods
-
-    private func loadLyricsForCurrentTrack(forceReload: Bool = false) {
-        let generation = UUID()
-        loadGeneration = generation
-        guard let track = currentTrack else {
-            boundaryScheduler.cancel()
-            lyricLines = []
-            lyricsSource = .none
-            availableScripts = [.original]
-            lyricsTrackID = nil
-            hasTimedLyrics = false
-            isKaraokeLyrics = false
-            isLoading = false
-            fetchFailed = false
-            return
-        }
-
-        currentLineIndex = -1
-        let loadedTrackId = track.id
-
-        if !forceReload, let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
-            lyricLines = cached.lines
-            lyricsSource = cached.source
-            availableScripts = cached.availableScripts
-            lyricsTrackID = loadedTrackId
-            hasTimedLyrics = cached.hasTimed
-            isKaraokeLyrics = cached.isKaraoke
-            isLoading = false
-            fetchFailed = false
-            sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
-            updateCurrentLine(for: sampledPlaybackTime)
-            resetKaraokeBoundarySchedule(at: sampledPlaybackTime)
-            return
-        }
-
-        boundaryScheduler.cancel()
-        isLoading = true
-        lyricLines = []
-        lyricsSource = .none
-        availableScripts = [.original]
-        lyricsTrackID = nil
-        fetchFailed = false
-        hasTimedLyrics = false   // Reset until we know
-        isKaraokeLyrics = false
-
-        Task {
-            do {
-                // Shared cache + single-flight: concurrent lyrics views (main window,
-                // mini player, immersive) for the same track load only once.
-                let result = try await LyricsStore.shared.lyrics(
-                    for: track,
-                    using: libraryManager.databaseManager.dbQueue,
-                    forceReload: forceReload
-                )
-
-                await MainActor.run {
-                    guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
-                    lyricLines = result.lines
-                    lyricsSource = result.source
-                    availableScripts = result.availableScripts
-                    lyricsTrackID = loadedTrackId
-                    hasTimedLyrics = result.hasTimed
-                    isKaraokeLyrics = result.isKaraoke
-                    isLoading = false
-                    fetchFailed = false
-                    sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
-                    updateCurrentLine(for: sampledPlaybackTime)
-                    resetKaraokeBoundarySchedule(at: sampledPlaybackTime)
-                }
-            } catch {
-                await MainActor.run {
-                    guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
-                    boundaryScheduler.cancel()
-                    lyricLines = []
-                    lyricsSource = .none
-                    availableScripts = [.original]
-                    lyricsTrackID = nil
-                    hasTimedLyrics = false
-                    isKaraokeLyrics = false
-                    isLoading = false
-                    fetchFailed = true
-                }
-            }
-        }
+    private func refreshPlaybackSample() {
+        sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
+        updateCurrentLine(for: sampledPlaybackTime)
+        resetKaraokeBoundarySchedule(at: sampledPlaybackTime)
     }
 
     /// Determine the current lyric line based on playback time.
@@ -535,6 +530,39 @@ struct TrackLyricsContent: View {
         }
         sampledPlaybackTime = transitionTime
         updateCurrentLine(for: transitionTime)
+    }
+}
+
+private struct LyricsScriptMenu: View {
+    let preference: LyricsScriptPreference
+    let availableScripts: [LyricScript]
+
+    var body: some View {
+        Menu {
+            ForEach(LyricsScriptPreference.allCases) { option in
+                Toggle(isOn: Binding(
+                    get: { preference == option },
+                    set: { isSelected in
+                        if isSelected { LyricsScriptSettings.shared.select(option) }
+                    }
+                )) {
+                    Text(option.title)
+                }
+                .disabled(!isSelectable(option))
+            }
+        } label: {
+            Label(String(appLocalized: "Lyrics Script"), systemImage: "character.textbox")
+        }
+    }
+
+    /// Follow/original remain available because the parser falls back to the
+    /// body script when a line does not carry the requested variant.
+    private func isSelectable(_ option: LyricsScriptPreference) -> Bool {
+        switch option {
+        case .followAppLanguage, .original: true
+        case .simplified: availableScripts.contains(.simplified)
+        case .traditional: availableScripts.contains(.traditional)
+        }
     }
 }
 
