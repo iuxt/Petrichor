@@ -53,6 +53,10 @@ struct KaraokeLyricText: View {
     let inactiveColor: Color
     let lineLimit: Int
     let lineSpacing: CGFloat
+    let textAlignment: NSTextAlignment?
+    let usesWordLift: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var anchor: KaraokePlaybackTimeAnchor
     private let clock: ContinuousClock
@@ -67,7 +71,9 @@ struct KaraokeLyricText: View {
         activeColor: Color,
         inactiveColor: Color,
         lineLimit: Int = 0,
-        lineSpacing: CGFloat = 0
+        lineSpacing: CGFloat = 0,
+        textAlignment: NSTextAlignment? = nil,
+        usesWordLift: Bool = false
     ) {
         self.line = line
         self.sampleTime = sampleTime
@@ -79,6 +85,8 @@ struct KaraokeLyricText: View {
         self.inactiveColor = inactiveColor
         self.lineLimit = lineLimit
         self.lineSpacing = lineSpacing
+        self.textAlignment = textAlignment
+        self.usesWordLift = usesWordLift
 
         let clock = ContinuousClock()
         self.clock = clock
@@ -101,7 +109,10 @@ struct KaraokeLyricText: View {
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
                 lineLimit: lineLimit,
-                lineSpacing: lineSpacing
+                lineSpacing: lineSpacing,
+                textAlignment: textAlignment,
+                usesWordLift: usesWordLift,
+                reduceMotion: reduceMotion
             )
         }
         .onChange(of: sampleTime) { _, newTime in resetAnchor(time: newTime, playing: isPlaying) }
@@ -128,6 +139,9 @@ private struct KaraokeTextRepresentable: NSViewRepresentable {
     let inactiveColor: Color
     let lineLimit: Int
     let lineSpacing: CGFloat
+    let textAlignment: NSTextAlignment?
+    let usesWordLift: Bool
+    let reduceMotion: Bool
 
     func makeNSView(context: Context) -> KaraokeTextRendererView {
         let view = KaraokeTextRendererView()
@@ -157,7 +171,10 @@ private struct KaraokeTextRepresentable: NSViewRepresentable {
             activeColor: activeColor,
             inactiveColor: inactiveColor,
             lineLimit: lineLimit,
-            lineSpacing: lineSpacing
+            lineSpacing: lineSpacing,
+            textAlignment: textAlignment,
+            usesWordLift: usesWordLift,
+            reduceMotion: reduceMotion
         )
     }
 }
@@ -256,6 +273,8 @@ final class KaraokeTextRendererView: NSView {
         let inactiveColor: NSColor
         let lineLimit: Int
         let lineSpacing: CGFloat
+        let textAlignment: NSTextAlignment
+        let usesWordLift: Bool
 
         func matches(_ other: Configuration) -> Bool {
             line == other.line
@@ -266,6 +285,8 @@ final class KaraokeTextRendererView: NSView {
                 && inactiveColor.isEqual(other.inactiveColor)
                 && lineLimit == other.lineLimit
                 && lineSpacing == other.lineSpacing
+                && textAlignment == other.textAlignment
+                && usesWordLift == other.usesWordLift
         }
     }
 
@@ -278,6 +299,7 @@ final class KaraokeTextRendererView: NSView {
 
     private var line = LyricLine(text: "", startTime: 0)
     private var fillFractions: [Double] = []
+    private var reduceMotion = false
     private var configuration: Configuration?
     private var glyphClusters: [KaraokeGlyphCluster]?
     private var needsGlyphClusterRebuild = true
@@ -314,7 +336,10 @@ final class KaraokeTextRendererView: NSView {
         activeColor: Color,
         inactiveColor: Color,
         lineLimit: Int,
-        lineSpacing: CGFloat
+        lineSpacing: CGFloat,
+        textAlignment: NSTextAlignment? = nil,
+        usesWordLift: Bool = false,
+        reduceMotion: Bool = false
     ) {
         let newFillFractions = fillFractions
         let newConfiguration = Configuration(
@@ -325,12 +350,15 @@ final class KaraokeTextRendererView: NSView {
             activeColor: NSColor(activeColor),
             inactiveColor: NSColor(inactiveColor),
             lineLimit: lineLimit,
-            lineSpacing: lineSpacing
+            lineSpacing: lineSpacing,
+            textAlignment: textAlignment ?? line.appKitTextAlignment,
+            usesWordLift: usesWordLift
         )
 
         if let configuration, configuration.matches(newConfiguration) {
-            if self.fillFractions != newFillFractions {
+            if self.fillFractions != newFillFractions || self.reduceMotion != reduceMotion {
                 self.fillFractions = newFillFractions
+                self.reduceMotion = reduceMotion
                 needsDisplay = true
             }
             return
@@ -339,10 +367,11 @@ final class KaraokeTextRendererView: NSView {
         configuration = newConfiguration
         self.line = line
         self.fillFractions = newFillFractions
+        self.reduceMotion = reduceMotion
 
         let font = makeFont(name: fontName, size: fontSize, weight: fontWeight.nsWeight)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = line.appKitTextAlignment
+        paragraph.alignment = newConfiguration.textAlignment
         paragraph.lineSpacing = lineSpacing
         paragraph.lineBreakMode = lineLimit == 1 ? .byTruncatingTail : .byWordWrapping
 
@@ -384,7 +413,7 @@ final class KaraokeTextRendererView: NSView {
         updateContainerWidth(width)
         baseLayout.ensureLayout(for: baseContainer)
         let used = baseLayout.usedRect(for: baseContainer)
-        return CGSize(width: width, height: max(1, ceil(used.height)))
+        return CGSize(width: width, height: max(1, ceil(used.height)) + wordLiftHeadroom * 2)
     }
 
     override var intrinsicContentSize: NSSize {
@@ -399,10 +428,9 @@ final class KaraokeTextRendererView: NSView {
         let used = baseLayout.usedRect(for: baseContainer)
         let origin = NSPoint(x: 0, y: max(0, (bounds.height - used.height) / 2 - used.minY))
         let baseGlyphs = baseLayout.glyphRange(for: baseContainer)
-        baseLayout.drawGlyphs(forGlyphRange: baseGlyphs, at: origin)
-
         guard let segments = line.timingSegments,
               segments.count == fillFractions.count else {
+            baseLayout.drawGlyphs(forGlyphRange: baseGlyphs, at: origin)
             return
         }
 
@@ -416,9 +444,17 @@ final class KaraokeTextRendererView: NSView {
         }
 
         guard let clusters = glyphClusters else {
+            baseLayout.drawGlyphs(forGlyphRange: baseGlyphs, at: origin)
             activeLayout.drawGlyphs(forGlyphRange: baseGlyphs, at: origin)
             return
         }
+
+        if configuration?.usesWordLift == true {
+            drawLiftedWords(clusters: clusters, segments: segments, origin: origin)
+            return
+        }
+
+        baseLayout.drawGlyphs(forGlyphRange: baseGlyphs, at: origin)
 
         var completedGlyphRanges: [NSRange] = []
         var partialCluster: (cluster: KaraokeGlyphCluster, fraction: Double)?
@@ -457,6 +493,54 @@ final class KaraokeTextRendererView: NSView {
                 )
                 NSGraphicsContext.restoreGraphicsState()
             }
+        }
+    }
+
+    private var wordLiftHeadroom: CGFloat {
+        guard let configuration, configuration.usesWordLift else { return 0 }
+        return KaraokeWordLift.maximumOffset(fontSize: configuration.fontSize)
+    }
+
+    private func drawLiftedWords(
+        clusters: [KaraokeGlyphCluster],
+        segments: [LyricTimingSegment],
+        origin: NSPoint
+    ) {
+        for cluster in clusters {
+            let progress = cluster.fillFraction(segments: segments, fillFractions: fillFractions)
+            let lift = reduceMotion ? 0 : wordLiftHeadroom * KaraokeWordLift.fraction(for: progress)
+            let liftedOrigin = NSPoint(x: origin.x, y: origin.y - lift)
+
+            // Move both colors together so no dim copy remains at the old baseline.
+            baseLayout.drawGlyphs(forGlyphRange: cluster.glyphRange, at: liftedOrigin)
+            if progress >= 1 {
+                activeLayout.drawGlyphs(forGlyphRange: cluster.glyphRange, at: liftedOrigin)
+            } else if progress > 0 {
+                drawPartialWord(cluster: cluster, progress: progress, origin: liftedOrigin)
+            }
+        }
+    }
+
+    private func drawPartialWord(cluster: KaraokeGlyphCluster, progress: Double, origin: NSPoint) {
+        // A timing segment can wrap onto several visual lines. Fill those
+        // fragments in reading order instead of clipping their combined rectangle.
+        var fragments: [(range: NSRange, rect: NSRect)] = []
+        activeLayout.enumerateLineFragments(forGlyphRange: cluster.glyphRange) { _, _, _, range, _ in
+            let intersection = NSIntersectionRange(range, cluster.glyphRange)
+            guard intersection.length > 0 else { return }
+            let rect = self.activeLayout.boundingRect(forGlyphRange: intersection, in: self.activeContainer)
+            fragments.append((intersection, rect))
+        }
+        var remainingWidth = fragments.reduce(CGFloat(0)) { $0 + $1.rect.width } * progress
+        for fragment in fragments where remainingWidth > 0 {
+            var clipRect = fragment.rect.offsetBy(dx: origin.x, dy: origin.y)
+            clipRect.size.width = min(clipRect.width, remainingWidth)
+            remainingWidth -= fragment.rect.width
+            guard clipRect.width > 0, clipRect.height > 0 else { continue }
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: clipRect).addClip()
+            activeLayout.drawGlyphs(forGlyphRange: fragment.range, at: origin)
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
 

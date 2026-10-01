@@ -215,6 +215,146 @@ precondition(
 )
 
 print("Karaoke TextKit cluster behavior checks passed")
+
+// Immersive hosts override centered text with leading alignment. Verify both
+// the drawing position and cache invalidation when switching alignment.
+func renderedTextOrigin(_ alignment: NSTextAlignment?) -> Int {
+    renderer.configure(
+        line: ligatureLine,
+        fillFractions: [1, 1],
+        fontName: "Helvetica",
+        fontSize: 48,
+        fontWeight: .regular,
+        activeColor: .red,
+        inactiveColor: .gray,
+        lineLimit: 1,
+        lineSpacing: 0,
+        textAlignment: alignment
+    )
+    renderer.layoutSubtreeIfNeeded()
+    guard let bitmap = renderer.bitmapImageRepForCachingDisplay(in: renderer.bounds) else {
+        fatalError("Could not create karaoke renderer bitmap")
+    }
+    renderer.cacheDisplay(in: renderer.bounds, to: bitmap)
+    for x in 0..<bitmap.pixelsWide {
+        for y in 0..<bitmap.pixelsHigh {
+            if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+               color.alphaComponent > 0.5,
+               color.redComponent - color.greenComponent > 0.4 {
+                return x
+            }
+        }
+    }
+    fatalError("Karaoke renderer produced no highlighted text")
+}
+
+let centeredOrigin = renderedTextOrigin(nil)
+let leadingOrigin = renderedTextOrigin(.left)
+let restoredOrigin = renderedTextOrigin(nil)
+precondition(leadingOrigin < centeredOrigin - 50,
+             "The immersive alignment override must move text to the leading edge")
+precondition(restoredOrigin == centeredOrigin,
+             "Removing the override must restore the line's original alignment")
+print("Karaoke immersive alignment checks passed")
+
+assertClose(KaraokeWordLift.fraction(for: -1), 0, "Unstarted words stay on the baseline")
+assertClose(KaraokeWordLift.fraction(for: 0.5), 0.5, "Words ease upward as they fill")
+assertClose(KaraokeWordLift.fraction(for: 2), 1, "Completed words hold their raised position")
+
+let liftRenderer = KaraokeTextRendererView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+let liftLine = LyricLine(text: "HH", startTime: 0, endTime: 2, timingSegments: [
+    LyricTimingSegment(text: "H", startOffset: 0, duration: 1),
+    LyricTimingSegment(text: "H", startOffset: 1, duration: 1)
+])
+
+func liftBitmap(_ fractions: [Double], reduceMotion: Bool = false) -> NSBitmapImageRep {
+    liftRenderer.configure(
+        line: liftLine, fillFractions: fractions, fontName: "Menlo", fontSize: 48,
+        fontWeight: .regular, activeColor: .red, inactiveColor: .green,
+        lineLimit: 0, lineSpacing: 0, textAlignment: .left,
+        usesWordLift: true, reduceMotion: reduceMotion
+    )
+    liftRenderer.layoutSubtreeIfNeeded()
+    let bitmap = liftRenderer.bitmapImageRepForCachingDisplay(in: liftRenderer.bounds)!
+    liftRenderer.cacheDisplay(in: liftRenderer.bounds, to: bitmap)
+    return bitmap
+}
+
+func glyphTop(_ bitmap: NSBitmapImageRep, first: Bool, active: Bool) -> Double {
+    let scale = Double(bitmap.pixelsWide) / liftRenderer.bounds.width
+    let xRange = first ? 0..<Int(28 * scale) : Int(30 * scale)..<Int(58 * scale)
+    for y in 0..<bitmap.pixelsHigh {
+        for x in xRange {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                  color.alphaComponent > 0.5 else { continue }
+            let isTarget = active ? color.redComponent - color.greenComponent > 0.4
+                : color.greenComponent - color.redComponent > 0.2
+            if isTarget { return Double(y) / scale }
+        }
+    }
+    fatalError("Could not find the requested lifted glyph")
+}
+
+let beforeLift = liftBitmap([0, 0])
+let firstBaseline = glyphTop(beforeLift, first: true, active: false)
+let secondBaseline = glyphTop(beforeLift, first: false, active: false)
+let liftSize = liftRenderer.intrinsicContentSize
+liftRenderer.needsLayout = false
+storageEditNotifications = 0
+let liftStorageObserver = NotificationCenter.default.addObserver(
+    forName: NSTextStorage.didProcessEditingNotification, object: nil, queue: nil
+) { _ in storageEditNotifications += 1 }
+let firstLifted = liftBitmap([1, 0])
+NotificationCenter.default.removeObserver(liftStorageObserver)
+let firstRaisedTop = glyphTop(firstLifted, first: true, active: true)
+precondition(firstRaisedTop <= firstBaseline - 2,
+             "A completed word must move up by a few points")
+assertClose(glyphTop(firstLifted, first: false, active: false), secondBaseline,
+            "The upcoming word must remain on its original baseline")
+precondition(storageEditNotifications == 0 && !liftRenderer.needsLayout,
+             "Word lift frames must redraw without rebuilding TextKit layout")
+precondition(liftRenderer.intrinsicContentSize == liftSize,
+             "Word lift must not change line height while singing")
+
+let completedLine = liftBitmap([1, 1])
+assertClose(glyphTop(completedLine, first: true, active: true),
+            glyphTop(completedLine, first: false, active: true),
+            "The completed line must end on a uniform raised baseline")
+let seekBack = liftBitmap([0, 0])
+assertClose(glyphTop(seekBack, first: true, active: false), firstBaseline,
+            "Seeking backward must reset the word position")
+let reducedMotion = liftBitmap([1, 0], reduceMotion: true)
+precondition(abs(glyphTop(reducedMotion, first: true, active: true) - firstBaseline) <= 0.75,
+             "Reduce Motion must disable word lift (allowing color antialiasing differences)")
+
+// Render a single timing segment that spans three visual lines. Its first
+// fragment must fill before later fragments, with no text clipped at the top.
+let wrappedLine = LyricLine(text: "HH HH HH", startTime: 0, endTime: 2, timingSegments: [
+    LyricTimingSegment(text: "HH HH HH", startOffset: 0, duration: 2)
+])
+liftRenderer.setFrameSize(NSSize(width: 80, height: 240))
+liftRenderer.configure(
+    line: wrappedLine, fillFractions: [0.4], fontName: "Menlo", fontSize: 48,
+    fontWeight: .regular, activeColor: .red, inactiveColor: .green,
+    lineLimit: 0, lineSpacing: 6, textAlignment: .left, usesWordLift: true
+)
+liftRenderer.layoutSubtreeIfNeeded()
+let wrappedBitmap = liftRenderer.bitmapImageRepForCachingDisplay(in: liftRenderer.bounds)!
+liftRenderer.cacheDisplay(in: liftRenderer.bounds, to: wrappedBitmap)
+var redRows: [Int] = []
+var greenRows: [Int] = []
+for y in 0..<wrappedBitmap.pixelsHigh {
+    for x in 0..<wrappedBitmap.pixelsWide {
+        guard let color = wrappedBitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+              color.alphaComponent > 0.5 else { continue }
+        if color.redComponent - color.greenComponent > 0.4 { redRows.append(y) }
+        if color.greenComponent - color.redComponent > 0.2 { greenRows.append(y) }
+    }
+}
+precondition(!redRows.isEmpty && !greenRows.isEmpty, "Wrapped text must retain both lyric colors")
+precondition(redRows.reduce(0, +) / redRows.count < greenRows.reduce(0, +) / greenRows.count,
+             "Wrapped words must highlight their first visual line before later lines")
+print("Karaoke word lift drawing checks passed")
 SWIFT
 
 xcrun swiftc \

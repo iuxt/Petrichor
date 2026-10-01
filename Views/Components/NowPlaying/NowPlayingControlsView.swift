@@ -20,6 +20,7 @@ struct NowPlayingControlsView: View {
     /// scrim; adaptive in immersive mode).
     var neutral: Color = .white
     var scale: CGFloat = 1
+    var usesImmersiveStyle = false
 
     @EnvironmentObject var playbackManager: PlaybackManager
     @EnvironmentObject var playlistManager: PlaylistManager
@@ -39,11 +40,15 @@ struct NowPlayingControlsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 20 * scale) {
+        HStack(spacing: usesImmersiveStyle ? 0 : 20 * scale) {
             shuffleButton
+            if usesImmersiveStyle { Spacer(minLength: 0) }
             previousButton
+            if usesImmersiveStyle { Spacer(minLength: 0) }
             playPauseButton
+            if usesImmersiveStyle { Spacer(minLength: 0) }
             nextButton
+            if usesImmersiveStyle { Spacer(minLength: 0) }
             repeatButton
         }
     }
@@ -69,9 +74,9 @@ struct NowPlayingControlsView: View {
         }, label: {
             Image(systemName: Icons.backwardFill)
                 .font(.system(size: 16 * scale, weight: .medium))
-                .foregroundColor(transport)
+                .foregroundColor(usesImmersiveStyle ? neutral.opacity(0.85) : transport)
                 .frame(width: 24 * scale, height: 24 * scale)
-                .shadow(color: lightenedTint.opacity(0.6), radius: 4 * scale, x: 0, y: 1 * scale)
+                .shadow(color: lightenedTint.opacity(usesImmersiveStyle ? 0 : 0.6), radius: 4 * scale, x: 0, y: 1 * scale)
         })
         .buttonStyle(ControlButtonStyle())
         .hoverEffect(scale: 1.1)
@@ -85,13 +90,22 @@ struct NowPlayingControlsView: View {
                 ? playbackManager.requestPause()
                 : playbackManager.requestPlay()
         }, label: {
-            PlayPauseIcon(isPlaying: playbackManager.isPlaying)
-                .frame(width: 42 * scale, height: 42 * scale)
-                .background(
-                    Circle()
-                        .fill(tint)
-                        .shadow(color: lightenedTint.opacity(0.6), radius: 7 * scale, x: 0, y: 2 * scale)
-                )
+            Group {
+                if usesImmersiveStyle {
+                    Image(systemName: playbackManager.isPlaying ? Icons.pauseFill : Icons.playFill)
+                        .font(.system(size: 26 * scale, weight: .medium))
+                        .foregroundStyle(neutral)
+                        .frame(width: 42 * scale, height: 42 * scale)
+                } else {
+                    PlayPauseIcon(isPlaying: playbackManager.isPlaying)
+                        .frame(width: 42 * scale, height: 42 * scale)
+                        .background(
+                            Circle()
+                                .fill(tint)
+                                .shadow(color: lightenedTint.opacity(0.6), radius: 7 * scale, x: 0, y: 2 * scale)
+                        )
+                }
+            }
         })
         .buttonStyle(PlainButtonStyle())
         .hoverEffect(scale: 1.1)
@@ -115,9 +129,9 @@ struct NowPlayingControlsView: View {
         }, label: {
             Image(systemName: Icons.forwardFill)
                 .font(.system(size: 16 * scale, weight: .medium))
-                .foregroundColor(transport)
+                .foregroundColor(usesImmersiveStyle ? neutral.opacity(0.85) : transport)
                 .frame(width: 24 * scale, height: 24 * scale)
-                .shadow(color: lightenedTint.opacity(0.6), radius: 4 * scale, x: 0, y: 1 * scale)
+                .shadow(color: lightenedTint.opacity(usesImmersiveStyle ? 0 : 0.6), radius: 4 * scale, x: 0, y: 1 * scale)
         })
         .buttonStyle(ControlButtonStyle())
         .hoverEffect(scale: 1.1)

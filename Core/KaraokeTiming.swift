@@ -17,6 +17,19 @@ enum KaraokeTiming {
     }
 }
 
+enum KaraokeWordLift {
+    static func maximumOffset(fontSize: CGFloat) -> CGFloat {
+        min(4, max(1, fontSize * 0.065))
+    }
+
+    /// Ease each word up as it fills, then hold it at the raised baseline.
+    /// Deriving the position from progress also freezes on pause and handles seeks.
+    static func fraction(for progress: Double) -> Double {
+        let value = min(1, max(0, progress))
+        return value * value * (3 - 2 * value)
+    }
+}
+
 enum KaraokeLineBoundaries {
     static func all(in lines: [LyricLine]) -> [TimeInterval] {
         let sorted = lines.flatMap { line -> [TimeInterval] in

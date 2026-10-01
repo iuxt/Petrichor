@@ -4427,6 +4427,23 @@
         }
       }
     },
+    "Lyrics Language": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lyrics Language"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词语言"
+          }
+        }
+      }
+    },
     "Lyrics Script": {
       "localizations": {
         "en": {
@@ -9652,6 +9669,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "人声增强"
+          }
+        }
+      }
+    },
+    "Volume": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音量"
           }
         }
       }

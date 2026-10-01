@@ -15,21 +15,35 @@ final class LyricsStore {
         let hasTimed: Bool
         let isKaraoke: Bool
         let availableScripts: [LyricScript]
+        let availableLanguages: [LyricLanguage]
+        let selectedLanguage: LyricLanguage
     }
 
     /// Writing script loads parse with; injectable so tests can pin it.
     var scriptResolver: () -> LyricScript = { LyricsScriptSettings.shared.effectiveScript }
+    var languageResolver: () -> String? = { LyricsScriptSettings.shared.languageTag }
+
+    private struct Selection: Equatable {
+        let script: LyricScript
+        let languageTag: String?
+    }
+
+    private var currentSelection: Selection {
+        Selection(script: scriptResolver(), languageTag: languageResolver())
+    }
 
     private var cached: Lyrics?
     private var cachedURL: URL?
+    private var cachedSelection: Selection?
     private var inFlight: [UUID: Task<Lyrics, Error>] = [:]
     private var loadIDs: [UUID: UUID] = [:]
     private var loadURLs: [UUID: URL] = [:]
+    private var loadSelections: [UUID: Selection] = [:]
 
     private init() {
-        // Cached lines are parsed for one script; a preference switch drops them
-        // so every consumer reloads in the newly resolved script. Synchronous so
-        // views reloading in the same notification pass already miss the cache.
+        // Cached lines belong to one language selection. Drop cached and pending
+        // work on changes; cache lookups also check the selection so observer
+        // ordering cannot expose the previous language to a reloading view.
         scriptObserver = NotificationCenter.default.addObserver(
             forName: .lyricsScriptPreferenceDidChange, object: nil, queue: .main
         ) { _ in
@@ -50,6 +64,7 @@ final class LyricsStore {
         if cachedURL == url {
             cached = nil
             cachedURL = nil
+            cachedSelection = nil
         }
         for trackID in loadURLs.filter({ $0.value == url }).map(\.key) {
             cancelInFlightLoad(for: trackID)
@@ -59,13 +74,14 @@ final class LyricsStore {
     func invalidateAll() {
         cached = nil
         cachedURL = nil
+        cachedSelection = nil
         for trackID in Array(loadIDs.keys) {
             cancelInFlightLoad(for: trackID)
         }
     }
 
     func cachedLyrics(for trackId: UUID) -> Lyrics? {
-        guard let cached, cached.trackId == trackId else { return nil }
+        guard let cached, cached.trackId == trackId, cachedSelection == currentSelection else { return nil }
         return cached
     }
 
@@ -74,22 +90,22 @@ final class LyricsStore {
         using dbQueue: DatabaseQueue,
         forceReload: Bool = false
     ) async throws -> Lyrics {
-        if !forceReload, let cached, cached.trackId == track.id {
+        let selection = currentSelection
+        if !forceReload, let cached = cachedLyrics(for: track.id) {
             return cached
         }
 
         // Join an in-progress load for the same track rather than starting another.
-        if !forceReload, let existing = inFlight[track.id] {
+        if !forceReload, loadSelections[track.id] == selection, let existing = inFlight[track.id] {
             let result = try await existing.value
-            guard !existing.isCancelled else { throw CancellationError() }
+            guard !existing.isCancelled, currentSelection == selection else { throw CancellationError() }
             return result
         }
 
-        if forceReload { cancelInFlightLoad(for: track.id) }
+        cancelInFlightLoad(for: track.id)
 
         let trackId = track.id
         let loadID = UUID()
-        let script = scriptResolver()
         // Run the lyrics load on a background executor so file IO (`Data(contentsOf:)`)
         // and the DB read don't block the main actor. `Task.detached` inherits no actor,
         // so the work runs off-main even though `LyricsStore` itself is `@MainActor`.
@@ -97,7 +113,8 @@ final class LyricsStore {
             let result = try await LyricsLoader.loadLyrics(
                 for: track,
                 using: dbQueue,
-                script: script
+                script: selection.script,
+                languageTag: selection.languageTag
             )
             let hasTimed = result.lyrics.contains { $0.startTime > 0 || $0.endTime != nil }
             return Lyrics(
@@ -106,24 +123,29 @@ final class LyricsStore {
                 source: result.source,
                 hasTimed: hasTimed,
                 isKaraoke: result.lyrics.contains { $0.timingSegments?.isEmpty == false },
-                availableScripts: result.availableScripts
+                availableScripts: result.availableScripts,
+                availableLanguages: result.availableLanguages,
+                selectedLanguage: result.selectedLanguage
             )
         }
         inFlight[trackId] = task
         loadIDs[trackId] = loadID
         loadURLs[trackId] = track.url.standardizedFileURL
+        loadSelections[trackId] = selection
         defer {
             if loadIDs[trackId] == loadID {
                 inFlight[trackId] = nil
                 loadIDs[trackId] = nil
                 loadURLs[trackId] = nil
+                loadSelections[trackId] = nil
             }
         }
 
         let result = try await task.value
-        guard loadIDs[trackId] == loadID else { throw CancellationError() }
+        guard loadIDs[trackId] == loadID, currentSelection == selection else { throw CancellationError() }
         cached = result
         cachedURL = track.url.standardizedFileURL
+        cachedSelection = selection
         return result
     }
 
@@ -135,6 +157,7 @@ final class LyricsStore {
             inFlight[trackId] = nil
             loadIDs[trackId] = nil
             loadURLs[trackId] = nil
+            loadSelections[trackId] = nil
         }
     }
 }

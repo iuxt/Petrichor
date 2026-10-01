@@ -2,6 +2,7 @@
 set -euo pipefail
 
 source_file="Views/Main/ContentView.swift"
+extensions_file="Views/Components/ViewExtensions.swift"
 
 if ! rg -n '@State private var isImmersiveToolbarContentHidden = false' "$source_file" >/dev/null; then
     printf 'ContentView must track immersive toolbar content visibility independently.\n' >&2
@@ -24,8 +25,40 @@ if ! rg -nU '(?s)private func openImmersive\(\).*?withAnimation.*?isImmersiveToo
     exit 1
 fi
 
-if ! rg -nU '(?s)private func restoreToolbarForImmersiveClose\(\).*?toolbar\?\.isVisible = immersiveToolbarWasVisible.*?DispatchQueue\.main\.async.*?withAnimation.*?isImmersiveToolbarContentHidden = false' "$source_file" >/dev/null; then
-    printf 'Closing immersive mode must restore the native toolbar before animating its content back in.\n' >&2
+if ! rg -nU '(?s)private func openImmersive\(\).*?makeFirstResponder\(nil\).*?completion:.*?guard isImmersiveActive else.*?isImmersiveToolbarItemsHidden = true' "$source_file" >/dev/null; then
+    printf 'Opening immersive mode must dismiss search focus and hide native items after the animation, guarding against a quick close.\n' >&2
+    exit 1
+fi
+
+hidden_item_count="$(rg -cF '.hidden(isImmersiveToolbarItemsHidden)' "$source_file" || true)"
+if [[ "$hidden_item_count" -ne 5 ]]; then
+    printf 'All 5 visible toolbar groups must hide their native items to remove search fields and shared backgrounds.\n' >&2
+    exit 1
+fi
+
+if rg -n 'toolbar\?\.isVisible[[:space:]]*=|immersiveToolbarWasVisible' "$source_file" >/dev/null; then
+    printf 'Immersive mode must keep the native toolbar laid out so window button positions stay fixed.\n' >&2
+    exit 1
+fi
+
+if ! rg -nU '(?s)private func restoreToolbarContentForImmersiveClose\(\).*?isImmersiveToolbarItemsHidden = false.*?DispatchQueue\.main\.async.*?guard !isImmersiveActive else.*?withAnimation.*?isImmersiveToolbarContentHidden = false' "$source_file" >/dev/null; then
+    printf 'Closing immersive mode must restore native items before animating content back in, guarding against a quick reopen.\n' >&2
+    exit 1
+fi
+
+if ! rg -nF '.toolbarBackground(isImmersiveActive ? .hidden : .automatic, for: .windowToolbar)' "$source_file" >/dev/null; then
+    printf 'Immersive mode must hide the toolbar background while preserving its layout.\n' >&2
+    exit 1
+fi
+
+background_count="$(rg -cF '.adaptiveSharedBackgroundHidden(isImmersiveToolbarContentHidden)' "$source_file" || true)"
+if [[ "$background_count" -ne 2 ]]; then
+    printf 'Modern tab and search toolbar backgrounds must follow immersive content visibility.\n' >&2
+    exit 1
+fi
+
+if ! rg -nU '(?s)func adaptiveSharedBackgroundHidden\(_ isHidden: Bool = true\).*?#if compiler\(>=6\.2\).*?self\.sharedBackgroundVisibility\(isHidden \? \.hidden : \.automatic\)' "$extensions_file" >/dev/null; then
+    printf 'Shared toolbar backgrounds must restore on close and keep Xcode 16 compatibility.\n' >&2
     exit 1
 fi
 

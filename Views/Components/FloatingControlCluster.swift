@@ -17,13 +17,16 @@ struct PanelToolbarButton<Label: View>: View {
     let activeHelp: String
     let inactiveHelp: String
     let action: () -> Void
+    var activeForeground: Color = .white
+    var inactiveForeground: Color = .secondary
+    var buttonSize: CGFloat = 26
     @ViewBuilder let label: () -> Label
 
     var body: some View {
         Button(action: action) {
             label()
-                .foregroundColor(isActive ? .white : .secondary)
-                .frame(width: 26, height: 26)
+                .foregroundColor(isActive ? activeForeground : inactiveForeground)
+                .frame(width: buttonSize, height: buttonSize)
                 .background(Circle().fill(isActive ? activeTint : Color.clear))
                 // Make the whole circle clickable, not just the opaque icon pixels
                 // (the inactive background is clear, so it wouldn't hit-test).

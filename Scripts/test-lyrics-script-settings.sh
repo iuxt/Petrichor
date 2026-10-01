@@ -110,6 +110,22 @@ actor Counter {
         NotificationCenter.default.post(name: .appLanguageDidChange, object: nil)
         await wait(for: changes, toReach: fixedCount + 1)
         NotificationCenter.default.removeObserver(token)
+        // File-language choices persist and override the default script preference.
+        let fileLanguage = LyricLanguage(languageTag: "ZH_Hant")
+        followSettings.selectLanguage(fileLanguage)
+        expect(followSettings.languageTag == "zh-hant", "Language tags must normalize")
+        expect(followSettings.preference == .traditional, "Known scripts update the settings preference")
+        let restoredLanguageSettings = LyricsScriptSettings(defaults: englishDefaults)
+        expect(restoredLanguageSettings.languageTag == "zh-hant", "Explicit file language must persist")
+        followSettings.selectLanguage(LyricLanguage(languageTag: "en-US"))
+        expect(followSettings.languageTag == "en-us", "Non-Chinese languages can be selected")
+        followSettings.select(.followAppLanguage)
+        expect(followSettings.languageTag == nil, "Selecting a default preference clears the explicit language")
+        expect(LyricsScriptSettings(defaults: englishDefaults).languageTag == nil,
+               "Clearing a language override must persist")
+        followSettings.selectLanguage(.original)
+        expect(followSettings.preference == .original && followSettings.languageTag == nil,
+               "An untagged original language clears all overrides")
         print("All lyrics script settings tests passed")
     }
 }

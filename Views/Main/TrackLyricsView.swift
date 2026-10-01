@@ -99,14 +99,16 @@ struct TrackLyricsContent: View {
     var inactiveColor: Color = .secondary
     /// Roomier typography and a stable highlight for the main-window sidebar.
     var usesSidePanelStyle = false
+    /// Large, leading-aligned lines with a soft focus around the current line.
+    var usesImmersiveStyle = false
 
     @EnvironmentObject var libraryManager: LibraryManager
     @EnvironmentObject var playbackManager: PlaybackManager
-    @ObservedObject private var scriptSettings = LyricsScriptSettings.shared
 
     @State private var lyricLines: [LyricLine] = []
     @State private var lyricsSource: LyricsSource = .none
-    @State private var availableScripts: [LyricScript] = [.original]
+    @State private var availableLanguages: [LyricLanguage] = [.original]
+    @State private var selectedLanguage: LyricLanguage = .original
     @State private var lyricsTrackID: UUID?
     @State private var isLoading = true
     @State private var fetchFailed = false
@@ -141,7 +143,8 @@ struct TrackLyricsContent: View {
                     fontSize: fontSize,
                     activeColor: activeColor,
                     inactiveColor: inactiveColor,
-                    usesSidePanelStyle: usesSidePanelStyle
+                    usesSidePanelStyle: usesSidePanelStyle,
+                    usesImmersiveStyle: usesImmersiveStyle
                 )
             }
         }
@@ -163,9 +166,9 @@ struct TrackLyricsContent: View {
             }
             .disabled(currentTrack == nil)
 
-            LyricsScriptMenu(
-                preference: scriptSettings.preference,
-                availableScripts: availableScripts
+            LyricsLanguageMenu(
+                availableLanguages: availableLanguages,
+                selectedLanguage: selectedLanguage
             )
 
             Button(String(appLocalized: "Copy All Lyrics"), systemImage: "doc.on.doc") {
@@ -297,7 +300,8 @@ struct TrackLyricsContent: View {
         guard let track = currentTrack else {
             lyricLines = []
             lyricsSource = .none
-            availableScripts = [.original]
+            availableLanguages = [.original]
+            selectedLanguage = .original
             lyricsTrackID = nil
             hasTimedLyrics = false
             isKaraokeLyrics = false
@@ -311,7 +315,8 @@ struct TrackLyricsContent: View {
         if !forceReload, let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
             lyricLines = cached.lines
             lyricsSource = cached.source
-            availableScripts = cached.availableScripts
+            availableLanguages = cached.availableLanguages
+            selectedLanguage = cached.selectedLanguage
             lyricsTrackID = loadedTrackId
             hasTimedLyrics = cached.hasTimed
             isKaraokeLyrics = cached.isKaraoke
@@ -323,7 +328,8 @@ struct TrackLyricsContent: View {
         isLoading = true
         lyricLines = []
         lyricsSource = .none
-        availableScripts = [.original]
+        availableLanguages = [.original]
+        selectedLanguage = .original
         lyricsTrackID = nil
         fetchFailed = false
         hasTimedLyrics = false   // Reset until we know
@@ -343,7 +349,8 @@ struct TrackLyricsContent: View {
                     guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     lyricLines = result.lines
                     lyricsSource = result.source
-                    availableScripts = result.availableScripts
+                    availableLanguages = result.availableLanguages
+                    selectedLanguage = result.selectedLanguage
                     lyricsTrackID = loadedTrackId
                     hasTimedLyrics = result.hasTimed
                     isKaraokeLyrics = result.isKaraoke
@@ -355,7 +362,8 @@ struct TrackLyricsContent: View {
                     guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     lyricLines = []
                     lyricsSource = .none
-                    availableScripts = [.original]
+                    availableLanguages = [.original]
+                    selectedLanguage = .original
                     lyricsTrackID = nil
                     hasTimedLyrics = false
                     isKaraokeLyrics = false
@@ -379,8 +387,11 @@ private struct TrackLyricsDisplay: View {
     let activeColor: Color
     let inactiveColor: Color
     let usesSidePanelStyle: Bool
+    let usesImmersiveStyle: Bool
 
     @EnvironmentObject private var playbackManager: PlaybackManager
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var currentLineIndex = -1
     @State private var sampledPlaybackTime: TimeInterval = 0
     @State private var lastScrolledTrackID: UUID?
@@ -388,27 +399,8 @@ private struct TrackLyricsDisplay: View {
 
     // MARK: - Lyrics Content with Conditional Synced Highlight
     var body: some View {
-        ScrollView {
-            VStack(spacing: usesSidePanelStyle ? 6 : fontSize * 0.7) {
-                ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
-                    lyricRow(line: line, index: index)
-                        .background {
-                            if hasTimedLyrics, currentLineIndex == index, let lyricsTrackID {
-                                LyricsScrollAnchor(
-                                    trackID: lyricsTrackID,
-                                    lineIndex: index,
-                                    animated: lastScrolledTrackID == lyricsTrackID
-                                ) {
-                                    lastScrolledTrackID = lyricsTrackID
-                                }
-                            }
-                        }
-                }
-            }
-            .padding(.horizontal, usesSidePanelStyle ? 16 : 20)
-            .padding(.vertical, usesSidePanelStyle ? 28 : 20)
-            .frame(maxWidth: .infinity)
-            .textSelection(.disabled)
+        GeometryReader { geometry in
+            lyricsScrollView(viewportSize: geometry.size)
         }
         .onAppear { refreshPlaybackSample() }
         .onChange(of: lyricLines) { _, _ in refreshPlaybackSample() }
@@ -417,7 +409,6 @@ private struct TrackLyricsDisplay: View {
         .onChange(of: playbackManager.isPlaying) { _, isPlaying in
             transitionKaraokeBoundarySchedule(isPlaying: isPlaying)
         }
-        // Listen for playback time changes and update the current line in real time.
         .onReceive(playbackManager.playbackProgressState.$currentTime) { newTime in
             sampledPlaybackTime = newTime
             updateCurrentLine(for: newTime)
@@ -425,9 +416,78 @@ private struct TrackLyricsDisplay: View {
         }
     }
 
-    private func lyricRow(line: LyricLine, index: Int) -> some View {
+    private func lyricsScrollView(viewportSize: CGSize) -> some View {
+        let horizontalPadding: CGFloat = usesImmersiveStyle ? 8 : (usesSidePanelStyle ? 16 : 20)
+        let contentWidth = max(1, viewportSize.width - horizontalPadding * 2)
+
+        return ScrollView {
+            VStack(spacing: usesImmersiveStyle ? fontSize * 0.85 : (usesSidePanelStyle ? 6 : fontSize * 0.7)) {
+                ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
+                    lyricRow(line: line, index: index, contentWidth: contentWidth)
+                        .background {
+                            if hasTimedLyrics, currentLineIndex == index, let lyricsTrackID {
+                                LyricsScrollAnchor(
+                                    trackID: lyricsTrackID,
+                                    lineIndex: index,
+                                    animated: lastScrolledTrackID == lyricsTrackID,
+                                    viewportAnchor: usesImmersiveStyle ? 0.4 : 0.5
+                                ) {
+                                    lastScrolledTrackID = lyricsTrackID
+                                }
+                            }
+                        }
+                }
+            }
+            .padding(.horizontal, horizontalPadding)
+            // Allow the first and last lines to reach the same focus position.
+            .padding(.top, usesImmersiveStyle ? viewportSize.height * 0.4 : (usesSidePanelStyle ? 28 : 20))
+            .padding(.bottom, usesImmersiveStyle ? viewportSize.height * 0.6 : (usesSidePanelStyle ? 28 : 20))
+            .frame(maxWidth: .infinity)
+            .textSelection(.disabled)
+        }
+        .scrollIndicators(usesImmersiveStyle ? .hidden : .automatic)
+        .mask {
+            if usesImmersiveStyle {
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black.opacity(0.25), location: 0.06),
+                    .init(color: .black.opacity(0.75), location: 0.14),
+                    .init(color: .black, location: 0.24),
+                    .init(color: .black, location: 0.72),
+                    .init(color: .black.opacity(0.65), location: 0.86),
+                    .init(color: .black.opacity(0.2), location: 0.95),
+                    .init(color: .clear, location: 1)
+                ], startPoint: .top, endPoint: .bottom)
+            } else {
+                Rectangle()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func lyricRow(line: LyricLine, index: Int, contentWidth: CGFloat) -> some View {
+        if usesImmersiveStyle && hasTimedLyrics {
+            Button {
+                playbackManager.seekTo(time: line.startTime)
+            } label: {
+                lyricRowContent(line: line, index: index, contentWidth: contentWidth)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            lyricRowContent(line: line, index: index, contentWidth: contentWidth)
+        }
+    }
+
+    private func lyricRowContent(line: LyricLine, index: Int, contentWidth: CGFloat) -> some View {
         let isCurrent = hasTimedLyrics && (currentLineIndex == index ||
             (line.duetSide != nil && line.isActive(at: sampledPlaybackTime)))
+        let alignment: Alignment = usesImmersiveStyle && line.duetSide == nil ? .leading : line.frameAlignment
+        let textAlignment: TextAlignment = usesImmersiveStyle && line.duetSide == nil ? .leading : line.swiftUITextAlignment
+        let horizontalPadding: CGFloat = usesSidePanelStyle ? 12 : 0
+        // Reserve space on the opposite side so long duet lines wrap within their voice's area.
+        let maximumTextWidth = (usesImmersiveStyle || usesSidePanelStyle) && line.duetSide != nil
+            ? max(1, contentWidth - horizontalPadding * 2) * 0.75 : .infinity
 
         return Group {
             if isCurrent, line.timingSegments?.isEmpty == false {
@@ -440,31 +500,59 @@ private struct TrackLyricsDisplay: View {
                     fontWeight: usesSidePanelStyle ? .semibold : .bold,
                     activeColor: activeColor,
                     inactiveColor: inactiveColor,
-                    lineSpacing: lyricLineSpacing
+                    lineSpacing: lyricLineSpacing,
+                    textAlignment: usesImmersiveStyle && line.duetSide == nil ? .left : nil,
+                    usesWordLift: usesImmersiveStyle
                 )
-                .frame(maxWidth: .infinity, alignment: line.frameAlignment)
-                .scaleEffect(usesSidePanelStyle ? 1 : 1.1)
-                .multilineTextAlignment(line.swiftUITextAlignment)
+                .frame(maxWidth: .infinity, alignment: alignment)
+                .scaleEffect(usesSidePanelStyle || usesImmersiveStyle ? 1 : 1.1)
+                .multilineTextAlignment(textAlignment)
             } else {
                 Text(line.text.isEmpty ? " " : line.text)
-                    .font(lyricsFont(weight: usesSidePanelStyle
+                    .font(lyricsFont(weight: usesImmersiveStyle ? .bold : (usesSidePanelStyle
                         ? (isCurrent ? .semibold : .medium)
-                        : (isCurrent ? .bold : .regular)))
-                    .scaleEffect(isCurrent && !usesSidePanelStyle ? 1.1 : 1.0)
-                    .foregroundColor(isCurrent || (usesSidePanelStyle && !hasTimedLyrics)
+                        : (isCurrent ? .bold : .regular))))
+                    .scaleEffect(isCurrent && !usesSidePanelStyle && !usesImmersiveStyle ? 1.1 : 1.0)
+                    .foregroundColor(isCurrent || ((usesSidePanelStyle || usesImmersiveStyle) && !hasTimedLyrics)
                         ? activeColor : inactiveColor)
-                    .multilineTextAlignment(line.swiftUITextAlignment)
+                    .multilineTextAlignment(textAlignment)
                     .lineSpacing(lyricLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: line.frameAlignment)
+                    .frame(maxWidth: .infinity, alignment: alignment)
+                    .padding(.vertical, usesImmersiveStyle ? KaraokeWordLift.maximumOffset(fontSize: fontSize) : 0)
             }
         }
-        .padding(.horizontal, usesSidePanelStyle ? 12 : 0)
-        .padding(.vertical, usesSidePanelStyle ? 10 : 0)
+        .frame(maxWidth: maximumTextWidth, alignment: alignment)
+        .frame(maxWidth: .infinity, alignment: alignment)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, usesImmersiveStyle ? fontSize * 0.4 : (usesSidePanelStyle ? 10 : 0))
+        // Scope the transition to visual focus; lyric timing, word fill and
+        // native scrolling continue to update independently.
+        .animation(usesImmersiveStyle && !reduceMotion ? .easeInOut(duration: 0.3) : nil) { content in
+            content
+                .blur(radius: immersiveBlurRadius(index: index, isCurrent: isCurrent))
+                .opacity(immersiveOpacity(index: index, isCurrent: isCurrent))
+        }
+    }
+
+    private func immersiveBlurRadius(index: Int, isCurrent: Bool) -> CGFloat {
+        guard usesImmersiveStyle, hasTimedLyrics, !isCurrent, !reduceTransparency else { return 0 }
+        let distance = min(5, max(1, CGFloat(abs(index - max(0, currentLineIndex)))))
+        // A restrained radius preserves the shape of the letters. Use opacity
+        // for depth rather than smearing distant lines into large bright blobs.
+        let fontScale = min(1.3, max(0.85, fontSize / 36))
+        return (0.8 + (distance - 1) * 0.45) * fontScale
+    }
+
+    private func immersiveOpacity(index: Int, isCurrent: Bool) -> Double {
+        guard usesImmersiveStyle, hasTimedLyrics, !isCurrent else { return 1 }
+        let distance = min(5, max(1, abs(index - max(0, currentLineIndex))))
+        let nearestOpacity = index < currentLineIndex ? 0.7 : 0.88
+        return max(0.18, nearestOpacity - Double(distance - 1) * 0.14)
     }
 
     private var lyricLineSpacing: CGFloat {
-        usesSidePanelStyle ? max(6, fontSize * 0.4) : 6
+        usesImmersiveStyle ? fontSize * 0.18 : (usesSidePanelStyle ? max(6, fontSize * 0.4) : 6)
     }
 
     private func lyricsFont(weight: Font.Weight) -> Font {
@@ -485,14 +573,11 @@ private struct TrackLyricsDisplay: View {
     private func updateCurrentLine(for time: TimeInterval) {
         guard hasTimedLyrics, !lyricLines.isEmpty else { return }
 
-        // Prefer precise judgment via endTime; fall back to startTime ≤ time when endTime is nil
-        let newIndex = lyricLines.lastIndex { line in
-            if let end = line.endTime {
-                return time >= line.startTime && time < end
-            } else {
-                return line.startTime <= time
-            }
-        } ?? -1
+        let newIndex = TrackLyricsLineSelection.currentIndex(
+            in: lyricLines,
+            at: time,
+            holdPreviousLine: usesImmersiveStyle
+        )
 
         if newIndex != currentLineIndex {
             currentLineIndex = newIndex
@@ -533,35 +618,38 @@ private struct TrackLyricsDisplay: View {
     }
 }
 
-private struct LyricsScriptMenu: View {
-    let preference: LyricsScriptPreference
-    let availableScripts: [LyricScript]
+private struct LyricsLanguageMenu: View {
+    let availableLanguages: [LyricLanguage]
+    let selectedLanguage: LyricLanguage
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Menu {
-            ForEach(LyricsScriptPreference.allCases) { option in
+            ForEach(availableLanguages) { language in
                 Toggle(isOn: Binding(
-                    get: { preference == option },
+                    get: { selectedLanguage == language },
                     set: { isSelected in
-                        if isSelected { LyricsScriptSettings.shared.select(option) }
+                        if isSelected { LyricsScriptSettings.shared.selectLanguage(language) }
                     }
                 )) {
-                    Text(option.title)
+                    languageTitle(language)
                 }
-                .disabled(!isSelectable(option))
             }
         } label: {
-            Label(String(appLocalized: "Lyrics Script"), systemImage: "character.textbox")
+            Label(String(appLocalized: "Lyrics Language"), systemImage: "character.textbox")
         }
     }
 
-    /// Follow/original remain available because the parser falls back to the
-    /// body script when a line does not carry the requested variant.
-    private func isSelectable(_ option: LyricsScriptPreference) -> Bool {
-        switch option {
-        case .followAppLanguage, .original: true
-        case .simplified: availableScripts.contains(.simplified)
-        case .traditional: availableScripts.contains(.traditional)
+    @ViewBuilder
+    private func languageTitle(_ language: LyricLanguage) -> some View {
+        if let tag = language.languageTag {
+            switch tag {
+            case "zh-hans": Text("Simplified Chinese")
+            case "zh-hant": Text("Traditional Chinese")
+            default: Text(verbatim: locale.localizedString(forIdentifier: tag) ?? tag)
+            }
+        } else {
+            Text("Original Script")
         }
     }
 }
@@ -580,32 +668,36 @@ private struct LyricsScrollAnchor: NSViewRepresentable {
     let trackID: UUID
     let lineIndex: Int
     let animated: Bool
+    var viewportAnchor: CGFloat = 0.5
     let onScroll: () -> Void
 
     func makeNSView(context: Context) -> LyricsScrollAnchorView {
         let view = LyricsScrollAnchorView()
-        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, onScroll: onScroll)
+        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, viewportAnchor: viewportAnchor, onScroll: onScroll)
         return view
     }
 
     func updateNSView(_ view: LyricsScrollAnchorView, context: Context) {
-        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, onScroll: onScroll)
+        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, viewportAnchor: viewportAnchor, onScroll: onScroll)
     }
 }
 
 private final class LyricsScrollAnchorView: NSView {
     private var target: (trackID: UUID, lineIndex: Int)?
     private var animated = false
+    private var viewportAnchor: CGFloat = 0.5
     private var onScroll: (() -> Void)?
     private var scrollScheduled = false
     private var hasScrolled = false
+    private var lastViewportSize: NSSize?
 
-    func configure(trackID: UUID, lineIndex: Int, animated: Bool, onScroll: @escaping () -> Void) {
-        if target?.trackID != trackID || target?.lineIndex != lineIndex {
+    func configure(trackID: UUID, lineIndex: Int, animated: Bool, viewportAnchor: CGFloat, onScroll: @escaping () -> Void) {
+        if target?.trackID != trackID || target?.lineIndex != lineIndex || self.viewportAnchor != viewportAnchor {
             target = (trackID, lineIndex)
             hasScrolled = false
         }
         self.animated = animated
+        self.viewportAnchor = viewportAnchor
         self.onScroll = onScroll
         scheduleScroll()
     }
@@ -621,6 +713,10 @@ private final class LyricsScrollAnchorView: NSView {
     }
 
     private func scheduleScroll() {
+        if hasScrolled, let scrollView = enclosingScrollView,
+           scrollView.contentView.bounds.size != lastViewportSize {
+            hasScrolled = false
+        }
         guard !hasScrolled, !scrollScheduled, window != nil else { return }
         scrollScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -635,10 +731,11 @@ private final class LyricsScrollAnchorView: NSView {
               let documentView = scrollView.documentView else { return }
 
         let clipView = scrollView.contentView
+        lastViewportSize = clipView.bounds.size
         let row = convert(bounds, to: documentView)
         let proposedOrigin = NSPoint(
             x: clipView.bounds.origin.x,
-            y: row.midY - clipView.bounds.height / 2
+            y: row.midY - clipView.bounds.height * viewportAnchor
         )
         let origin = clipView.constrainBoundsRect(NSRect(
             origin: proposedOrigin,

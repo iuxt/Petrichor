@@ -23,8 +23,10 @@ private struct ImmersiveLayout {
     let padding: CGFloat
     let spacing: CGFloat
     let blockWidth: CGFloat
+    let panelWidth: CGFloat
     let artSide: CGFloat
     let blockHeight: CGFloat
+    let lyricsHeight: CGFloat
 
     var titleFontSize: CGFloat { 22 * scale }
     var artistFontSize: CGFloat { 16 * scale }
@@ -132,11 +134,10 @@ struct ImmersiveView: View {
 
     /// Whether the background reads as dark: with no gradient (tinting off) the plain
     /// window background follows the appearance; otherwise it's the gradient's average
-    /// luminance under the 0.25 black scrim.
+    /// luminance under the background's black scrim.
     private static func backgroundIsDark(for gradient: [Color], isDark: Bool) -> Bool {
         guard !gradient.isEmpty else { return isDark }
-        // The background draws a 0.25 black scrim, so scale luminance by 0.75.
-        let average = gradient.reduce(CGFloat(0)) { $0 + NowPlayingArtwork.luminance(of: $1) * 0.75 } / CGFloat(gradient.count)
+        let average = gradient.reduce(CGFloat(0)) { $0 + NowPlayingArtwork.luminance(of: $1) * 0.6 } / CGFloat(gradient.count)
         return average <= 0.55
     }
 
@@ -192,9 +193,21 @@ struct ImmersiveView: View {
                 GradientBackground(colors: gradientColors)
                     .animation(didAppear ? .easeInOut(duration: AnimationDuration.standardDuration) : nil, value: gradientColors)
 
-                // A uniform dark scrim keeps the light transport controls, title, and
-                // panel chrome legible over the artwork gradient.
-                Color.black.opacity(0.25)
+                if let cachedArtwork {
+                    GeometryReader { geometry in
+                        Image(nsImage: cachedArtwork)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .blur(radius: 90)
+                            .scaleEffect(1.2)
+                            .opacity(0.3)
+                            .clipped()
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                Color.black.opacity(0.4)
             } else {
                 // Tinting off: match the app's standard window background rather than a
                 // forced dark backdrop; the controls/text adapt via `adaptiveText`.
@@ -214,24 +227,25 @@ struct ImmersiveView: View {
 
             if panel != .none {
                 panelBox(layout: layout)
-                    .frame(width: layout.blockWidth, height: layout.blockHeight)
+                    .frame(width: layout.panelWidth, height: panel == .lyrics ? layout.lyricsHeight : layout.blockHeight)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(layout.padding)
+        .padding(.horizontal, layout.padding)
+        .padding(.vertical, 60 * layout.scale)
         .animation(.easeInOut(duration: AnimationDuration.standardDuration), value: panel)
     }
 
     private func makeLayout(for size: CGSize) -> ImmersiveLayout {
-        // Change the value `20.0` to anything between 0 to 100 to adjust scaling %
-        let scale = max(0.8, min(min(size.width / 1440, size.height / 900) * (1 - 15.0 / 100), 2.4))
-        let padding = 40 * scale
-        let spacing = 100 * scale
-        let maxBlockWidth = max(220, (size.width - (padding * 2) - spacing) / 2)
-        let blockWidth = max(220, min(460 * scale, maxBlockWidth))
-        let reservedHeight = 176 * scale
-        let artSide = max(140, min(blockWidth, size.height - (padding * 2) - reservedHeight))
+        let scale = max(0.65, min(min(size.width / 1440, size.height / 900), 2.4))
+        let padding = max(24, min(size.width * 0.065, 110 * scale))
+        let spacing = 80 * scale
+        let availableWidth = max(0, size.width - padding * 2 - (panel == .none ? 0 : spacing))
+        let blockWidth = min(520 * scale, panel == .none ? availableWidth : availableWidth * 0.43)
+        let panelWidth = max(0, availableWidth - blockWidth)
+        let reservedHeight = 196 * scale
+        let artSide = max(0, min(480 * scale, blockWidth, size.height - padding * 2 - reservedHeight))
         let blockHeight = artSide + reservedHeight
 
         return ImmersiveLayout(
@@ -239,8 +253,10 @@ struct ImmersiveView: View {
             padding: padding,
             spacing: spacing,
             blockWidth: blockWidth,
+            panelWidth: panelWidth,
             artSide: artSide,
-            blockHeight: blockHeight
+            blockHeight: blockHeight,
+            lyricsHeight: max(0, size.height - 120 * scale)
         )
     }
 
@@ -248,7 +264,7 @@ struct ImmersiveView: View {
         VStack(spacing: layout.columnSpacing) {
             artworkView(side: layout.artSide, cornerRadius: layout.cornerRadius)
 
-            VStack(spacing: layout.titleSpacing) {
+            VStack(alignment: .leading, spacing: layout.titleSpacing) {
                 Text(playbackManager.currentTrack?.title ?? String(appLocalized: "Not Playing"))
                     .font(.system(size: layout.titleFontSize, weight: .semibold))
                     .foregroundColor(adaptiveText)
@@ -260,17 +276,23 @@ struct ImmersiveView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .frame(maxWidth: layout.artSide)
+            .frame(width: layout.artSide, alignment: .leading)
 
             VStack(spacing: layout.controlsSpacing) {
+                NowPlayingProgressBar(
+                    accent: adaptiveText.opacity(0.8),
+                    neutral: adaptiveText,
+                    scale: layout.controlsScale,
+                    usesImmersiveStyle: true
+                )
                 NowPlayingControlsView(
                     tint: artworkTint,
                     accent: controlColor,
                     transport: transportColor,
                     neutral: adaptiveText,
-                    scale: layout.controlsScale
+                    scale: layout.controlsScale,
+                    usesImmersiveStyle: true
                 )
-                NowPlayingProgressBar(accent: controlColor, neutral: adaptiveText, scale: layout.controlsScale)
             }
             .frame(width: layout.artSide)
         }
@@ -333,9 +355,10 @@ struct ImmersiveView: View {
         case .lyrics:
             TrackLyricsContent(
                 fontName: immersiveLyricsFontName == LyricsFontSettings.systemFontName ? nil : immersiveLyricsFontName,
-                fontSize: CGFloat(immersiveLyricsFontSize) * layout.scale,
+                fontSize: CGFloat(immersiveLyricsFontSize) * layout.scale * 1.8,
                 activeColor: adaptiveText,
-                inactiveColor: adaptiveText.opacity(0.55)
+                inactiveColor: adaptiveText.opacity(0.6),
+                usesImmersiveStyle: true
             )
         case .none:
             EmptyView()
@@ -374,52 +397,95 @@ struct ImmersiveView: View {
     // MARK: - Floating Toolbar
 
     private var floatingToolbar: some View {
+        VStack {
+            HStack {
+                Spacer()
+
+                HStack(spacing: 12) {
+                    Image(systemName: "speaker.wave.2.fill")
+                    Slider(value: Binding(
+                        get: { playbackManager.volume },
+                        set: { playbackManager.setVolume($0) }
+                    ), in: 0...1)
+                    .labelsHidden()
+                    .accessibilityLabel(String(appLocalized: "Volume"))
+                    .frame(width: 120)
+                    .tint(adaptiveText)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .floatingControlClusterBackground()
+            }
+
+            Spacer()
+
+            panelToolbar
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .foregroundStyle(adaptiveText.opacity(0.9))
+        .padding(20)
+    }
+
+    private var panelToolbar: some View {
         HStack(spacing: 4) {
             PanelToolbarButton(
                 isActive: panel == .queue,
                 isEnabled: true,
-                activeTint: artworkTint,
+                activeTint: adaptiveText.opacity(0.18),
                 activeHelp: String(appLocalized: "Hide Queue"),
                 inactiveHelp: String(appLocalized: "Show Queue"),
                 action: { toggle(.queue) },
+                activeForeground: adaptiveText,
+                inactiveForeground: adaptiveText.opacity(0.65),
+                buttonSize: 34,
                 label: {
                     Image(systemName: Icons.queueList)
-                        .font(.system(size: 13))
+                        .font(.system(size: 16))
                 }
             )
 
             PanelToolbarButton(
                 isActive: panel == .lyrics,
                 isEnabled: hasCurrentTrack,
-                activeTint: artworkTint,
+                activeTint: adaptiveText.opacity(0.18),
                 activeHelp: String(appLocalized: "Hide Lyrics"),
                 inactiveHelp: String(appLocalized: "Show Lyrics"),
                 action: { toggle(.lyrics) },
+                activeForeground: adaptiveText,
+                inactiveForeground: adaptiveText.opacity(0.65),
+                buttonSize: 34,
                 label: {
                     Image(Icons.customLyrics)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 18, height: 18)
                 }
             )
 
             Divider()
-                .frame(height: 16)
+                .frame(height: 20)
+                .overlay(adaptiveText.opacity(0.15))
+                .padding(.horizontal, 4)
 
             PanelToolbarButton(
                 isActive: false,
                 isEnabled: true,
-                activeTint: artworkTint,
+                activeTint: adaptiveText.opacity(0.18),
                 activeHelp: String(appLocalized: "Close Immersive Mode"),
                 inactiveHelp: String(appLocalized: "Close Immersive Mode"),
-                action: { close() },
+                action: close,
+                activeForeground: adaptiveText,
+                inactiveForeground: adaptiveText.opacity(0.65),
+                buttonSize: 34,
                 label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 16, weight: .medium))
                 }
             )
+            .accessibilityLabel(String(appLocalized: "Close Immersive Mode"))
         }
         .padding(6)
         .floatingControlClusterBackground()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(16)
     }
 
     // MARK: - Esc handling

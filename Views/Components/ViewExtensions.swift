@@ -97,10 +97,10 @@ extension View {
 
 extension ToolbarContent {
     @ToolbarContentBuilder
-    func adaptiveSharedBackgroundHidden() -> some ToolbarContent {
+    func adaptiveSharedBackgroundHidden(_ isHidden: Bool = true) -> some ToolbarContent {
 #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
-            self.sharedBackgroundVisibility(.hidden)
+            self.sharedBackgroundVisibility(isHidden ? .hidden : .automatic)
         } else {
             self
         }

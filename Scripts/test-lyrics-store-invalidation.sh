@@ -14,33 +14,41 @@ struct Track: Sendable { let id: UUID; let url: URL }
 struct LyricLine: Sendable { let text: String; let startTime: Double; let endTime: Double?; let timingSegments: [Int]? }
 enum LyricsSource { case lrc, ksc }
 enum LyricScript: String, CaseIterable, Sendable { case original, simplified, traditional }
+struct LyricLanguage: Equatable, Sendable {
+    let languageTag: String?
+    static let original = Self(languageTag: nil)
+}
 extension Notification.Name {
     static let lyricsScriptPreferenceDidChange = Notification.Name("lyricsScriptPreferenceDidChange")
 }
 @MainActor final class LyricsScriptSettings {
     static let shared = LyricsScriptSettings()
     var effectiveScript: LyricScript { .original }
+    var languageTag: String? { nil }
 }
 actor ControlledLoader {
     var count = 0
     var waiters: [Int: CheckedContinuation<String, Never>] = [:]
     private var requestedScripts: [LyricScript] = []
-    func load(script: LyricScript) async -> String {
+    private var requestedLanguages: [String?] = []
+    func load(script: LyricScript, languageTag: String?) async -> String {
         count += 1
         requestedScripts.append(script)
+        requestedLanguages.append(languageTag)
         let id = count
         return await withCheckedContinuation { waiters[id] = $0 }
     }
     func scriptRequested(at load: Int) -> LyricScript? { load <= requestedScripts.count ? requestedScripts[load - 1] : nil }
+    func languageRequested(at load: Int) -> String? { requestedLanguages[load - 1] }
     func complete(_ id: Int, _ value: String) { waiters.removeValue(forKey: id)?.resume(returning: value) }
 }
 enum LyricsLoader {
     static let controlled = ControlledLoader()
-    static func loadLyrics(for track: Track, using db: DatabaseQueue, script: LyricScript = .original) async throws
-        -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript]) {
-        let text = await controlled.load(script: script)
+    static func loadLyrics(for track: Track, using db: DatabaseQueue, script: LyricScript = .original, languageTag: String? = nil) async throws
+        -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript], availableLanguages: [LyricLanguage], selectedLanguage: LyricLanguage) {
+        let text = await controlled.load(script: script, languageTag: languageTag)
         return ([LyricLine(text: text, startTime: 1, endTime: nil, timingSegments: text == "downloaded" ? [1] : nil)], .lrc,
-                [.original, .simplified])
+                [.original, .simplified], [LyricLanguage(languageTag: "zh-hant"), LyricLanguage(languageTag: "zh-hans")], LyricLanguage(languageTag: languageTag))
     }
 }
 func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(message) } }
@@ -92,9 +100,10 @@ func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(m
                "Availability must flow into the cached Lyrics value")
 
         // --- A preference change notification invalidates the cache and re-resolves ---
-        store.scriptResolver = { .original }
         expect(store.cachedLyrics(for: track.id)?.lines.first?.text == "simplified-text",
                "Sanity: the simplified parse is cached before the switch")
+        store.scriptResolver = { .original }
+        expect(store.cachedLyrics(for: track.id) == nil, "Changed selection must reject the cache before notifications arrive")
         NotificationCenter.default.post(name: .lyricsScriptPreferenceDidChange, object: nil)
         let reloaded = Task { try await store.lyrics(for: track, using: db) }
         await wait { await LyricsLoader.controlled.count == 4 }
@@ -103,6 +112,35 @@ func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(m
         await LyricsLoader.controlled.complete(4, "original-text")
         expect(try await reloaded.value.lines[0].text == "original-text",
                "The post-switch load must show the original script text")
+        // Language changes reject cached and pending data independently of observer order.
+        store.languageResolver = { "zh-hant" }
+        expect(store.cachedLyrics(for: track.id) == nil, "Changing language must reject the previous cache")
+        let traditionalLoad = Task { try await store.lyrics(for: track, using: db) }
+        await wait { await LyricsLoader.controlled.count == 5 }
+        expect(await LyricsLoader.controlled.languageRequested(at: 5) == "zh-hant", "Language reaches loader")
+        store.languageResolver = { "zh-hans" }
+        let simplifiedLanguageLoad = Task { try await store.lyrics(for: track, using: db) }
+        await wait { await LyricsLoader.controlled.count == 6 }
+        await LyricsLoader.controlled.complete(6, "new-language")
+        let selected = try await simplifiedLanguageLoad.value
+        expect(selected.selectedLanguage.languageTag == "zh-hans", "Cache reports the rendered language")
+        expect(selected.availableLanguages.count == 2, "File languages reach the menu")
+        await LyricsLoader.controlled.complete(5, "old-language")
+        do { _ = try await traditionalLoad.value; fatalError("Previous-language loads must be cancelled") }
+        catch is CancellationError {} catch { throw error }
+        expect(store.cachedLyrics(for: track.id)?.lines.first?.text == "new-language", "Old language must not overwrite selection")
+        store.invalidateAll()
+        let pending = Task { try await store.lyrics(for: track, using: db) }
+        await wait { await LyricsLoader.controlled.count == 7 }
+        let pendingJoin = Task { try await store.lyrics(for: track, using: db) }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        store.languageResolver = { "ja" }
+        await LyricsLoader.controlled.complete(7, "obsolete-language")
+        for task in [pending, pendingJoin] {
+            do { _ = try await task.value; fatalError("Every reader must reject an obsolete selection") }
+            catch is CancellationError {} catch { throw error }
+        }
+        expect(store.cachedLyrics(for: track.id) == nil, "Obsolete selection must not enter the cache")
         print("Lyrics cache invalidation and stale-load checks passed")
     }
 }

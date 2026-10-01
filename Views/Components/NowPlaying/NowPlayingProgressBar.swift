@@ -20,6 +20,7 @@ struct NowPlayingProgressBar: View {
     /// adaptive in immersive mode).
     var neutral: Color = .white
     var scale: CGFloat = 1
+    var usesImmersiveStyle = false
 
     @EnvironmentObject var playbackManager: PlaybackManager
     @EnvironmentObject var playbackProgressState: PlaybackProgressState
@@ -29,6 +30,21 @@ struct NowPlayingProgressBar: View {
     @State private var hoveredOverProgress = false
 
     var body: some View {
+        if usesImmersiveStyle {
+            VStack(spacing: 6 * scale) {
+                progressSlider
+                HStack {
+                    timeLabel(isDraggingProgress ? tempProgressValue : playbackProgressState.currentTime)
+                    Spacer()
+                    timeLabel(remainingTime, prefix: "−")
+                }
+            }
+        } else {
+            compactProgressBar
+        }
+    }
+
+    private var compactProgressBar: some View {
         HStack(spacing: 8 * scale) {
             Text(HelperUtils.formattedDuration(isDraggingProgress ? tempProgressValue : playbackProgressState.currentTime))
                 .font(.system(size: 10 * scale, weight: .medium))
@@ -83,6 +99,19 @@ struct NowPlayingProgressBar: View {
     }
 
     // MARK: - Helpers
+
+    private func timeLabel(_ time: TimeInterval, prefix: String = "") -> some View {
+        Text(prefix + HelperUtils.formattedDuration(time))
+            .font(.system(size: 10 * scale, weight: .medium))
+            .foregroundStyle(neutral.opacity(0.5))
+            .monospacedDigit()
+    }
+
+    private var remainingTime: TimeInterval {
+        let duration = HelperUtils.sanitizedDuration(playbackManager.currentTrack?.duration ?? 0)
+        let currentTime = isDraggingProgress ? tempProgressValue : playbackProgressState.currentTime
+        return max(0, duration - currentTime)
+    }
 
     private var timeLabelWidth: CGFloat {
         ((playbackManager.currentTrack?.duration ?? 0) >= 3600 ? 50 : 36) * scale

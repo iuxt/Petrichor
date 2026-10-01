@@ -45,6 +45,7 @@ private struct ImmersiveToolbarTransition: ViewModifier {
             .offset(y: isHidden ? -64 : 0)
             .opacity(isHidden ? 0 : 1)
             .allowsHitTesting(!isHidden)
+            .accessibilityHidden(isHidden)
             .animation(
                 .easeInOut(duration: AnimationDuration.immersiveTransition),
                 value: isHidden
@@ -80,8 +81,7 @@ struct ContentView: View {
     @State private var rightSidebarContent: RightSidebarContent = .none
     @State private var isImmersiveActive = false
     @State private var isImmersiveToolbarContentHidden = false
-    // Toolbar state captured before immersive hides it, so closing restores it.
-    @State private var immersiveToolbarWasVisible = true
+    @State private var isImmersiveToolbarItemsHidden = false
     @State private var pendingLibraryFilter: LibraryFilterRequest?
     @State private var trackMetadataEditorRequest: TrackMetadataEditorRequest?
     @State private var lyricsSearchRequest: LyricsSearchRequest?
@@ -153,7 +153,7 @@ struct ContentView: View {
         }
         .onChange(of: isImmersiveActive) { _, active in
             if !active {
-                restoreToolbarForImmersiveClose()
+                restoreToolbarContentForImmersiveClose()
             }
         }
         .onAppear(perform: handleOnAppear)
@@ -211,6 +211,7 @@ struct ContentView: View {
                 toolbarContent
             }
         }
+        .toolbarBackground(isImmersiveActive ? .hidden : .automatic, for: .windowToolbar)
         .sheet(isPresented: $showingSettings) {
             SettingsView()
                 .environmentObject(libraryManager)
@@ -262,33 +263,31 @@ struct ContentView: View {
         }
     }
 
-    /// Opens immersive mode, animating toolbar content out before the native
-    /// toolbar is collapsed so the main content does not visibly reflow.
+    /// Keep the native toolbar laid out so the titlebar height and traffic-light
+    /// positions stay unchanged while its content animates out.
     private func openImmersive() {
-        immersiveToolbarWasVisible = WindowManager.shared.mainWindow?.toolbar?.isVisible ?? true
+        WindowManager.shared.mainWindow?.makeFirstResponder(nil)
         withAnimation(.easeInOut(duration: AnimationDuration.immersiveTransition)) {
             isImmersiveToolbarContentHidden = true
             isImmersiveActive = true
         } completion: {
-            // Guard against a quick re-close before the open animation completes.
-            if isImmersiveActive {
-                WindowManager.shared.mainWindow?.toolbar?.isVisible = false
-            }
+            // SwiftUI opacity does not hide the native search field or the
+            // toolbar's shared glass backgrounds. Hide the items themselves
+            // after their content finishes animating, keeping NSToolbar visible.
+            guard isImmersiveActive else { return }
+            isImmersiveToolbarItemsHidden = true
         }
     }
 
-    /// Restores the native toolbar first, then gives its SwiftUI content one frame
-    /// in the hidden position before animating it back down.
-    private func restoreToolbarForImmersiveClose() {
-       WindowManager.shared.mainWindow?.toolbar?.isVisible = immersiveToolbarWasVisible
-       DispatchQueue.main.async {
-           // Skip if immersive was reopened before this deferred restore runs;
-           // otherwise we'd flip content back to visible mid-open.
-           guard !isImmersiveActive else { return }
-           withAnimation(.easeInOut(duration: AnimationDuration.immersiveTransition)) {
-               isImmersiveToolbarContentHidden = false
-           }
-       }
+    private func restoreToolbarContentForImmersiveClose() {
+        isImmersiveToolbarItemsHidden = false
+        DispatchQueue.main.async {
+            // Reinsert the native items at the hidden animation position first.
+            guard !isImmersiveActive else { return }
+            withAnimation(.easeInOut(duration: AnimationDuration.immersiveTransition)) {
+                isImmersiveToolbarContentHidden = false
+            }
+        }
     }
 
     // MARK: - View Components
@@ -417,6 +416,7 @@ struct ContentView: View {
             .id(localizationSettings.appLanguage.rawValue)
             .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
+        .hidden(isImmersiveToolbarItemsHidden)
 
         // Do not remove this spacer, it allows
         // for pushing toolbar items below to the
@@ -432,13 +432,14 @@ struct ContentView: View {
                     text: $libraryManager.globalSearchText,
                     placeholder: "Search",
                     fontSize: 12,
-                    shouldFocus: shouldFocusSearch
+                    shouldFocus: shouldFocusSearch && !isImmersiveActive
                 )
                 .frame(width: 280)
                 .disabled(!libraryManager.shouldShowMainUI)
             }
             .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
+        .hidden(isImmersiveToolbarItemsHidden)
     }
 
     @available(macOS 26.0, *)
@@ -454,12 +455,15 @@ struct ContentView: View {
             .id(localizationSettings.appLanguage.rawValue)
             .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
+        .hidden(isImmersiveToolbarItemsHidden)
+        .adaptiveSharedBackgroundHidden(isImmersiveToolbarContentHidden)
 
         ToolbarItem(placement: .confirmationAction) {
             NotificationTray()
                 .frame(width: 34, height: 30)
                 .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
+        .hidden(isImmersiveToolbarItemsHidden)
         .adaptiveSharedBackgroundHidden()
 
         ToolbarItem(placement: .confirmationAction) {
@@ -467,12 +471,14 @@ struct ContentView: View {
                 text: $libraryManager.globalSearchText,
                 placeholder: "Search",
                 fontSize: 12,
-                shouldFocus: shouldFocusSearch
+                shouldFocus: shouldFocusSearch && !isImmersiveActive
             )
             .frame(width: 280)
             .disabled(!libraryManager.shouldShowMainUI)
             .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
+        .hidden(isImmersiveToolbarItemsHidden)
+        .adaptiveSharedBackgroundHidden(isImmersiveToolbarContentHidden)
     }
     
     // MARK: - Event Handlers

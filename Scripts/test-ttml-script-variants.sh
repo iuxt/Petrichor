@@ -20,8 +20,8 @@ let fixture = """
 
 // --- Availability: original plus each script that has replacement text ---
 let parsed = TTMLLyricsParser.parse(fixture.data(using: .utf8)!)
-precondition(parsed.availableScripts == [.original, .simplified],
-             "Expected [.original, .simplified], got \(parsed.availableScripts)")
+precondition(parsed.availableScripts == [.original, .simplified, .traditional],
+             "Expected original plus both Chinese scripts, got \(parsed.availableScripts)")
 precondition(parsed.lines.map(\.text) == ["比起母親的總是憂心忡忡", "父親早已淹沒在人群裡", "一行沒有譯文的舊歌"],
              "Original script must keep the zh-Hant body text")
 print("Original script and availability OK")
@@ -78,7 +78,7 @@ let reverseFixture = """
 <tt xmlns="http://www.w3.org/ns/ttml" xml:lang="zh-Hans"><head><metadata><iTunesMetadata><translations><translation type="replacement" xml:lang="zh-Hant"><text for="L1"><span begin="1" end="2">繁體歌詞</span></text></translation></translations></iTunesMetadata></metadata></head><body><div><p begin="1" end="2" itunes:key="L1">简体歌词</p></div></body></tt>
 """
 let reverse = TTMLLyricsParser.parse(reverseFixture.data(using: .utf8)!)
-precondition(reverse.availableScripts == [.original, .traditional],
+precondition(reverse.availableScripts == [.original, .simplified, .traditional],
              "zh-Hant replacement must be reported as traditional")
 precondition(TTMLLyricsParser.parse(reverseFixture.data(using: .utf8)!, script: .traditional).lines[0].text == "繁體歌詞",
              "Traditional selection must use the zh-Hant replacement")
@@ -94,7 +94,7 @@ precondition(TTMLLyricsParser.parse(regionFixture("zh-CN")).availableScripts.con
              "zh-CN replacement must count as simplified")
 precondition(TTMLLyricsParser.parse(regionFixture("zh-TW")).availableScripts.contains(.traditional),
              "zh-TW replacement must count as traditional")
-precondition(TTMLLyricsParser.parse(regionFixture("en-US")).availableScripts == [.original],
+precondition(TTMLLyricsParser.parse(regionFixture("en-US")).availableScripts == [.original, .traditional],
              "Non-CJK replacements are real translations, not script variants")
 print("Region tag mapping OK")
 
@@ -103,6 +103,31 @@ precondition(TTMLLyricsParser.parse(regionFixture("en-US"), script: .simplified)
              "Unmapped replacements must never replace body text")
 print("Foreign replacement isolation OK")
 
+// The language menu lists the tagged body as well as real replacement tracks.
+precondition(parsed.availableLanguages.map(\.id) == ["zh-hant", "zh-hans"])
+precondition(parsed.selectedLanguage.id == "zh-hant")
+let explicitTraditional = TTMLLyricsParser.parse(Data(fixture.utf8), script: .simplified, languageTag: "zh-Hant")
+precondition(explicitTraditional.lines.map(\.text) == parsed.lines.map(\.text),
+             "Choosing the body language must override the default simplified preference")
+precondition(explicitTraditional.selectedLanguage.id == "zh-hant")
+let explicitSimplified = TTMLLyricsParser.parse(Data(fixture.utf8), languageTag: "ZH_Hans")
+precondition(explicitSimplified.lines.map(\.text) == simplified.lines.map(\.text))
+precondition(explicitSimplified.selectedLanguage.id == "zh-hans")
+precondition(plain.availableLanguages.map(\.id) == ["ja"], "Single-language files list only their language")
+let english = TTMLLyricsParser.parse(regionFixture("en-US"), languageTag: "en-US")
+precondition(english.availableLanguages.map(\.id) == ["zh-hant", "en-us"])
+precondition(english.lines[0].text == "替换" && english.selectedLanguage.id == "en-us",
+             "An explicitly chosen non-Chinese replacement language must render")
+let unavailable = TTMLLyricsParser.parse(regionFixture("en-US"), languageTag: "ja")
+precondition(unavailable.lines[0].text == "替換" && unavailable.selectedLanguage.id == "zh-hant",
+             "Missing preferences fall back to the body and report the actual language")
+let unmatched = String(data: regionFixture("en-US"), encoding: .utf8)!.replacingOccurrences(of: "for=\"L1\"", with: "for=\"missing\"")
+precondition(TTMLLyricsParser.parse(Data(unmatched.utf8)).availableLanguages.map(\.id) == ["zh-hant"],
+             "Unmatched metadata must not create an unusable language menu entry")
+let empty = String(data: regionFixture("en-US"), encoding: .utf8)!.replacingOccurrences(of: "替换", with: " ")
+precondition(TTMLLyricsParser.parse(Data(empty.utf8)).availableLanguages.map(\.id) == ["zh-hant"],
+             "Empty replacement tracks must not be offered")
+print("File-language discovery and explicit switching OK")
 print("All TTML script variant tests passed")
 SWIFT
 

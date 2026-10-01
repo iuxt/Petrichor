@@ -25,16 +25,31 @@ enum LyricScript: String, CaseIterable, Sendable {
     }
 }
 
+/// A language track actually carried by the file. An untagged body is original.
+struct LyricLanguage: Hashable, Identifiable, Sendable {
+    static let original = LyricLanguage(languageTag: nil)
+    let languageTag: String?
+    var id: String { languageTag ?? "original" }
+
+    init(languageTag: String?) {
+        let tag = languageTag?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: "-").lowercased()
+        self.languageTag = tag?.isEmpty == false ? tag : nil
+    }
+}
+
 struct ParsedTTML: Sendable {
     let lines: [LyricLine]
     /// Scripts this file can render: the body plus every mapped replacement block.
     let availableScripts: [LyricScript]
+    var availableLanguages: [LyricLanguage] = [.original]
+    var selectedLanguage: LyricLanguage = .original
 }
 
 /// Reads the timed text in a local TTML file into the same line/word model as KSC and enhanced LRC.
 /// Metadata, translations and romanization are auxiliary tracks, not part of the sung line.
 enum TTMLLyricsParser {
-    static func parse(_ data: Data, script: LyricScript = .original) -> ParsedTTML {
+    static func parse(_ data: Data, script: LyricScript = .original, languageTag: String? = nil) -> ParsedTTML {
         let document = Document()
         let parser = XMLParser(data: data)
         parser.delegate = document
@@ -48,14 +63,29 @@ enum TTMLLyricsParser {
         var paragraphs: [Element] = []
         findParagraphs(in: body, into: &paragraphs)
         let duetSides = performerSides(in: root, paragraphs: paragraphs)
-        let replacements = replacementTexts(in: root)
+        let bodyLanguage = LyricLanguage(languageTag: body.attributes["lang"] ?? root.attributes["lang"])
+        let replacements = replacementTexts(in: root, paragraphs: paragraphs)
+        let availableLanguages = [bodyLanguage] + replacements.keys.sorted()
+            .map { LyricLanguage(languageTag: $0) }.filter { $0 != bodyLanguage }
+        let requestedLanguage = LyricLanguage(languageTag: languageTag)
+        let selectedLanguage: LyricLanguage
+        if languageTag != nil {
+            selectedLanguage = availableLanguages.contains(requestedLanguage) ? requestedLanguage : bodyLanguage
+        } else if script != .original,
+                  let matchingLanguage = availableLanguages.first(where: {
+                      $0.languageTag.flatMap(LyricScript.init(languageTag:)) == script
+                  }) {
+            selectedLanguage = matchingLanguage
+        } else {
+            selectedLanguage = bodyLanguage
+        }
         let lines = paragraphs.enumerated().compactMap { index, paragraph -> (Int, LyricLine)? in
             // Replacement text reuses the line's own timing and performer, so
             // lines without a matching entry simply keep the original words.
             var source = paragraph
-            if script != .original,
+            if selectedLanguage != bodyLanguage,
                let key = paragraph.attributes["key"],
-               let replacement = replacements[script]?[key] {
+               let replacement = replacements[selectedLanguage.id]?[key] {
                 source = replacedParagraph(for: paragraph, with: replacement)
             }
             guard let line = line(from: source, duetSide: source.attributes["agent"].flatMap { duetSides[$0] }) else { return nil }
@@ -63,22 +93,31 @@ enum TTMLLyricsParser {
         }.sorted {
             $0.1.startTime == $1.1.startTime ? $0.0 < $1.0 : $0.1.startTime < $1.1.startTime
         }.map(\.1)
-        let availableScripts = LyricScript.allCases.filter { $0 == .original || replacements[$0]?.isEmpty == false }
-        return ParsedTTML(lines: lines, availableScripts: availableScripts)
+        let availableScripts = LyricScript.allCases.filter { candidate in
+            candidate == .original || availableLanguages.contains {
+                $0.languageTag.flatMap(LyricScript.init(languageTag:)) == candidate
+            }
+        }
+        return ParsedTTML(lines: lines, availableScripts: availableScripts,
+                          availableLanguages: availableLanguages, selectedLanguage: selectedLanguage)
     }
 
-    private static func replacementTexts(in root: Element) -> [LyricScript: [String: Element]] {
+    private static func replacementTexts(in root: Element, paragraphs: [Element]) -> [String: [String: Element]] {
         guard let head = root.children.first(where: { $0.name == "head" }) else { return [:] }
         var blocks: [Element] = []
         findElements(named: "translations", in: head, into: &blocks)
-        var result: [LyricScript: [String: Element]] = [:]
+        let keyedParagraphs = Dictionary(paragraphs.compactMap { paragraph in
+            paragraph.attributes["key"].map { ($0, paragraph) }
+        }, uniquingKeysWith: { first, _ in first })
+        var result: [String: [String: Element]] = [:]
         for block in blocks {
             for translation in block.children where translation.name == "translation" {
                 guard translation.attributes["type"] == "replacement",
                       let lang = translation.attributes["lang"],
-                      let target = LyricScript(languageTag: lang) else { continue }
+                      let target = LyricLanguage(languageTag: lang).languageTag else { continue }
                 for text in translation.children where text.name == "text" {
-                    if let key = text.attributes["for"] {
+                    if let key = text.attributes["for"], let paragraph = keyedParagraphs[key],
+                       line(from: replacedParagraph(for: paragraph, with: text), duetSide: nil) != nil {
                         result[target, default: [:]][key] = text
                     }
                 }

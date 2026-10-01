@@ -27,12 +27,15 @@ enum LyricsSidecarLoader {
         let lyrics: [LyricLine]
         let source: LyricsSource
         var availableScripts: [LyricScript] = [.original]
+        var availableLanguages: [LyricLanguage] = [.original]
+        var selectedLanguage: LyricLanguage = .original
     }
 
     static func load(
         forAudioURL audioURL: URL,
         fileManager: FileManager = .default,
-        script: LyricScript = .original
+        script: LyricScript = .original,
+        languageTag: String? = nil
     ) -> Result? {
         let baseURL = audioURL.deletingPathExtension()
         let candidates: [(extension: String, source: LyricsSource)] = [
@@ -48,13 +51,17 @@ enum LyricsSidecarLoader {
 
             var lyrics: [LyricLine]
             var availableScripts: [LyricScript] = [.original]
+            var availableLanguages: [LyricLanguage] = [.original]
+            var selectedLanguage: LyricLanguage = .original
             switch candidate.source {
             case .ttml:
                 // Pass XML bytes through unchanged so its declared encoding and BOM agree.
                 if let data = try? Data(contentsOf: url) {
-                    let parsed = TTMLLyricsParser.parse(data, script: script)
+                    let parsed = TTMLLyricsParser.parse(data, script: script, languageTag: languageTag)
                     lyrics = parsed.lines
                     availableScripts = parsed.availableScripts
+                    availableLanguages = parsed.availableLanguages
+                    selectedLanguage = parsed.selectedLanguage
                 } else {
                     lyrics = []
                 }
@@ -72,7 +79,8 @@ enum LyricsSidecarLoader {
             }
 
             if !lyrics.isEmpty {
-                return Result(lyrics: lyrics, source: candidate.source, availableScripts: availableScripts)
+                return Result(lyrics: lyrics, source: candidate.source, availableScripts: availableScripts,
+                              availableLanguages: availableLanguages, selectedLanguage: selectedLanguage)
             }
         }
 

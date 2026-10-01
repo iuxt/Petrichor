@@ -156,7 +156,7 @@ precondition(
 // --- Script variants: the loader applies the requested writing script ---
 let variantOriginal = require("Variant")
 precondition(variantOriginal.lyrics.map(\.text) == ["繁體歌詞", "第二行繁體"], "Default load keeps the body script")
-precondition(variantOriginal.availableScripts == [.original, .simplified], "Availability must report the replacement block")
+precondition(variantOriginal.availableScripts == [.original, .simplified, .traditional], "Availability must report the replacement block")
 guard let variantSimplified = LyricsSidecarLoader.load(
     forAudioURL: root.appendingPathComponent("Variant.flac"), script: .simplified
 ) else { fatalError("Missing sidecar result for Variant (simplified)") }
@@ -167,6 +167,13 @@ precondition(variantSimplified.lyrics[0].timingSegments?.map(\.startOffset) == [
 precondition(priority.availableScripts == [.original] && gbk.availableScripts == [.original],
              "Non-variant TTML and non-TTML sources have no script options")
 
+precondition(variantOriginal.availableLanguages.map(\.id) == ["zh-hant", "zh-hans"])
+precondition(variantSimplified.selectedLanguage.id == "zh-hans")
+let switchedBack = LyricsSidecarLoader.load(forAudioURL: root.appendingPathComponent("Variant.flac"),
+                                         script: .simplified, languageTag: "zh-Hant")!
+precondition(switchedBack.lyrics.map(\.text) == variantOriginal.lyrics.map(\.text))
+precondition(switchedBack.selectedLanguage.id == "zh-hant")
+precondition(gbk.availableLanguages == [.original] && gbk.selectedLanguage == .original)
 print("Lyrics sidecar loading checks passed")
 SWIFT
 
