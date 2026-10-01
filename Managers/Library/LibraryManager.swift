@@ -82,7 +82,9 @@ class LibraryManager: ObservableObject {
     /// growing the per-process reference count for the app's lifetime and eventually
     /// causing subsequent starts to silently fail. We start each retained folder once
     /// and stop the ones that are no longer present.
-    private var activeSecurityScopes: Set<String> = []
+    private var activeSecurityScopes: [String: URL] = [:]
+    internal var folderLocationTask: Task<Void, Never>?
+    internal var folderLocationsReady = true
 
     // Database manager
     let databaseManager: DatabaseManager
@@ -187,8 +189,8 @@ class LibraryManager: ObservableObject {
         // Stop accessing all security scoped resources. Each retained URL is
         // released exactly once via the tracking set maintained by
         // `retainSecurityScope(for:)` / `loadMusicLibrary()`.
-        for folder in folders where folder.bookmarkData != nil {
-            folder.url.stopAccessingSecurityScopedResource()
+        for url in activeSecurityScopes.values {
+            url.stopAccessingSecurityScopedResource()
         }
     }
     
@@ -210,12 +212,12 @@ class LibraryManager: ObservableObject {
     @discardableResult
     internal func retainSecurityScope(for url: URL) -> Bool {
         let key = url.standardizedFileURL.path
-        if activeSecurityScopes.contains(key) {
+        if activeSecurityScopes[key] != nil {
             // Already retained earlier in this app session; don't take a second ref.
             return true
         }
         if url.startAccessingSecurityScopedResource() {
-            activeSecurityScopes.insert(key)
+            activeSecurityScopes[key] = url
             return true
         }
         return false
@@ -225,10 +227,9 @@ class LibraryManager: ObservableObject {
     /// the retained set tracks the live folders. Each released URL is stopped once.
     internal func releaseStaleSecurityScopes(keeping folders: [Folder]) {
         let retainedPaths = Set(folders.map { $0.url.standardizedFileURL.path })
-        let stale = activeSecurityScopes.subtracting(retainedPaths)
+        let stale = Set(activeSecurityScopes.keys).subtracting(retainedPaths)
         for path in stale {
-            URL(fileURLWithPath: path).stopAccessingSecurityScopedResource()
-            activeSecurityScopes.remove(path)
+            activeSecurityScopes.removeValue(forKey: path)?.stopAccessingSecurityScopedResource()
         }
     }
     

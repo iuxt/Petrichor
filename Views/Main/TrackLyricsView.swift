@@ -102,9 +102,11 @@ struct TrackLyricsContent: View {
 
     @EnvironmentObject var libraryManager: LibraryManager
     @EnvironmentObject var playbackManager: PlaybackManager
+    @ObservedObject private var scriptSettings = LyricsScriptSettings.shared
 
     @State private var lyricLines: [LyricLine] = []
     @State private var lyricsSource: LyricsSource = .none
+    @State private var availableScripts: [LyricScript] = [.original]
     @State private var lyricsTrackID: UUID?
     @State private var isLoading = true
     @State private var fetchFailed = false
@@ -154,6 +156,8 @@ struct TrackLyricsContent: View {
                 loadLyricsForCurrentTrack(forceReload: true)
             }
             .disabled(currentTrack == nil)
+
+            scriptMenu
 
             Button(String(appLocalized: "Copy All Lyrics"), systemImage: "doc.on.doc") {
                 NSPasteboard.general.clearContents()
@@ -208,6 +212,11 @@ struct TrackLyricsContent: View {
         .onReceive(NotificationCenter.default.publisher(for: .downloadedLyricsDidChange)) { notification in
             guard let url = notification.object as? URL,
                   url.standardizedFileURL == currentTrack?.url.standardizedFileURL else { return }
+            loadLyricsForCurrentTrack()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lyricsScriptPreferenceDidChange)) { _ in
+            // The store dropped its cache in the same notification pass, so a
+            // plain reload reparses in the newly selected script.
             loadLyricsForCurrentTrack()
         }
         .onDisappear {
@@ -357,6 +366,38 @@ struct TrackLyricsContent: View {
         return .system(size: fontSize, weight: weight)
     }
 
+    // MARK: - Script Selection
+
+    private var scriptMenu: some View {
+        Menu {
+            ForEach(LyricsScriptPreference.allCases) { preference in
+                Button {
+                    scriptSettings.select(preference)
+                } label: {
+                    HStack {
+                        if scriptSettings.preference == preference {
+                            Image(systemName: "checkmark")
+                        }
+                        Text(preference.title)
+                    }
+                }
+                .disabled(!isSelectable(preference))
+            }
+        } label: {
+            Label(String(appLocalized: "Lyrics Script"), systemImage: "character.textbox")
+        }
+    }
+
+    /// Scripts the current lyrics actually carry; follow/original always work
+    /// because the parser falls back to the body script per line.
+    private func isSelectable(_ preference: LyricsScriptPreference) -> Bool {
+        switch preference {
+        case .followAppLanguage, .original: true
+        case .simplified: availableScripts.contains(.simplified)
+        case .traditional: availableScripts.contains(.traditional)
+        }
+    }
+
     // MARK: - Helper Methods
 
     private func loadLyricsForCurrentTrack(forceReload: Bool = false) {
@@ -366,6 +407,7 @@ struct TrackLyricsContent: View {
             boundaryScheduler.cancel()
             lyricLines = []
             lyricsSource = .none
+            availableScripts = [.original]
             lyricsTrackID = nil
             hasTimedLyrics = false
             isKaraokeLyrics = false
@@ -380,6 +422,7 @@ struct TrackLyricsContent: View {
         if !forceReload, let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
             lyricLines = cached.lines
             lyricsSource = cached.source
+            availableScripts = cached.availableScripts
             lyricsTrackID = loadedTrackId
             hasTimedLyrics = cached.hasTimed
             isKaraokeLyrics = cached.isKaraoke
@@ -395,6 +438,7 @@ struct TrackLyricsContent: View {
         isLoading = true
         lyricLines = []
         lyricsSource = .none
+        availableScripts = [.original]
         lyricsTrackID = nil
         fetchFailed = false
         hasTimedLyrics = false   // Reset until we know
@@ -414,6 +458,7 @@ struct TrackLyricsContent: View {
                     guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     lyricLines = result.lines
                     lyricsSource = result.source
+                    availableScripts = result.availableScripts
                     lyricsTrackID = loadedTrackId
                     hasTimedLyrics = result.hasTimed
                     isKaraokeLyrics = result.isKaraoke
@@ -429,6 +474,7 @@ struct TrackLyricsContent: View {
                     boundaryScheduler.cancel()
                     lyricLines = []
                     lyricsSource = .none
+                    availableScripts = [.original]
                     lyricsTrackID = nil
                     hasTimedLyrics = false
                     isKaraokeLyrics = false

@@ -88,6 +88,29 @@ struct FolderEnumerationResult {
 }
 
 extension DatabaseManager {
+    /// Rebase paths in one transaction, preserving track IDs, history, snapshots,
+    /// and pins. SQLite does the work off the UI actor; no audio files are moved.
+    func relocateFolders(_ relocations: [(original: Folder, updated: Folder)]) async throws {
+        try await dbQueue.write { db in
+            for (original, updated) in relocations {
+                guard let folderID = original.id else { throw DatabaseError.invalidFolderId }
+                let oldPath = original.url.standardizedFileURL.path
+                let newPath = updated.url.standardizedFileURL.path
+                let prefix = oldPath + "/"
+                try db.execute(sql: """
+                    UPDATE tracks SET path = ? || substr(path, length(?) + 1)
+                    WHERE folder_id = ? AND substr(path, 1, length(?)) = ?
+                    """, arguments: [newPath, oldPath, folderID, prefix, prefix])
+                try db.execute(sql: """
+                    UPDATE pinned_items SET filter_value = ? || substr(filter_value, length(?) + 1)
+                    WHERE item_type = 'folder' AND
+                    (filter_value = ? OR substr(filter_value, 1, length(?)) = ?)
+                    """, arguments: [newPath, oldPath, oldPath, prefix, prefix])
+                try updated.update(db)
+            }
+        }
+    }
+
     func addFolders(_ urls: [URL], bookmarkDataMap: [URL: Data], completion: @escaping (Result<[Folder], Error>) -> Void) {
         Task(priority: .utility) {
             do {
@@ -531,11 +554,17 @@ extension DatabaseManager {
         supportedExtensions: [String]
     ) throws -> FolderEnumerationResult {
         let fileManager = FileManager.default
-
+        // DirectoryEnumerator otherwise silently skips unreadable subtrees. A
+        // partial listing must never be used as proof that tracks were deleted.
+        var enumerationError: Error?
         guard let enumerator = fileManager.enumerator(
             at: folderURL,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }
         ) else {
             throw DatabaseError.scanFailed("Unable to enumerate folder contents")
         }
@@ -576,6 +605,8 @@ extension DatabaseManager {
                 Logger.info("Skipped unsupported audio file: \(resolvedURL.lastPathComponent) (.\(fileExtension))")
             }
         }
+
+        if let enumerationError { throw enumerationError }
 
         // Image files are intentionally not collected during enumeration. Artwork is
         // resolved on demand by ArtworkResolver at playback, so the scan never reads

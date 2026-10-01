@@ -182,7 +182,9 @@ create_dmg_command() {
 
     if [ -n "$support_source" ]; then
         cp -R "$support_source" "$wrapper_dir/support"
-        perl -0pi -e 's#\Qset dsStore to "\"" & "/Volumes/" & volumeName & "/" & ".DS_STORE\""\E#set dsStore to quoted form of ((POSIX path of (it as alias)) & ".DS_Store")#g' "$wrapper_dir/support/template.applescript"
+        # Both older /Volumes templates and newer mountDir templates need the
+        # actual Finder disk path and the case-sensitive .DS_Store filename.
+        perl -0pi -e 's#^([ \t]*)set dsStore to [^\r\n]*#$1set dsStore to quoted form of ((POSIX path of (it as alias)) & ".DS_Store")#mg' "$wrapper_dir/support/template.applescript"
     fi
 
     perl -0pi -e '

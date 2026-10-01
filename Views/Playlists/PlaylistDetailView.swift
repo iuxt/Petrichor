@@ -248,7 +248,7 @@ struct PlaylistDetailView: View {
                     entityID: nil,
                     sortOrder: $playlistSortOrder,
                     onPlayTrack: { track in
-                        if let index = playlist.tracks.firstIndex(of: track) {
+                        if let index = playlist.tracks.firstIndex(where: { $0.id == track.id }) {
                             playlistManager.playTrackFromPlaylist(playlist, at: index)
                             selectedTrackID = track.id
                         }

@@ -135,6 +135,9 @@ struct EntityDetailView: View {
         .onChange(of: useArtworkColors) {
             updateGradientColors()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
+            loadTracks()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .artistImagesDidChange)) { _ in
             loadArtistImage(from: tracks)
         }

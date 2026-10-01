@@ -144,7 +144,7 @@ actor FakeWriter: DownloadedLyricsWriting {
                 for includeTranslation in [false, true] {
                     let downloaded = try await service.download(candidate, includeTranslation: includeTranslation)
                     let lines = downloaded.format == .ttml
-                        ? TTMLLyricsParser.parse(Data(downloaded.content.utf8))
+                        ? TTMLLyricsParser.parse(Data(downloaded.content.utf8)).lines
                         : LyricLine.parseLRC(from: downloaded.lrc)
                     expect(lines.filter { $0.timingSegments?.count ?? 0 > 2 }.count > 10, "Live \(candidate.provider.rawValue) word timing must survive download")
                     expect(lines.allSatisfy { line in line.timingSegments.map { $0.map(\.text).joined() == line.text } ?? true },
@@ -163,7 +163,7 @@ actor FakeWriter: DownloadedLyricsWriting {
                     do {
                         let lyrics = try await service.download(result, includeTranslation: true)
                         let lines = lyrics.format == .ttml
-                            ? TTMLLyricsParser.parse(Data(lyrics.content.utf8))
+                            ? TTMLLyricsParser.parse(Data(lyrics.content.utf8)).lines
                             : LyricLine.parseLRC(from: lyrics.lrc)
                         expect(!lines.isEmpty, "Live lyrics must parse")
                         print("Live \(provider.rawValue): synchronized lyrics received")
@@ -267,6 +267,13 @@ actor FakeWriter: DownloadedLyricsWriting {
         let defaults = UserDefaults(suiteName: "petrichor.lyrics.test.\(UUID())")!
         let settings = LyricsDownloadSettings(defaults: defaults)
         expect(!settings.automaticallyDownload, "Automatic download is opt-in")
+        expect(!settings.automaticallyDownloadArtwork, "Artwork has its own opt-in")
+        defaults.set(true, forKey: "lyricsAutoDownload")
+        expect(!LyricsDownloadSettings(defaults: defaults).automaticallyDownloadArtwork,
+               "Upgrading a lyrics opt-in must not authorize artwork downloads")
+        settings.automaticallyDownloadArtwork = true
+        expect(LyricsDownloadSettings(defaults: defaults).automaticallyDownloadArtwork,
+               "Artwork opt-in must persist independently")
         expect(settings.artworkSource == .netease, "Artwork source defaults to NetEase")
         settings.artworkSource = .qqMusic
         let restoredSettings = LyricsDownloadSettings(defaults: defaults)

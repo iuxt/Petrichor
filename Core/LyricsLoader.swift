@@ -9,21 +9,24 @@ struct LyricsLoader {
     /// - Returns: Tuple containing parsed lyrics lines and source type
     static func loadLyrics(
         for track: Track,
-        using dbQueue: DatabaseQueue
-    ) async throws -> (lyrics: [LyricLine], source: LyricsSource) {
+        using dbQueue: DatabaseQueue,
+        script: LyricScript = .original
+    ) async throws -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript]) {
         var lines: [LyricLine]?
         var source: LyricsSource = .none
-        
+        var availableScripts: [LyricScript] = [.original]
+
         // 1. External TTML/KSC/LRC/SRT files
         let audioURL = track.url
         let external = await Task.detached(priority: .utility) {
-            LyricsSidecarLoader.load(forAudioURL: audioURL)
+            LyricsSidecarLoader.load(forAudioURL: audioURL, script: script)
         }.value
         if let external {
             lines = external.lyrics
             source = external.source
+            availableScripts = external.availableScripts
         }
-        
+
         // 2. Embedded lyrics from database
         let fullTrack = try? await track.fullTrack(using: dbQueue)
         if lines == nil,
@@ -33,9 +36,9 @@ struct LyricsLoader {
             lines = parseAnyLyrics(embeddedText)
             source = .embedded
         }
-        
+
         // Fallback to empty array
-        return (lines ?? [], source)
+        return (lines ?? [], source, availableScripts)
     }
     
     // MARK: - Helpers

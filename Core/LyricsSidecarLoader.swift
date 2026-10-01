@@ -26,11 +26,13 @@ enum LyricsSidecarLoader {
     struct Result: Sendable, Equatable {
         let lyrics: [LyricLine]
         let source: LyricsSource
+        var availableScripts: [LyricScript] = [.original]
     }
 
     static func load(
         forAudioURL audioURL: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        script: LyricScript = .original
     ) -> Result? {
         let baseURL = audioURL.deletingPathExtension()
         let candidates: [(extension: String, source: LyricsSource)] = [
@@ -44,11 +46,18 @@ enum LyricsSidecarLoader {
             let url = baseURL.appendingPathExtension(candidate.extension)
             guard fileManager.fileExists(atPath: url.path) else { continue }
 
-            let lyrics: [LyricLine]
+            var lyrics: [LyricLine]
+            var availableScripts: [LyricScript] = [.original]
             switch candidate.source {
             case .ttml:
                 // Pass XML bytes through unchanged so its declared encoding and BOM agree.
-                lyrics = (try? Data(contentsOf: url)).map(TTMLLyricsParser.parse) ?? []
+                if let data = try? Data(contentsOf: url) {
+                    let parsed = TTMLLyricsParser.parse(data, script: script)
+                    lyrics = parsed.lines
+                    availableScripts = parsed.availableScripts
+                } else {
+                    lyrics = []
+                }
             case .ksc:
                 lyrics = loadFileWithEncodingDetection(url, source: candidate.source)
                     .map(LyricLine.parseKSC) ?? []
@@ -63,7 +72,7 @@ enum LyricsSidecarLoader {
             }
 
             if !lyrics.isEmpty {
-                return Result(lyrics: lyrics, source: candidate.source)
+                return Result(lyrics: lyrics, source: candidate.source, availableScripts: availableScripts)
             }
         }
 

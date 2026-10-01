@@ -56,7 +56,7 @@ struct GeneralTabView: View {
             }
 
             Section(String(appLocalized: "Lyrics and Artwork Downloads")) {
-                Toggle(String(appLocalized: "Automatically download missing lyrics and artwork"), isOn: $lyricsSettings.automaticallyDownload)
+                Toggle(String(appLocalized: "Automatically download missing lyrics"), isOn: $lyricsSettings.automaticallyDownload)
                 Picker(String(appLocalized: "Lyrics source"), selection: $lyricsSettings.source) {
                     ForEach(LyricsSearchSource.allCases) { source in
                         Text(verbatim: source.displayName).tag(source)
@@ -67,12 +67,13 @@ struct GeneralTabView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Toggle(String(appLocalized: "Automatically download missing artwork"), isOn: $lyricsSettings.automaticallyDownloadArtwork)
                 Picker(String(appLocalized: "Artwork source"), selection: $lyricsSettings.artworkSource) {
                     ForEach(OnlineTagProvider.allCases) { provider in
                         Text(verbatim: provider.displayName).tag(provider)
                     }
                 }
-                Text(verbatim: String(appLocalized: "When automatic downloads are enabled, missing artwork for the playing song is downloaded from the selected artwork source. Existing embedded or nearby artwork is kept. Downloads are saved as JPEG beside the song, using the album name for an exact album match or the song filename otherwise."))
+                Text(verbatim: String(appLocalized: "When enabled, missing artwork is downloaded from the selected source for the playing song and after saving online tags. Existing embedded or nearby artwork is kept. Downloads are saved as JPEG beside the song, using the album name for an exact album match or the song filename otherwise."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

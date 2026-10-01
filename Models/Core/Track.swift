@@ -198,7 +198,20 @@ struct Track: Identifiable, Equatable, Hashable, FetchableRecord, PersistableRec
     // MARK: - Equatable
     
     static func == (lhs: Track, rhs: Track) -> Bool {
-        lhs.id == rhs.id
+        // Identity belongs to `id`; equality also describes the displayed value.
+        // SwiftUI onChange and native table reuse must see metadata-only edits.
+        lhs.id == rhs.id && lhs.trackId == rhs.trackId && lhs.url == rhs.url &&
+        lhs.title == rhs.title && lhs.artist == rhs.artist && lhs.album == rhs.album &&
+        lhs.duration == rhs.duration && lhs.format == rhs.format &&
+        lhs.folderId == rhs.folderId && lhs.lossless == rhs.lossless &&
+        lhs.codec == rhs.codec && lhs.bitrate == rhs.bitrate &&
+        lhs.sampleRate == rhs.sampleRate && lhs.channels == rhs.channels &&
+        lhs.albumArtist == rhs.albumArtist && lhs.composer == rhs.composer &&
+        lhs.genre == rhs.genre && lhs.year == rhs.year &&
+        lhs.playCount == rhs.playCount && lhs.lastPlayedDate == rhs.lastPlayedDate &&
+        lhs.trackNumber == rhs.trackNumber && lhs.discNumber == rhs.discNumber &&
+        lhs.isDuplicate == rhs.isDuplicate && lhs.dateAdded == rhs.dateAdded &&
+        lhs.albumId == rhs.albumId && lhs.albumArtworkData == rhs.albumArtworkData
     }
     
     // MARK: - Hashable

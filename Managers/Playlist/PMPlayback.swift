@@ -103,6 +103,7 @@ extension PlaylistManager {
     /// `playNextTrack` (which advances) and `peekNextTrack` (which only looks).
     private func nextQueueIndex() -> Int? {
         guard !currentQueue.isEmpty else { return nil }
+        guard currentQueue.indices.contains(currentQueueIndex) else { return 0 }
 
         switch repeatMode {
         case .one:
@@ -225,6 +226,11 @@ extension PlaylistManager {
     func playPreviousTrack() {
         guard !currentQueue.isEmpty else {
             createLibraryQueue()
+            return
+        }
+
+        guard currentQueue.indices.contains(currentQueueIndex) else {
+            playFromQueue(at: 0)
             return
         }
 

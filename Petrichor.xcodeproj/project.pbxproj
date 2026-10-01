@@ -36,6 +36,7 @@
 			membershipExceptions = (
 				"build-installer.sh",
 				"test-build-warning-cleanliness.sh",
+				"test-audit-regressions.sh",
 				"test-desktop-lyrics-line-selection.sh",
 				"test-external-artwork-priority.sh",
 				"test-immersive-lyrics-settings.sh",

@@ -167,7 +167,7 @@ class AppCoordinator: ObservableObject {
         isRestoringPlayback = true
         
         // Don't restore immediately, wait for library to be fully loaded
-        if libraryManager.totalTrackCount == 0 {
+        if libraryManager.totalTrackCount == 0 || !libraryManager.folderLocationsReady {
             if libraryManager.folders.isEmpty {
                 clearAllSavedState()
                 isRestoringPlayback = false
@@ -306,7 +306,7 @@ class AppCoordinator: ObservableObject {
         
         // Set the queue
         playlistManager.currentQueue = restoredQueue
-        playlistManager.currentQueueIndex = min(state.currentQueueIndex, restoredQueue.count - 1)
+        playlistManager.currentQueueIndex = state.restoredQueueIndex(in: restoredQueue)
         playlistManager.currentQueueSource = state.queueSourceEnum
         
         // Try to restore the source context

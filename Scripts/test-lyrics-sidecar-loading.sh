@@ -65,6 +65,23 @@ printf "%s\n" "karaoke.add('00:07.000','00:08.000','BE','500,500');" \
 printf "%s\n" "karaoke.add('inf:01.000','inf:02.000','invalid','1000');" \
     > "$TMP_DIR/NonFiniteFallback.ksc"
 printf "%s\n" "[00:08.00]finite fallback" > "$TMP_DIR/NonFiniteFallback.lrc"
+touch "$TMP_DIR/Variant.flac"
+cat > "$TMP_DIR/Variant.ttml" <<'TTML'
+<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word" xml:lang="zh-Hant">
+  <head><metadata>
+    <iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal"><translations>
+      <translation type="replacement" xml:lang="zh-Hans">
+        <text for="L1"><span begin="1s" end="2s">简体歌词</span></text>
+      </translation>
+    </translations></iTunesMetadata>
+  </metadata></head>
+  <body><div>
+    <p begin="1s" end="2s" itunes:key="L1"><span begin="1s" end="2s">繁體歌詞</span></p>
+    <p begin="3s" end="4s" itunes:key="L2"><span begin="3s" end="4s">第二行繁體</span></p>
+  </div></body>
+</tt>
+TTML
 
 cat > "$TMP_DIR/main.swift" <<'SWIFT'
 import Foundation
@@ -91,7 +108,7 @@ precondition(ttml.lyrics[1].text == "Plain & timed" && ttml.lyrics[1].timingSegm
 let duet = require("Duet")
 precondition(duet.lyrics.map(\.duetSide) == [.right, .left, nil], "Agent definitions should keep singers on stable opposite sides")
 precondition(duet.lyrics[0].isActive(at: 2.5) && duet.lyrics[1].isActive(at: 2.5), "Overlapping duet lines should both be active")
-let solo = TTMLLyricsParser.parse(Data("<tt><body><p begin=\"1s\" end=\"2s\" ttm:agent=\"v1\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\">Solo</p></body></tt>".utf8))
+let solo = TTMLLyricsParser.parse(Data("<tt><body><p begin=\"1s\" end=\"2s\" ttm:agent=\"v1\" xmlns:ttm=\"http://www.w3.org/ns/ttml#metadata\">Solo</p></body></tt>".utf8)).lines
 precondition(solo.first?.duetSide == nil, "A solo performer must remain centered")
 
 let invalidTTML = require("InvalidTTML")
@@ -135,6 +152,20 @@ precondition(
     nonFiniteFallback.source == .lrc && nonFiniteFallback.lyrics.first?.text == "finite fallback",
     "A KSC with non-finite timestamps must not block the valid LRC fallback"
 )
+
+// --- Script variants: the loader applies the requested writing script ---
+let variantOriginal = require("Variant")
+precondition(variantOriginal.lyrics.map(\.text) == ["繁體歌詞", "第二行繁體"], "Default load keeps the body script")
+precondition(variantOriginal.availableScripts == [.original, .simplified], "Availability must report the replacement block")
+guard let variantSimplified = LyricsSidecarLoader.load(
+    forAudioURL: root.appendingPathComponent("Variant.flac"), script: .simplified
+) else { fatalError("Missing sidecar result for Variant (simplified)") }
+precondition(variantSimplified.lyrics.map(\.text) == ["简体歌词", "第二行繁體"],
+             "Simplified swaps translated lines and falls back per line")
+precondition(variantSimplified.lyrics[0].timingSegments?.map(\.startOffset) == [0],
+             "Simplified segments must keep the word timing")
+precondition(priority.availableScripts == [.original] && gbk.availableScripts == [.original],
+             "Non-variant TTML and non-TTML sources have no script options")
 
 print("Lyrics sidecar loading checks passed")
 SWIFT

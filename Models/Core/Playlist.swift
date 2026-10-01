@@ -78,6 +78,8 @@ struct SmartPlaylistCriteria: Codable, Equatable {
 struct PlaylistFileBacking: Hashable {
     let musicFolderURL: URL
     let fileURL: URL
+    var unresolvedEntries: [String] = []
+    var sourceContent: String? = nil
 }
 
 // Cache manager for playlist artwork

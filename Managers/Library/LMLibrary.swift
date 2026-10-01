@@ -9,6 +9,7 @@ import Foundation
 
 extension LibraryManager {
     func loadMusicLibrary() {
+        guard folderLocationTask == nil else { return }
         Logger.info("Loading music library from database...")
 
         // Clear caches
@@ -18,6 +19,7 @@ extension LibraryManager {
         let dbFolders = databaseManager.getAllFolders()
         var resolvedFolders: [Folder] = []
         var foldersNeedingRefresh: [Folder] = []
+        var relocations: [(original: Folder, updated: Folder)] = []
 
         for folder in dbFolders {
             var folderAccessible = false
@@ -38,12 +40,18 @@ extension LibraryManager {
                     // loadMusicLibrary no longer leaks a new reference each time.
                     if retainSecurityScope(for: resolvedURL) {
                         folderAccessible = true
-                        resolvedFolders.append(folder)
+                        var resolvedFolder = folder
+                        resolvedFolder.url = resolvedURL
+                        if resolvedURL.standardizedFileURL.path != folder.url.standardizedFileURL.path {
+                            resolvedFolder.name = resolvedURL.lastPathComponent
+                            relocations.append((folder, resolvedFolder))
+                        }
+                        resolvedFolders.append(resolvedFolder)
                         Logger.info("Successfully resolved bookmark for \(folder.name)")
 
                         if isStale {
                             Logger.info("Bookmark for \(folder.name) is stale, queuing for refresh")
-                            foldersNeedingRefresh.append(folder)
+                            foldersNeedingRefresh.append(resolvedFolder)
                         }
                     } else {
                         Logger.error("Failed to start accessing security scoped resource for \(folder.name)")
@@ -94,6 +102,41 @@ extension LibraryManager {
         releaseStaleSecurityScopes(keeping: resolvedFolders)
 
         folders = resolvedFolders
+        if !relocations.isEmpty {
+            folderLocationsReady = false
+            let pending = relocations
+            folderLocationTask = Task { @MainActor in
+                do {
+                    try await databaseManager.relocateFolders(pending)
+                    for relocation in pending {
+                        await Task.detached(priority: .utility) {
+                            PlaylistFileStore.rememberRelocatedPlaylists(from: relocation.original.url,
+                                                                        to: relocation.updated.url)
+                        }.value
+                    }
+                    folderLocationTask = nil
+                    folderLocationsReady = true
+                    await loadPinnedItems()
+                    if let coordinator = AppCoordinator.shared {
+                        let ids = coordinator.playlistManager.currentQueue.compactMap(\.trackId)
+                        let database = databaseManager
+                        let refreshed = await Task.detached(priority: .utility) {
+                            database.getTracks(byIds: ids)
+                        }.value
+                        for track in refreshed {
+                            coordinator.playlistManager.applyMetadataEditResult(track)
+                        }
+                    }
+                    loadMusicLibrary()
+                } catch {
+                    folderLocationTask = nil
+                    Logger.error("Failed to relocate library folders: \(error)")
+                    NotificationManager.shared.addMessage(.error, error.localizedDescription)
+                }
+            }
+            return
+        }
+        folderLocationsReady = true
         tracks = []
 
         loadLibraryCategories()
@@ -170,6 +213,10 @@ extension LibraryManager {
     }
 
     func refreshLibrary(hardRefresh: Bool = false) {
+        guard folderLocationsReady else {
+            loadMusicLibrary()
+            return
+        }
         Logger.info("Refreshing library...")
         
         actor ErrorTracker {

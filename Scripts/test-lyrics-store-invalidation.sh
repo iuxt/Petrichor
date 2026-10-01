@@ -13,21 +13,34 @@ import GRDB
 struct Track: Sendable { let id: UUID; let url: URL }
 struct LyricLine: Sendable { let text: String; let startTime: Double; let endTime: Double?; let timingSegments: [Int]? }
 enum LyricsSource { case lrc, ksc }
+enum LyricScript: String, CaseIterable, Sendable { case original, simplified, traditional }
+extension Notification.Name {
+    static let lyricsScriptPreferenceDidChange = Notification.Name("lyricsScriptPreferenceDidChange")
+}
+@MainActor final class LyricsScriptSettings {
+    static let shared = LyricsScriptSettings()
+    var effectiveScript: LyricScript { .original }
+}
 actor ControlledLoader {
     var count = 0
     var waiters: [Int: CheckedContinuation<String, Never>] = [:]
-    func load() async -> String {
+    private var requestedScripts: [LyricScript] = []
+    func load(script: LyricScript) async -> String {
         count += 1
+        requestedScripts.append(script)
         let id = count
         return await withCheckedContinuation { waiters[id] = $0 }
     }
+    func scriptRequested(at load: Int) -> LyricScript? { load <= requestedScripts.count ? requestedScripts[load - 1] : nil }
     func complete(_ id: Int, _ value: String) { waiters.removeValue(forKey: id)?.resume(returning: value) }
 }
 enum LyricsLoader {
     static let controlled = ControlledLoader()
-    static func loadLyrics(for track: Track, using db: DatabaseQueue) async throws -> (lyrics: [LyricLine], source: LyricsSource) {
-        let text = await controlled.load()
-        return ([LyricLine(text: text, startTime: 1, endTime: nil, timingSegments: text == "downloaded" ? [1] : nil)], .lrc)
+    static func loadLyrics(for track: Track, using db: DatabaseQueue, script: LyricScript = .original) async throws
+        -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript]) {
+        let text = await controlled.load(script: script)
+        return ([LyricLine(text: text, startTime: 1, endTime: nil, timingSegments: text == "downloaded" ? [1] : nil)], .lrc,
+                [.original, .simplified])
     }
 }
 func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(message) } }
@@ -65,6 +78,31 @@ func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(m
         expect(store.cachedLyrics(for: track.id) != nil, "Unrelated downloads must not invalidate current lyrics")
         store.invalidate(for: track.url)
         expect(store.cachedLyrics(for: track.id) == nil, "Downloaded track must invalidate cached lyrics")
+
+        // --- Script preference: the resolved script reaches the loader and results ---
+        store.scriptResolver = { .simplified }
+        let simplifiedLoad = Task { try await store.lyrics(for: track, using: db) }
+        await wait { await LyricsLoader.controlled.count == 3 }
+        expect(await LyricsLoader.controlled.scriptRequested(at: 3) == .simplified,
+               "The store must pass the resolved script to the loader")
+        await LyricsLoader.controlled.complete(3, "simplified-text")
+        let simplifiedResult = try await simplifiedLoad.value
+        expect(simplifiedResult.lines[0].text == "simplified-text", "Simplified load must return its lines")
+        expect(simplifiedResult.availableScripts == [.original, .simplified],
+               "Availability must flow into the cached Lyrics value")
+
+        // --- A preference change notification invalidates the cache and re-resolves ---
+        store.scriptResolver = { .original }
+        expect(store.cachedLyrics(for: track.id)?.lines.first?.text == "simplified-text",
+               "Sanity: the simplified parse is cached before the switch")
+        NotificationCenter.default.post(name: .lyricsScriptPreferenceDidChange, object: nil)
+        let reloaded = Task { try await store.lyrics(for: track, using: db) }
+        await wait { await LyricsLoader.controlled.count == 4 }
+        expect(await LyricsLoader.controlled.scriptRequested(at: 4) == .original,
+               "After the notification the cache must miss and re-resolve the script")
+        await LyricsLoader.controlled.complete(4, "original-text")
+        expect(try await reloaded.value.lines[0].text == "original-text",
+               "The post-switch load must show the original script text")
         print("Lyrics cache invalidation and stale-load checks passed")
     }
 }

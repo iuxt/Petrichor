@@ -43,6 +43,12 @@ final class PlaylistManager: ObservableObject {
     // MARK: - Private/Internal Properties
     internal var libraryManager: LibraryManager?
     internal let playlistFileStore = PlaylistFileStore()
+    private var filePlaylistLoadTask: Task<Void, Never>?
+
+    internal func invalidateFilePlaylistLoad() {
+        filePlaylistLoadTask?.cancel()
+        filePlaylistLoadTask = nil
+    }
 
     /// Smart playlists whose tracks are currently being loaded, to collapse concurrent
     /// duplicate loads (e.g. PlaylistDetailView firing onAppear + onChange together).
@@ -112,13 +118,16 @@ final class PlaylistManager: ObservableObject {
 
     func reloadFileBackedPlaylists() {
         guard let libraryManager else { return }
+        invalidateFilePlaylistLoad()
 
         let folders = libraryManager.folders
         let dbManager = libraryManager.databaseManager
 
-        Task {
+        filePlaylistLoadTask = Task {
             let result = await playlistFileStore.loadPlaylists(from: folders, databaseManager: dbManager)
+            guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 let smart = self.playlists.filter { $0.type == .smart }
                 self.playlists = self.sortPlaylists(smart: smart, regular: result.playlists)
 
@@ -147,27 +156,24 @@ final class PlaylistManager: ObservableObject {
         return playlist.tracks
     }
     
-    /// Sort playlists: smart playlists first (by dateCreated), then regular playlists (by sortOrder, dateCreated as tiebreaker)
+    /// Keep system playlists first; user order is independent of storage type.
     func sortPlaylists(smart: [Playlist], regular: [Playlist]) -> [Playlist] {
-        let sortedSmart = smart.sorted { $0.dateCreated < $1.dateCreated }
-        let sortedRegular = regular.sorted {
-            $0.sortOrder == $1.sortOrder ? $0.dateCreated < $1.dateCreated : $0.sortOrder < $1.sortOrder
+        let saved = UserDefaults.standard.stringArray(forKey: "playlistSidebarOrder") ?? []
+        let positions = Dictionary(saved.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return (smart + regular).sorted {
+            if $0.isUserEditable != $1.isUserEditable { return !$0.isUserEditable }
+            let left = positions[$0.id.uuidString] ?? Int.max
+            let right = positions[$1.id.uuidString] ?? Int.max
+            if left != right { return left < right }
+            if $0.type != $1.type { return $0.type == .smart }
+            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
-        return sortedSmart + sortedRegular
     }
 
     /// Reorder user playlists and persist the new order
     func reorderPlaylists(_ reorderedPlaylists: [Playlist]) {
-        guard let dbManager = libraryManager?.databaseManager else { return }
-
+        UserDefaults.standard.set(reorderedPlaylists.map { $0.id.uuidString }, forKey: "playlistSidebarOrder")
         playlists = reorderedPlaylists
-
-        Task {
-            do {
-                try await dbManager.updatePlaylistsOrder(reorderedPlaylists)
-            } catch {
-                Logger.error("Failed to reorder playlists: \(error)")
-            }
-        }
     }
 }

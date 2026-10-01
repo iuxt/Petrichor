@@ -68,7 +68,7 @@ enum AMLLTTMLService {
     ) throws -> DownloadedLyrics {
         guard let payload = responseData(data),
               let source = payload["lyrics"] as? String,
-              !TTMLLyricsParser.parse(Data(source.utf8)).isEmpty else { throw LyricsDownloadError.noLyrics }
+              !TTMLLyricsParser.parse(Data(source.utf8)).lines.isEmpty else { throw LyricsDownloadError.noLyrics }
         if let expectedID, (payload["id"] as? NSNumber)?.stringValue != expectedID {
             throw LyricsDownloadError.invalidResponse
         }

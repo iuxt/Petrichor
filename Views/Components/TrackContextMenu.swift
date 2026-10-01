@@ -140,7 +140,7 @@ enum TrackContextMenu {
             case .folder:
                 playlistManager.playTrackFromFolder(track, folderTracks: [track])
             case .playlist(let playlist):
-                if let index = playlist.tracks.firstIndex(of: track) {
+                if let index = playlist.tracks.firstIndex(where: { $0.id == track.id }) {
                     playlistManager.playTrackFromPlaylist(playlist, at: index)
                 }
             }

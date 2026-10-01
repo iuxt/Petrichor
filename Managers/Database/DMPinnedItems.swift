@@ -8,6 +8,14 @@ import Foundation
 import GRDB
 
 extension DatabaseManager {
+    /// File-backed playlists have no row in `playlists`; update their pins directly.
+    func updatePinnedPlaylistName(_ playlist: Playlist) async throws {
+        _ = try await dbQueue.write { db in
+            try PinnedItem.filter(PinnedItem.Columns.playlistId == playlist.id.uuidString)
+                .updateAll(db, PinnedItem.Columns.displayName.set(to: playlist.name))
+        }
+    }
+
     // MARK: - Pinned Items Management
     
     /// Save a pinned item to the database

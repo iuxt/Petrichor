@@ -3,7 +3,7 @@ import GRDB
 
 struct Folder: Identifiable, Hashable, Codable, FetchableRecord, PersistableRecord {
     var id: Int64?
-    let url: URL
+    var url: URL
     var name: String
     var trackCount: Int
     var dateAdded: Date

@@ -93,6 +93,10 @@ extension LibraryManager {
     }
 
     func refreshFolder(_ folder: Folder, hardRefresh: Bool = false) {
+        guard folderLocationsReady else {
+            loadMusicLibrary()
+            return
+        }
         // First, ensure we have a valid bookmark
         Task { [weak self] in
             guard let self = self else { return }

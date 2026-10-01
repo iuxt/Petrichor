@@ -68,6 +68,7 @@ extension PlaylistManager {
         }
 
         do {
+            invalidateFilePlaylistLoad()
             let newPlaylist = try playlistFileStore.createPlaylist(named: name, tracks: tracks, in: defaultFolder)
             playlists.append(newPlaylist)
             playlists = sortPlaylists(
@@ -91,7 +92,22 @@ extension PlaylistManager {
             return
         }
 
+        if playlist.type == .smart {
+            guard let database = libraryManager?.databaseManager else { return }
+            Task {
+                do {
+                    try await database.deletePlaylist(playlist.id)
+                    playlists.removeAll { $0.id == playlist.id }
+                    await handlePlaylistDeletionForPinnedItems(playlist.id)
+                } catch {
+                    NotificationManager.shared.addMessage(.error, error.localizedDescription)
+                }
+            }
+            return
+        }
+
         do {
+            invalidateFilePlaylistLoad()
             try playlistFileStore.delete(playlist)
             playlists.removeAll { $0.id == playlist.id }
             Task { await handlePlaylistDeletionForPinnedItems(playlist.id) }
@@ -110,11 +126,35 @@ extension PlaylistManager {
             Logger.warning("Cannot rename system playlist: \(playlist.name)")
             return
         }
+
+        if playlist.type == .smart {
+            guard let database = libraryManager?.databaseManager else { return }
+            var updated = playlist
+            updated.name = newName
+            updated.dateModified = Date()
+            Task {
+                do {
+                    try await database.updatePlaylistMetadata(updated)
+                    applyRenamedPlaylist(updated)
+                    await libraryManager?.loadPinnedItems()
+                } catch {
+                    NotificationManager.shared.addMessage(.error, error.localizedDescription)
+                }
+            }
+            return
+        }
         
         do {
+            invalidateFilePlaylistLoad()
             let updatedPlaylist = try playlistFileStore.rename(playlist, to: newName)
-            if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
-                playlists[index] = updatedPlaylist
+            applyRenamedPlaylist(updatedPlaylist)
+            Task {
+                do {
+                    try await libraryManager?.databaseManager.updatePinnedPlaylistName(updatedPlaylist)
+                    await libraryManager?.loadPinnedItems()
+                } catch {
+                    Logger.error("Failed to update pinned playlist name: \(error)")
+                }
             }
         } catch {
             Logger.error("Failed to rename playlist file: \(error)")
@@ -123,6 +163,13 @@ extension PlaylistManager {
             }
             reloadFileBackedPlaylists()
         }
+    }
+
+    private func applyRenamedPlaylist(_ updated: Playlist) {
+        if let index = playlists.firstIndex(where: { $0.id == updated.id }) {
+            playlists[index] = updated
+        }
+        if currentPlaylist?.id == updated.id { currentPlaylist = updated }
     }
     
     internal func addTrackToRegularPlaylist(track: Track, playlistID: UUID) async {
@@ -133,36 +180,24 @@ extension PlaylistManager {
         await removeTracksFromPlaylist(tracks: [track], playlistID: playlistID)
     }
 
-    private func persistRegularPlaylistTracks(playlistID: UUID, tracks: [Track]) async {
-        guard let index = await MainActor.run(body: {
-            playlists.firstIndex(where: { $0.id == playlistID })
-        }) else {
-            return
-        }
-
-        let playlist = await MainActor.run { playlists[index] }
+    private func persistRegularPlaylistTracks(playlistID: UUID, tracks: [Track]) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        let playlist = playlists[index]
 
         do {
+            invalidateFilePlaylistLoad()
             let updated = try playlistFileStore.write(tracks: tracks, for: playlist)
-            await MainActor.run {
-                if let currentIndex = self.playlists.firstIndex(where: { $0.id == playlistID }) {
-                    self.playlists[currentIndex] = updated
-                }
-            }
+            playlists[index] = updated
         } catch {
             Logger.error("Failed to write playlist file: \(error)")
-            await MainActor.run {
-                NotificationManager.shared.addMessage(.error, error.localizedDescription)
-                self.reloadFileBackedPlaylists()
-            }
+            NotificationManager.shared.addMessage(.error, error.localizedDescription)
+            reloadFileBackedPlaylists()
         }
     }
 
     /// Add multiple tracks to a playlist
     func addTracksToPlaylist(tracks: [Track], playlistID: UUID) async {
-        guard let playlist = await MainActor.run(body: {
-            playlists.first(where: { $0.id == playlistID && $0.type == .regular && $0.isContentEditable })
-        }) else {
+        guard let playlist = playlists.first(where: { $0.id == playlistID && $0.type == .regular && $0.isContentEditable }) else {
             Logger.warning("Cannot add tracks to this playlist")
             return
         }
@@ -179,14 +214,12 @@ extension PlaylistManager {
 
         guard !newTracks.isEmpty else { return }
 
-        await persistRegularPlaylistTracks(playlistID: playlistID, tracks: playlist.tracks + newTracks)
+        persistRegularPlaylistTracks(playlistID: playlistID, tracks: playlist.tracks + newTracks)
     }
     
     /// Remove multiple tracks from a playlist efficiently
     func removeTracksFromPlaylist(tracks: [Track], playlistID: UUID) async {
-        guard let playlist = await MainActor.run(body: {
-            playlists.first(where: { $0.id == playlistID && $0.type == .regular && $0.isContentEditable })
-        }) else {
+        guard let playlist = playlists.first(where: { $0.id == playlistID && $0.type == .regular && $0.isContentEditable }) else {
             Logger.warning("Cannot remove tracks from this playlist")
             return
         }
@@ -196,14 +229,12 @@ extension PlaylistManager {
             track.trackId.map { !idsToRemove.contains($0) } ?? true
         }
 
-        await persistRegularPlaylistTracks(playlistID: playlistID, tracks: remaining)
+        persistRegularPlaylistTracks(playlistID: playlistID, tracks: remaining)
     }
     
     /// Apply a new track order to a playlist by ID and persist it to the backing M3U file.
     func applyPlaylistTrackOrder(playlistID: UUID, orderedTrackIds: [Int64]) async {
-        guard let playlist = await MainActor.run(body: {
-            playlists.first(where: { $0.id == playlistID && $0.type == .regular && $0.isContentEditable })
-        }) else {
+        guard let playlist = playlists.first(where: { $0.id == playlistID && $0.type == .regular && $0.isContentEditable }) else {
             return
         }
 
@@ -214,6 +245,6 @@ extension PlaylistManager {
 
         guard reordered.count == playlist.tracks.count else { return }
 
-        await persistRegularPlaylistTracks(playlistID: playlistID, tracks: reordered)
+        persistRegularPlaylistTracks(playlistID: playlistID, tracks: reordered)
     }
 }

@@ -13,14 +13,28 @@ final class PlaylistFileStore {
         self.fileManager = fileManager
     }
 
+    /// Legacy M3Us use their path as identity. Remember a moved root without
+    /// modifying playlist files as a side effect of a library scan.
+    static func rememberRelocatedPlaylists(from oldRoot: URL, to newRoot: URL) {
+        var identities = UserDefaults.standard.dictionary(forKey: "relocatedPlaylistIDs") as? [String: String] ?? [:]
+        for file in M3UPlaylistCodec.playlistFiles(in: newRoot) {
+            let oldFile = M3UPlaylistCodec.playlistDirectory(in: oldRoot).appendingPathComponent(file.lastPathComponent)
+            identities[file.standardizedFileURL.path] = identities[oldFile.standardizedFileURL.path]
+                ?? UUID.stablePlaylistID(for: oldFile.standardizedFileURL.path).uuidString
+        }
+        UserDefaults.standard.set(identities, forKey: "relocatedPlaylistIDs")
+    }
+
     func loadPlaylists(from folders: [Folder], databaseManager: DatabaseManager) async -> LoadResult {
         var playlists: [Playlist] = []
         var missingEntries: [URL: [String]] = [:]
         var usedNames = Set<String>()
+        var usedIDs = Set<UUID>()
 
         for folder in folders {
             for fileURL in M3UPlaylistCodec.playlistFiles(in: folder.url, fileManager: fileManager) {
                 do {
+                    try Task.checkCancellation()
                     let content = try M3UPlaylistCodec.readText(from: fileURL)
                     let entries = M3UPlaylistCodec.parseTrackEntries(from: content)
                     let matched = await match(
@@ -29,21 +43,29 @@ final class PlaylistFileStore {
                         fileURL: fileURL,
                         databaseManager: databaseManager
                     )
+                    try Task.checkCancellation()
                     let baseName = fileURL.deletingPathExtension().lastPathComponent
                     let displayName = uniqueName(baseName, usedNames: &usedNames)
                     var playlist = Playlist(
                         name: displayName,
                         tracks: matched.tracks,
-                        fileBacking: PlaylistFileBacking(musicFolderURL: folder.url, fileURL: fileURL)
+                        fileBacking: PlaylistFileBacking(musicFolderURL: folder.url, fileURL: fileURL,
+                                                         unresolvedEntries: matched.missing, sourceContent: content)
                     )
                     playlist.trackCount = matched.tracks.count
                     playlist.dateModified = modificationDate(for: fileURL) ?? Date()
                     playlist = playlist.withStableFileBackedID(for: fileURL)
+                    if let storedID = Self.persistedID(in: content), !usedIDs.contains(storedID) {
+                        playlist.id = storedID
+                    }
+                    usedIDs.insert(playlist.id)
                     playlists.append(playlist)
 
                     if !matched.missing.isEmpty {
                         missingEntries[fileURL] = matched.missing
                     }
+                } catch is CancellationError {
+                    return LoadResult(playlists: [], missingEntries: [:])
                 } catch {
                     Logger.error("Failed to read playlist file \(fileURL.path): \(error)")
                 }
@@ -59,15 +81,14 @@ final class PlaylistFileStore {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
             let fileURL = uniqueFileURL(for: name, in: directory)
-            try write(tracks: tracks, to: fileURL, musicFolder: defaultFolder.url, playlistFileURL: fileURL)
-
             var playlist = Playlist(
                 name: fileURL.deletingPathExtension().lastPathComponent,
                 tracks: tracks,
                 fileBacking: PlaylistFileBacking(musicFolderURL: defaultFolder.url, fileURL: fileURL)
             )
             playlist.trackCount = tracks.count
-            return playlist.withStableFileBackedID(for: fileURL)
+            playlist = playlist.withStableFileBackedID(for: fileURL)
+            return try write(tracks: tracks, for: playlist)
         }
     }
 
@@ -75,19 +96,27 @@ final class PlaylistFileStore {
         guard let backing = playlist.fileBacking else { throw PlaylistFileStoreError.missingBackingFile }
 
         return try withSecurityScope(for: backing.musicFolderURL) {
+            let original = try checkedContent(for: backing)
             let target = uniqueFileURL(
                 for: newName,
                 in: backing.fileURL.deletingLastPathComponent(),
                 excluding: backing.fileURL
             )
 
-            try fileManager.moveItem(at: backing.fileURL, to: target)
+            // An M3U comment keeps identity portable across renames and restarts.
+            // Preserve all original entries, including currently unresolved ones.
+            let content = Self.content(original, preservingID: playlist.id)
+            try content.write(to: backing.fileURL, atomically: true, encoding: .utf8)
+            if target.standardizedFileURL != backing.fileURL.standardizedFileURL {
+                try fileManager.moveItem(at: backing.fileURL, to: target)
+            }
 
             var updated = playlist
             updated.name = target.deletingPathExtension().lastPathComponent
             updated.dateModified = Date()
-            updated.fileBacking = PlaylistFileBacking(musicFolderURL: backing.musicFolderURL, fileURL: target)
-            return updated.withStableFileBackedID(for: target)
+            updated.fileBacking = PlaylistFileBacking(musicFolderURL: backing.musicFolderURL, fileURL: target,
+                                                      unresolvedEntries: backing.unresolvedEntries, sourceContent: content)
+            return updated
         }
     }
 
@@ -135,21 +164,47 @@ final class PlaylistFileStore {
 
     func write(tracks: [Track], for playlist: Playlist) throws -> Playlist {
         guard let backing = playlist.fileBacking else { throw PlaylistFileStoreError.missingBackingFile }
-
+        var content = M3UPlaylistCodec.render(trackURLs: tracks.map(\.url), musicFolder: backing.musicFolderURL,
+                                             playlistFileURL: backing.fileURL)
+        for entry in backing.unresolvedEntries { content += entry + "\r\n" }
+        content = Self.content(content, preservingID: playlist.id)
         try withSecurityScope(for: backing.musicFolderURL) {
-            try write(tracks: tracks, to: backing.fileURL, musicFolder: backing.musicFolderURL, playlistFileURL: backing.fileURL)
+            if backing.sourceContent != nil { _ = try checkedContent(for: backing) }
+            try content.write(to: backing.fileURL, atomically: true, encoding: .utf8)
         }
 
         var updated = playlist
         updated.tracks = tracks
         updated.trackCount = tracks.count
         updated.dateModified = Date()
+        updated.fileBacking?.sourceContent = content
         return updated
     }
 
-    private func write(tracks: [Track], to fileURL: URL, musicFolder: URL, playlistFileURL: URL) throws {
-        let content = M3UPlaylistCodec.render(trackURLs: tracks.map(\.url), musicFolder: musicFolder, playlistFileURL: playlistFileURL)
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+    private func checkedContent(for backing: PlaylistFileBacking) throws -> String {
+        let content = try M3UPlaylistCodec.readText(from: backing.fileURL)
+        if let expected = backing.sourceContent, content != expected {
+            throw PlaylistFileStoreError.fileChanged
+        }
+        return content
+    }
+
+    private static let identityPrefix = "#PETRICHOR-ID:"
+
+    private static func persistedID(in content: String) -> UUID? {
+        content.components(separatedBy: .newlines).lazy.compactMap { line -> UUID? in
+            guard line.hasPrefix(identityPrefix) else { return nil }
+            return UUID(uuidString: String(line.dropFirst(identityPrefix.count)).trimmingCharacters(in: .whitespaces))
+        }.first
+    }
+
+    private static func content(_ content: String, preservingID id: UUID) -> String {
+        if persistedID(in: content) == id { return content }
+        let lines = content.components(separatedBy: .newlines).filter {
+            !$0.isEmpty && !$0.hasPrefix(identityPrefix)
+        }
+        return (["#EXTM3U", identityPrefix + id.uuidString] + lines.filter { $0 != "#EXTM3U" })
+            .joined(separator: "\r\n") + "\r\n"
     }
 
     /// Run `body` while holding a security-scoped resource reference on `folderURL`.
@@ -180,6 +235,7 @@ final class PlaylistFileStore {
         var seen = Set<Int64>()
 
         for entry in entries {
+            if Task.isCancelled { return ([], []) }
             var matched: Track?
             for path in M3UPlaylistCodec.pathVariations(for: entry, musicFolder: musicFolder, playlistFileURL: fileURL) {
                 if let track = await databaseManager.findTrackByPath(path) {
@@ -233,6 +289,7 @@ final class PlaylistFileStore {
 enum PlaylistFileStoreError: LocalizedError {
     case missingBackingFile
     case missingDefaultMusicFolder
+    case fileChanged
 
     var errorDescription: String? {
         switch self {
@@ -240,6 +297,8 @@ enum PlaylistFileStoreError: LocalizedError {
             return String(appLocalized: "The playlist file could not be found.")
         case .missingDefaultMusicFolder:
             return String(appLocalized: "Add a music folder before creating playlists.")
+        case .fileChanged:
+            return String(appLocalized: "The playlist file changed outside the app. Reload it before editing again.")
         }
     }
 }
@@ -247,7 +306,9 @@ enum PlaylistFileStoreError: LocalizedError {
 extension Playlist {
     func withStableFileBackedID(for fileURL: URL) -> Playlist {
         var copy = self
-        copy.id = UUID.stablePlaylistID(for: fileURL.standardizedFileURL.path)
+        let path = fileURL.standardizedFileURL.path
+        let identities = UserDefaults.standard.dictionary(forKey: "relocatedPlaylistIDs") as? [String: String] ?? [:]
+        copy.id = identities[path].flatMap(UUID.init(uuidString:)) ?? UUID.stablePlaylistID(for: path)
         return copy
     }
 }

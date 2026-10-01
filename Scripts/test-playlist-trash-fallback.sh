@@ -19,6 +19,8 @@ struct Folder {
 struct PlaylistFileBacking {
     let musicFolderURL: URL
     let fileURL: URL
+    var unresolvedEntries: [String] = []
+    var sourceContent: String? = nil
 }
 
 struct Playlist {

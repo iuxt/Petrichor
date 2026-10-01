@@ -121,6 +121,17 @@ struct PlaybackState: Codable {
     }
 
     // Helper to convert back to RepeatMode enum
+    func restoredQueueIndex(in tracks: [Track]) -> Int {
+        guard !tracks.isEmpty else { return -1 }
+        if let id = currentTrackId, let index = tracks.firstIndex(where: { $0.trackId == id }) {
+            return index
+        }
+        if let path = currentTrackPath, let index = tracks.firstIndex(where: { $0.url.path == path }) {
+            return index
+        }
+        return min(max(0, currentQueueIndex), tracks.count - 1)
+    }
+
     var repeatModeEnum: RepeatMode {
         switch repeatMode {
         case "one": return .one

@@ -6,7 +6,7 @@ import GRDB
 @MainActor
 final class LyricsStore {
     static let shared = LyricsStore()
-    private init() {}
+    private var scriptObserver: NSObjectProtocol?
 
     struct Lyrics {
         let trackId: UUID
@@ -14,13 +14,36 @@ final class LyricsStore {
         let source: LyricsSource
         let hasTimed: Bool
         let isKaraoke: Bool
+        let availableScripts: [LyricScript]
     }
+
+    /// Writing script loads parse with; injectable so tests can pin it.
+    var scriptResolver: () -> LyricScript = { LyricsScriptSettings.shared.effectiveScript }
 
     private var cached: Lyrics?
     private var cachedURL: URL?
     private var inFlight: [UUID: Task<Lyrics, Error>] = [:]
     private var loadIDs: [UUID: UUID] = [:]
     private var loadURLs: [UUID: URL] = [:]
+
+    private init() {
+        // Cached lines are parsed for one script; a preference switch drops them
+        // so every consumer reloads in the newly resolved script. Synchronous so
+        // views reloading in the same notification pass already miss the cache.
+        scriptObserver = NotificationCenter.default.addObserver(
+            forName: .lyricsScriptPreferenceDidChange, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                LyricsStore.shared.invalidateAll()
+            }
+        }
+    }
+
+    deinit {
+        if let scriptObserver {
+            NotificationCenter.default.removeObserver(scriptObserver)
+        }
+    }
 
     func invalidate(for audioURL: URL) {
         let url = audioURL.standardizedFileURL
@@ -29,6 +52,14 @@ final class LyricsStore {
             cachedURL = nil
         }
         for trackID in loadURLs.filter({ $0.value == url }).map(\.key) {
+            cancelInFlightLoad(for: trackID)
+        }
+    }
+
+    func invalidateAll() {
+        cached = nil
+        cachedURL = nil
+        for trackID in Array(loadIDs.keys) {
             cancelInFlightLoad(for: trackID)
         }
     }
@@ -58,13 +89,15 @@ final class LyricsStore {
 
         let trackId = track.id
         let loadID = UUID()
+        let script = scriptResolver()
         // Run the lyrics load on a background executor so file IO (`Data(contentsOf:)`)
         // and the DB read don't block the main actor. `Task.detached` inherits no actor,
         // so the work runs off-main even though `LyricsStore` itself is `@MainActor`.
         let task = Task.detached(priority: .userInitiated) { () throws -> Lyrics in
             let result = try await LyricsLoader.loadLyrics(
                 for: track,
-                using: dbQueue
+                using: dbQueue,
+                script: script
             )
             let hasTimed = result.lyrics.contains { $0.startTime > 0 || $0.endTime != nil }
             return Lyrics(
@@ -72,7 +105,8 @@ final class LyricsStore {
                 lines: result.lyrics,
                 source: result.source,
                 hasTimed: hasTimed,
-                isKaraoke: result.lyrics.contains { $0.timingSegments?.isEmpty == false }
+                isKaraoke: result.lyrics.contains { $0.timingSegments?.isEmpty == false },
+                availableScripts: result.availableScripts
             )
         }
         inFlight[trackId] = task

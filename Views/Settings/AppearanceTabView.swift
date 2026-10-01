@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AppearanceTabView: View {
     @EnvironmentObject private var localizationSettings: LocalizationSettings
+    @ObservedObject private var lyricsScriptSettings = LyricsScriptSettings.shared
 
     @AppStorage("colorMode")
     private var colorMode: ColorMode = .auto
@@ -61,6 +62,13 @@ struct AppearanceTabView: View {
         Binding(
             get: { localizationSettings.appLanguage },
             set: { localizationSettings.select($0) }
+        )
+    }
+
+    private var lyricsScriptSelection: Binding<LyricsScriptPreference> {
+        Binding(
+            get: { lyricsScriptSettings.preference },
+            set: { lyricsScriptSettings.select($0) }
         )
     }
 
@@ -137,6 +145,16 @@ struct AppearanceTabView: View {
                     fontSize: $sidePanelLyricsFontSize,
                     fontSizeRange: 10.0...28.0
                 )
+            }
+
+            Section("Lyrics Script") {
+                Picker("Lyrics Script", selection: lyricsScriptSelection) {
+                    ForEach(LyricsScriptPreference.allCases) { preference in
+                        Text(preference.title)
+                            .tag(preference)
+                    }
+                }
+                .help("Chooses the writing script for lyrics that carry several, such as Apple TTML with embedded translations")
             }
 
             Section("Customization") {

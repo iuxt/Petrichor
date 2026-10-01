@@ -31,6 +31,9 @@ final class LyricsDownloadSettings: ObservableObject {
     @Published var automaticallyDownload: Bool {
         didSet { defaults.set(automaticallyDownload, forKey: "lyricsAutoDownload") }
     }
+    @Published var automaticallyDownloadArtwork: Bool {
+        didSet { defaults.set(automaticallyDownloadArtwork, forKey: "artworkAutoDownload") }
+    }
     @Published var source: LyricsSearchSource {
         didSet { defaults.set(source.rawValue, forKey: "lyricsDownloadSource") }
     }
@@ -45,6 +48,8 @@ final class LyricsDownloadSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         automaticallyDownload = defaults.bool(forKey: "lyricsAutoDownload")
+        // Do not extend an existing lyrics-only permission to artwork downloads.
+        automaticallyDownloadArtwork = defaults.bool(forKey: "artworkAutoDownload")
         source = LyricsSearchSource(rawValue: defaults.string(forKey: "lyricsDownloadSource") ?? "") ?? .amll
         includeTranslation = defaults.object(forKey: "lyricsDownloadTranslation") as? Bool ?? true
         artworkSource = OnlineTagProvider(rawValue: defaults.string(forKey: "artworkDownloadSource") ?? "") ?? .netease

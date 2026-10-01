@@ -164,15 +164,23 @@ extension DatabaseManager {
             // the scan enumerates files), so symlink-resolved / un-trailing-slashed
             // paths don't cause a false miss and a duplicate insert.
             if let existingFullTrack = existingFullTracksByPath[fileURL.standardizedFileURL.path] {
-                // Re-extract complete metadata on hardRefresh
-                if hardRefresh {
+                // Re-extract complete metadata on hardRefresh, or when the stored
+                // duration is unusable: a zero duration means the original parse
+                // failed (e.g. the file was still an undownloaded cloud-sync
+                // placeholder at import time), and hydration does not change
+                // mtime, so the modification-date skip below would never heal it.
+                if hardRefresh || HelperUtils.needsMetadataHealing(existingFullTrack.duration) {
                     let metadata = await MetadataEngine.extractMetadata(from: fileURL)
 
                     var updatedTrack = existingFullTrack
-                    _ = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
+                    let hasChanges = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
 
-                    // Always return as update during hard refresh
-                    return (fileURL, .update(updatedTrack, metadata))
+                    // Hard refresh always persists the re-read; healing only
+                    // persists when the re-parse recovered usable values.
+                    if hardRefresh || hasChanges {
+                        return (fileURL, .update(updatedTrack, metadata))
+                    }
+                    return (fileURL, .skipped)
                 }
 
                 // Check if file has been modified. Prefer the modification date

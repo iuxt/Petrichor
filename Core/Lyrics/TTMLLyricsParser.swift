@@ -1,26 +1,103 @@
 import Foundation
 
+/// Writing-script variant of a TTML's lyrics. Apple TTML keeps one script in the
+/// `<p>` body and embeds the other as word-timed replacement text under
+/// `<translations>`, keyed to each line's `itunes:key`.
+enum LyricScript: String, CaseIterable, Sendable {
+    case original
+    case simplified
+    case traditional
+
+    /// Maps a BCP-47 tag like `zh-Hans-CN` or `zh-TW` to a script variant.
+    /// Foreign-language replacements are real translations, not script variants.
+    init?(languageTag: String) {
+        let tag = languageTag.lowercased()
+        func matches(_ roots: String...) -> Bool {
+            roots.contains { tag == $0 || tag.hasPrefix($0 + "-") }
+        }
+        if matches("zh-hans", "zh-cn", "zh-sg", "zh-my") {
+            self = .simplified
+        } else if matches("zh-hant", "zh-tw", "zh-hk", "zh-mo") {
+            self = .traditional
+        } else {
+            return nil
+        }
+    }
+}
+
+struct ParsedTTML: Sendable {
+    let lines: [LyricLine]
+    /// Scripts this file can render: the body plus every mapped replacement block.
+    let availableScripts: [LyricScript]
+}
+
 /// Reads the timed text in a local TTML file into the same line/word model as KSC and enhanced LRC.
 /// Metadata, translations and romanization are auxiliary tracks, not part of the sung line.
 enum TTMLLyricsParser {
-    static func parse(_ data: Data) -> [LyricLine] {
+    static func parse(_ data: Data, script: LyricScript = .original) -> ParsedTTML {
         let document = Document()
         let parser = XMLParser(data: data)
         parser.delegate = document
         parser.shouldResolveExternalEntities = false
         guard parser.parse(),
               let root = document.root.children.first(where: { $0.name == "tt" }),
-              let body = root.children.first(where: { $0.name == "body" }) else { return [] }
+              let body = root.children.first(where: { $0.name == "body" }) else {
+            return ParsedTTML(lines: [], availableScripts: [.original])
+        }
 
         var paragraphs: [Element] = []
         findParagraphs(in: body, into: &paragraphs)
         let duetSides = performerSides(in: root, paragraphs: paragraphs)
-        return paragraphs.enumerated().compactMap { index, paragraph -> (Int, LyricLine)? in
-            guard let line = line(from: paragraph, duetSide: paragraph.attributes["agent"].flatMap { duetSides[$0] }) else { return nil }
+        let replacements = replacementTexts(in: root)
+        let lines = paragraphs.enumerated().compactMap { index, paragraph -> (Int, LyricLine)? in
+            // Replacement text reuses the line's own timing and performer, so
+            // lines without a matching entry simply keep the original words.
+            var source = paragraph
+            if script != .original,
+               let key = paragraph.attributes["key"],
+               let replacement = replacements[script]?[key] {
+                source = replacedParagraph(for: paragraph, with: replacement)
+            }
+            guard let line = line(from: source, duetSide: source.attributes["agent"].flatMap { duetSides[$0] }) else { return nil }
             return (index, line)
         }.sorted {
             $0.1.startTime == $1.1.startTime ? $0.0 < $1.0 : $0.1.startTime < $1.1.startTime
         }.map(\.1)
+        let availableScripts = LyricScript.allCases.filter { $0 == .original || replacements[$0]?.isEmpty == false }
+        return ParsedTTML(lines: lines, availableScripts: availableScripts)
+    }
+
+    private static func replacementTexts(in root: Element) -> [LyricScript: [String: Element]] {
+        guard let head = root.children.first(where: { $0.name == "head" }) else { return [:] }
+        var blocks: [Element] = []
+        findElements(named: "translations", in: head, into: &blocks)
+        var result: [LyricScript: [String: Element]] = [:]
+        for block in blocks {
+            for translation in block.children where translation.name == "translation" {
+                guard translation.attributes["type"] == "replacement",
+                      let lang = translation.attributes["lang"],
+                      let target = LyricScript(languageTag: lang) else { continue }
+                for text in translation.children where text.name == "text" {
+                    if let key = text.attributes["for"] {
+                        result[target, default: [:]][key] = text
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private static func replacedParagraph(for paragraph: Element, with text: Element) -> Element {
+        let replacement = Element(name: "p", attributes: paragraph.attributes)
+        replacement.parts = text.parts
+        return replacement
+    }
+
+    private static func findElements(named name: String, in element: Element, into found: inout [Element]) {
+        for child in element.children {
+            if child.name == name { found.append(child) }
+            else { findElements(named: name, in: child, into: &found) }
+        }
     }
 
     private static func findParagraphs(in element: Element, into paragraphs: inout [Element]) {

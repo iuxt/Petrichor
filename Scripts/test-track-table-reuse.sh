@@ -53,7 +53,19 @@ struct Track: Identifiable, Equatable {
     var trackId: Int64? { Int64(id) }
     var albumId: Int64? { 1 }
     var album: String { "Album" }
-    var title: String { "Track \(id)" }
+    var titleOverride: String? = nil
+    var title: String { titleOverride ?? "Track \(id)" }
+    var format: String { url.pathExtension }
+    var folderId: Int64? = nil
+    var lossless: Bool? = nil
+    var codec: String? = nil
+    var bitrate: Int? = nil
+    var sampleRate: Int? = nil
+    var channels: Int? = nil
+    var albumArtist: String? = nil
+    var lastPlayedDate: Date? = nil
+    var isDuplicate = false
+    var albumArtworkData: Data? = nil
     var artist: String { "Artist" }
     var genre: String { "Genre" }
     var year: String { "2026" }
@@ -87,6 +99,15 @@ import SwiftUI
 
 
 SWIFT
+# Match production equality, including metadata-only updates with the same ID.
+python3 - "$test_dir/Stubs.swift" <<'PYTHON'
+from pathlib import Path
+import sys
+source = Path('Models/Core/Track.swift').read_text()
+method = source[source.index('    static func =='):source.index('    // MARK: - Hashable')]
+with open(sys.argv[1], 'a') as output:
+    output.write('\nextension Track {\n' + method + '\n}\n')
+PYTHON
 # Use the actual sort mapping, without its unrelated dropdown UI.
 sed '/\/\/ MARK: - TrackTableOptionsDropdown/,$d' Views/Components/TrackViews/TrackTableOptionsDropdown.swift >> "$test_dir/Stubs.swift"
 cat > "$test_dir/UI.swift" <<'SWIFT'
@@ -207,6 +228,19 @@ struct ScrollTest: View {
             let stats = await TrackThumbnailCache.shared.statistics
             print("Cache: images=\(stats.cached), active=\(stats.active), pending=\(stats.pending), waiters=\(stats.waiters)")
             #endif
+            var editedTracks = coordinator.parent.tracks
+            editedTracks[3999].titleOverride = "Edited title"
+            let previous = coordinator.parent
+            coordinator.update(NativeTrackTable(
+                tracks: editedTracks, selection: .constant(previous.selection), sortOrder: .constant(previous.sortOrder),
+                customization: .constant(previous.customization), rowSize: previous.rowSize,
+                currentTrack: previous.currentTrack, isPlaying: previous.isPlaying, artworkRevision: previous.artworkRevision,
+                onPlay: previous.onPlay, onDoubleClick: previous.onDoubleClick, menuItems: previous.menuItems))
+            table.layoutSubtreeIfNeeded()
+            let editedCell = table.view(atColumn: titleColumn, row: 3999, makeIfNecessary: true) as! NativeTrackTitleCell
+            precondition(editedCell.textField?.stringValue == "Edited title",
+                         "Native cells must repaint metadata changes even when track IDs and ordering are unchanged")
+            print("Native metadata refresh regression passed")
             heartbeat?.invalidate()
             NSApp.terminate(nil)
         }

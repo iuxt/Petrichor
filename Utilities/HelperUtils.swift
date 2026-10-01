@@ -14,6 +14,18 @@ enum HelperUtils {
         seconds.isFinite && seconds >= 0 ? seconds : 0
     }
 
+    /// True when a stored duration is unusable (missing, zero, or invalid),
+    /// meaning the original metadata parse failed — typically because the file
+    /// was still an undownloaded cloud-sync placeholder at import time. Such
+    /// records must be re-parsed on the next scan even if the file's
+    /// modification date is unchanged, since placeholder hydration keeps mtime.
+    /// - Parameter seconds: Stored duration in seconds, if any.
+    /// - Returns: Whether the record needs a metadata re-parse to heal.
+    static func needsMetadataHealing(_ seconds: Double?) -> Bool {
+        guard let seconds else { return true }
+        return sanitizedDuration(seconds) <= 0
+    }
+
     /// Sanitizes a duration and converts it to whole seconds.
     /// This method is safe to call before `Int` conversion because invalid values are normalized first.
     /// - Parameter seconds: Duration in seconds.

@@ -46,7 +46,7 @@ final class AutomaticArtworkDownloader {
     deinit { task?.cancel() }
 
     private func update(track: Track?, isPlaying: Bool, playbackManager: PlaybackManager) {
-        guard settings.automaticallyDownload, isPlaying, let track else {
+        guard settings.automaticallyDownloadArtwork, isPlaying, let track else {
             task?.cancel()
             task = nil
             activeKey = nil
@@ -94,9 +94,10 @@ final class AutomaticArtworkDownloader {
     }
 
     /// The user chose this provider result and then saved its tags to the audio file.
-    /// This path does not depend on playback or automatic download preferences.
+    /// Requires the independent artwork opt-in, but does not depend on playback.
     func downloadAfterTagSave(_ candidate: OnlineTagCandidate, audioURL: URL,
                               album: String, playbackManager: PlaybackManager) {
+        guard settings.automaticallyDownloadArtwork else { return }
         Task { [weak self, weak playbackManager] in
             guard let self else { return }
             do {

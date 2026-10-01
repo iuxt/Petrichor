@@ -44,7 +44,9 @@ extension PlaylistManager {
             return
         }
 
-        let insertIndex = currentQueueIndex + 1
+        // Moving the playing entry would detach the queue cursor from the engine.
+        if currentQueue.indices.contains(currentQueueIndex),
+           isSameTrack(currentQueue[currentQueueIndex], track) { return }
 
         if let existingIndex = currentQueue.firstIndex(where: { isSameTrack($0, track) }) {
             currentQueue.remove(at: existingIndex)
@@ -53,7 +55,7 @@ extension PlaylistManager {
             }
         }
 
-        currentQueue.insert(track, at: min(insertIndex, currentQueue.count))
+        currentQueue.insert(track, at: min(currentQueueIndex + 1, currentQueue.count))
         Logger.info("Added track to playback queue to play up next")
     }
 
@@ -102,6 +104,15 @@ extension PlaylistManager {
 
         if index < currentQueueIndex {
             currentQueueIndex -= 1
+        }
+    }
+
+    /// Called only after a file move succeeds. Keep the playing entry anchored
+    /// while removing every queued copy of a different, now-unavailable track.
+    func removeTrashedTrackFromQueue(_ track: Track) {
+        for index in currentQueue.indices.reversed()
+        where isSameTrack(currentQueue[index], track) {
+            removeFromQueue(at: index)
         }
     }
 

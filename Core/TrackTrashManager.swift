@@ -146,6 +146,7 @@ enum TrackTrashManager {
         if advanceAfterMove {
             coordinator.playbackManager.handleTrackMovedToTrash(track)
         }
+        coordinator.playlistManager.removeTrashedTrackFromQueue(track)
 
         var failedSidecars: [URL] = []
         for url in sidecars {

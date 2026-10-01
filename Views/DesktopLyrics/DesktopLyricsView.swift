@@ -51,6 +51,9 @@ struct DesktopLyricsView: View {
                       url.standardizedFileURL == playbackManager.currentTrack?.url.standardizedFileURL else { return }
                 provider.currentTrackChanged()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .lyricsScriptPreferenceDidChange)) { _ in
+                provider.currentTrackChanged()
+            }
             .onChange(of: playbackManager.isPlaying) { _, isPlaying in
                 provider.playbackStateChanged(isPlaying: isPlaying)
             }
