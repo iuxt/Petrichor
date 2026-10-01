@@ -456,7 +456,10 @@ struct ContentView: View {
             .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
         .hidden(isImmersiveToolbarItemsHidden)
-        .adaptiveSharedBackgroundHidden(isImmersiveToolbarContentHidden)
+
+        // Keep the default shared backgrounds attached to tab/search items.
+        // Toggling background visibility can leave their native glass
+        // hidden after closing immersive mode; hiding the whole item suffices.
 
         ToolbarItem(placement: .confirmationAction) {
             NotificationTray()
@@ -478,7 +481,6 @@ struct ContentView: View {
             .immersiveToolbarTransition(isHidden: isImmersiveToolbarContentHidden)
         }
         .hidden(isImmersiveToolbarItemsHidden)
-        .adaptiveSharedBackgroundHidden(isImmersiveToolbarContentHidden)
     }
     
     // MARK: - Event Handlers

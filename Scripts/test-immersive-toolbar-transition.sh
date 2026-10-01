@@ -51,14 +51,19 @@ if ! rg -nF '.toolbarBackground(isImmersiveActive ? .hidden : .automatic, for: .
     exit 1
 fi
 
-background_count="$(rg -cF '.adaptiveSharedBackgroundHidden(isImmersiveToolbarContentHidden)' "$source_file" || true)"
-if [[ "$background_count" -ne 2 ]]; then
-    printf 'Modern tab and search toolbar backgrounds must follow immersive content visibility.\n' >&2
+if rg -n 'adaptiveSharedBackgroundHidden\([^)]*isImmersive|\.sharedBackgroundVisibility\(' "$source_file" >/dev/null; then
+    printf 'Immersive mode must hide whole toolbar items and preserve default tab/search backgrounds for restoration.\n' >&2
     exit 1
 fi
 
-if ! rg -nU '(?s)func adaptiveSharedBackgroundHidden\(_ isHidden: Bool = true\).*?#if compiler\(>=6\.2\).*?self\.sharedBackgroundVisibility\(isHidden \? \.hidden : \.automatic\)' "$extensions_file" >/dev/null; then
-    printf 'Shared toolbar backgrounds must restore on close and keep Xcode 16 compatibility.\n' >&2
+background_count="$(rg -cF '.adaptiveSharedBackgroundHidden()' "$source_file" || true)"
+if [[ "$background_count" -ne 1 ]]; then
+    printf 'Only the notification toolbar item should permanently hide its shared background.\n' >&2
+    exit 1
+fi
+
+if ! rg -nU '(?s)func adaptiveSharedBackgroundHidden\(\).*?#if compiler\(>=6\.2\).*?self\.sharedBackgroundVisibility\(\.hidden\)' "$extensions_file" >/dev/null; then
+    printf 'The static notification background helper must keep Xcode 16 compatibility.\n' >&2
     exit 1
 fi
 

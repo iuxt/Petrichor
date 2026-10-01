@@ -58,6 +58,13 @@ sudo xattr -r -d com.apple.quarantine /Applications/Petrichor.app
 
 在线歌词的 TTML 来源是 [AMLL TTML DataBase Git 仓库](https://github.com/amll-dev/amll-ttml-db.git)，通过其 [官方 API](https://amll.dev/reference/http-api/native) 搜索和获取。手动搜索及自动下载都只请求所选来源；QQ 音乐和网易云音乐的歌词保留为 LRC。自动下载只在用户开启开关、播放缺少歌词的歌曲且匹配可靠时运行。
 
+从Apple Music提取ttml歌词：
+
+```bash
+python3 Scripts/export-apple-music-ttml.py list
+python3 Scripts/export-apple-music-ttml.py save 歌曲ID --output ~/Downloads/歌名.ttml
+```
+
 #### 设计思路
 
 - **统一显示模型**：各种格式都转换为“歌词行 + 逐字时间片”，让主窗口、迷你播放器、沉浸模式和桌面歌词共用高亮逻辑。
@@ -71,9 +78,8 @@ sudo xattr -r -d com.apple.quarantine /Applications/Petrichor.app
 ### 动机
  
 我多年来收藏了大量音乐文件，却一直怀念 macOS 上有一款好用的离线音乐播放器。我试过几款免费和付费的方案，
-但都缺少流媒体应用里常见的那种简洁与功能，于是我开发了 Petrichor 来满足这个需求，同时也顺便学习
-Swift 和 macOS 应用开发！
- 
+但都缺少流媒体应用里常见的那种简洁与功能，于是我开发了 Petrichor 来满足这个需求。
+
 ### 实现概览
  
 - 使用 Swift 和 SwiftUI 构建，部分采用 AppKit 以获得最佳的 macOS 集成。
@@ -82,209 +88,6 @@ Swift 和 macOS 应用开发！
 - 曲目搜索由 [SQLite FTS5](https://www.sqlite.org/fts5.html) 处理。
 - 播放由 [AVFoundation](https://developer.apple.com/av-foundation/) 和第三方音频解码器处理。
  
-<details>
-<summary>查看数据库 Schema</summary>
- 
-```mermaid
-erDiagram
-    folders {
-        INTEGER id PK "AUTO_INCREMENT"
-        TEXT name "NOT NULL"
-        TEXT path "NOT NULL UNIQUE"
-        INTEGER track_count "NOT NULL DEFAULT 0"
-        DATETIME date_added "NOT NULL"
-        DATETIME date_updated "NOT NULL"
-        BLOB bookmark_data "Security-scoped bookmark"
-    }
- 
-    artists {
-        INTEGER id PK "AUTO_INCREMENT"
-        TEXT name "NOT NULL"
-        TEXT normalized_name "NOT NULL UNIQUE"
-        TEXT sort_name
-        BLOB artwork_data
-        TEXT bio
-        TEXT bio_source
-        DATETIME bio_updated_at
-        TEXT image_url
-        TEXT image_source
-        DATETIME image_updated_at
-        TEXT discogs_id
-        TEXT musicbrainz_id
-        TEXT spotify_id
-        TEXT apple_music_id
-        TEXT country
-        INTEGER formed_year
-        INTEGER disbanded_year
-        TEXT genres "JSON array"
-        TEXT websites "JSON array"
-        TEXT members "JSON array"
-        INTEGER total_tracks "NOT NULL DEFAULT 0 CHECK >= 0"
-        INTEGER total_albums "NOT NULL DEFAULT 0 CHECK >= 0"
-        DATETIME created_at "NOT NULL"
-        DATETIME updated_at "NOT NULL"
-    }
- 
-    albums {
-        INTEGER id PK "AUTO_INCREMENT"
-        TEXT title "NOT NULL"
-        TEXT normalized_title "NOT NULL"
-        TEXT sort_title
-        BLOB artwork_data
-        TEXT release_date
-        INTEGER release_year "CHECK 1900-2100"
-        TEXT album_type
-        INTEGER total_tracks "CHECK >= 0"
-        INTEGER total_discs "CHECK >= 0"
-        TEXT description
-        TEXT review
-        TEXT review_source
-        TEXT cover_art_url
-        TEXT thumbnail_url
-        TEXT discogs_id
-        TEXT musicbrainz_id
-        TEXT spotify_id
-        TEXT apple_music_id
-        TEXT label
-        TEXT catalog_number
-        TEXT barcode
-        TEXT genres "JSON array"
-        DATETIME created_at "NOT NULL"
-        DATETIME updated_at "NOT NULL"
-    }
- 
-    album_artists {
-        INTEGER album_id FK "NOT NULL"
-        INTEGER artist_id FK "NOT NULL"
-        TEXT role "NOT NULL DEFAULT 'primary'"
-        INTEGER position "NOT NULL DEFAULT 0"
-    }
- 
-    genres {
-        INTEGER id PK "AUTO_INCREMENT"
-        TEXT name "NOT NULL UNIQUE"
-    }
- 
-    tracks {
-        INTEGER id PK "AUTO_INCREMENT"
-        INTEGER folder_id FK "NOT NULL"
-        INTEGER album_id FK
-        TEXT path "NOT NULL UNIQUE"
-        TEXT filename "NOT NULL"
-        TEXT title
-        TEXT artist
-        TEXT album
-        TEXT composer
-        TEXT genre
-        TEXT year
-        REAL duration "CHECK >= 0"
-        TEXT format
-        INTEGER file_size
-        DATETIME date_added "NOT NULL"
-        DATETIME date_modified
-        BLOB track_artwork_data
-        INTEGER play_count "NOT NULL DEFAULT 0"
-        DATETIME last_played_date
-        BOOLEAN is_duplicate "NOT NULL DEFAULT false"
-        INTEGER primary_track_id FK
-        TEXT duplicate_group_id
-        TEXT album_artist
-        INTEGER track_number "CHECK > 0"
-        INTEGER total_tracks
-        INTEGER disc_number "CHECK > 0"
-        INTEGER total_discs
-        INTEGER rating "CHECK 0-5"
-        BOOLEAN compilation "DEFAULT false"
-        TEXT release_date
-        TEXT original_release_date
-        INTEGER bpm
-        TEXT media_type "Music/Audiobook/Podcast"
-        INTEGER bitrate "CHECK > 0"
-        INTEGER sample_rate
-        INTEGER channels "1=mono, 2=stereo"
-        TEXT codec
-        INTEGER bit_depth
-        TEXT sort_title
-        TEXT sort_artist
-        TEXT sort_album
-        TEXT sort_album_artist
-        TEXT extended_metadata "JSON"
-    }
- 
-    playlists {
-        TEXT id PK "UUID"
-        TEXT name "NOT NULL"
-        TEXT type "NOT NULL (regular/smart)"
-        BOOLEAN is_user_editable "NOT NULL"
-        BOOLEAN is_content_editable "NOT NULL"
-        DATETIME date_created "NOT NULL"
-        DATETIME date_modified "NOT NULL"
-        BLOB cover_artwork_data
-        TEXT smart_criteria "JSON"
-        INTEGER sort_order "NOT NULL DEFAULT 0"
-    }
- 
-    playlist_tracks {
-        TEXT playlist_id FK "NOT NULL"
-        INTEGER track_id FK "NOT NULL"
-        INTEGER position "NOT NULL"
-        DATETIME date_added "NOT NULL"
-    }
- 
-    track_artists {
-        INTEGER track_id FK "NOT NULL"
-        INTEGER artist_id FK "NOT NULL"
-        TEXT role "NOT NULL DEFAULT 'artist'"
-        INTEGER position "NOT NULL DEFAULT 0"
-    }
- 
-    track_genres {
-        INTEGER track_id FK "NOT NULL"
-        INTEGER genre_id FK "NOT NULL"
-    }
- 
-    pinned_items {
-        INTEGER id PK "AUTO_INCREMENT"
-        TEXT item_type "NOT NULL (library/playlist)"
-        TEXT filter_type "For library items"
-        TEXT filter_value "Artist/album name"
-        TEXT entity_id "UUID for entities"
-        INTEGER artist_id "Database ID"
-        INTEGER album_id "Database ID"
-        TEXT playlist_id "For playlist items"
-        TEXT display_name "NOT NULL"
-        TEXT subtitle "For albums"
-        TEXT icon_name "NOT NULL"
-        INTEGER sort_order "NOT NULL DEFAULT 0"
-        DATETIME date_added "NOT NULL"
-    }
- 
-    tracks_fts {
-        INTEGER track_id "NOT INDEXED"
-        TEXT title
-        TEXT artist
-        TEXT album
-        TEXT album_artist
-        TEXT composer
-        TEXT genre
-        TEXT year
-    }
- 
-    folders ||--o{ tracks : contains
-    albums ||--o{ album_artists : "has artists"
-    artists ||--o{ album_artists : "appears on"
-    albums ||--o{ tracks : contains
-    artists ||--o{ track_artists : "appears in"
-    tracks ||--o{ track_artists : "has artists"
-    tracks ||--o| tracks : "duplicate of"
-    genres ||--o{ track_genres : "categorizes"
-    tracks ||--o{ track_genres : "has genres"
-    playlists ||--o{ playlist_tracks : contains
-    tracks ||--o{ playlist_tracks : "appears in"
-    tracks ||--|| tracks_fts : "searchable in"
-```
- 
-</details>
  
 ### 鸣谢
  
