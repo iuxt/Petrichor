@@ -395,6 +395,7 @@ private struct TrackLyricsDisplay: View {
     @State private var currentLineIndex = -1
     @State private var sampledPlaybackTime: TimeInterval = 0
     @State private var lastScrolledTrackID: UUID?
+    @State private var immersiveScrollDisplacement: CGFloat = 0
     @StateObject private var boundaryScheduler = KaraokeLineBoundaryScheduler()
 
     // MARK: - Lyrics Content with Conditional Synced Highlight
@@ -424,14 +425,31 @@ private struct TrackLyricsDisplay: View {
             VStack(spacing: usesImmersiveStyle ? fontSize * 0.85 : (usesSidePanelStyle ? 6 : fontSize * 0.7)) {
                 ForEach(Array(lyricLines.enumerated()), id: \.offset) { index, line in
                     lyricRow(line: line, index: index, contentWidth: contentWidth)
+                        // Compensate for the native scroll immediately, then let
+                        // each row's visual position catch up with a spring.
+                        // The anchor stays outside these transforms so wrapping
+                        // and duet rows are measured at their layout positions.
+                        // Keep the spring transaction out of text highlighting
+                        // and karaoke timing.
+                        .transaction { $0.animation = nil }
+                        .modifier(ImmersiveLyricsRowMotion(
+                            displacement: usesImmersiveStyle ? immersiveScrollDisplacement : 0
+                        ))
+                        .animation(immersiveScrollAnimation(for: index), value: immersiveScrollDisplacement)
                         .background {
                             if hasTimedLyrics, currentLineIndex == index, let lyricsTrackID {
                                 LyricsScrollAnchor(
                                     trackID: lyricsTrackID,
                                     lineIndex: index,
                                     animated: lastScrolledTrackID == lyricsTrackID,
-                                    viewportAnchor: usesImmersiveStyle ? 0.4 : 0.5
-                                ) {
+                                    viewportAnchor: usesImmersiveStyle ? 0.4 : 0.5,
+                                    usesRowSpring: usesImmersiveStyle
+                                ) { displacement, animatesRows in
+                                    var transaction = Transaction(animation: nil)
+                                    transaction.disablesAnimations = !animatesRows
+                                    withTransaction(transaction) {
+                                        immersiveScrollDisplacement += displacement
+                                    }
                                     lastScrolledTrackID = lyricsTrackID
                                 }
                             }
@@ -462,6 +480,15 @@ private struct TrackLyricsDisplay: View {
                 Rectangle()
             }
         }
+    }
+
+    private func immersiveScrollAnimation(for index: Int) -> Animation? {
+        guard usesImmersiveStyle, hasTimedLyrics, !reduceMotion else { return nil }
+        let distance = min(4, abs(index - max(0, currentLineIndex)))
+        // Give the pull time to build, with a visible overshoot and a longer
+        // stagger so neighbouring lines feel attached to the focused line.
+        return .spring(response: 0.82, dampingFraction: 0.62, blendDuration: 0.16)
+            .delay(Double(distance) * 0.06)
     }
 
     @ViewBuilder
@@ -662,6 +689,28 @@ private struct LyricsSourcePreferenceKey: PreferenceKey {
     }
 }
 
+/// Keep the immediate layout compensation separate from the interpolated
+/// displacement. Two opposing offset modifiers can collapse to zero before
+/// SwiftUI animates them; this modifier preserves the row's spring motion.
+private struct ImmersiveLyricsRowMotion: AnimatableModifier {
+    let displacement: CGFloat
+    private var animatedDisplacement: CGFloat
+
+    init(displacement: CGFloat) {
+        self.displacement = displacement
+        animatedDisplacement = displacement
+    }
+
+    var animatableData: CGFloat {
+        get { animatedDisplacement }
+        set { animatedDisplacement = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.offset(y: displacement - animatedDisplacement)
+    }
+}
+
 /// SwiftUI's ScrollViewReader can jump immediately on macOS even inside
 /// withAnimation. Center the active row through the underlying clip view instead.
 private struct LyricsScrollAnchor: NSViewRepresentable {
@@ -669,35 +718,39 @@ private struct LyricsScrollAnchor: NSViewRepresentable {
     let lineIndex: Int
     let animated: Bool
     var viewportAnchor: CGFloat = 0.5
-    let onScroll: () -> Void
+    var usesRowSpring = false
+    let onScroll: (_ displacement: CGFloat, _ animatesRows: Bool) -> Void
 
     func makeNSView(context: Context) -> LyricsScrollAnchorView {
         let view = LyricsScrollAnchorView()
-        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, viewportAnchor: viewportAnchor, onScroll: onScroll)
+        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, viewportAnchor: viewportAnchor, usesRowSpring: usesRowSpring, onScroll: onScroll)
         return view
     }
 
     func updateNSView(_ view: LyricsScrollAnchorView, context: Context) {
-        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, viewportAnchor: viewportAnchor, onScroll: onScroll)
+        view.configure(trackID: trackID, lineIndex: lineIndex, animated: animated, viewportAnchor: viewportAnchor, usesRowSpring: usesRowSpring, onScroll: onScroll)
     }
 }
 
+@MainActor
 private final class LyricsScrollAnchorView: NSView {
     private var target: (trackID: UUID, lineIndex: Int)?
     private var animated = false
     private var viewportAnchor: CGFloat = 0.5
-    private var onScroll: (() -> Void)?
+    private var usesRowSpring = false
+    private var onScroll: ((CGFloat, Bool) -> Void)?
     private var scrollScheduled = false
     private var hasScrolled = false
     private var lastViewportSize: NSSize?
 
-    func configure(trackID: UUID, lineIndex: Int, animated: Bool, viewportAnchor: CGFloat, onScroll: @escaping () -> Void) {
+    func configure(trackID: UUID, lineIndex: Int, animated: Bool, viewportAnchor: CGFloat, usesRowSpring: Bool, onScroll: @escaping (CGFloat, Bool) -> Void) {
         if target?.trackID != trackID || target?.lineIndex != lineIndex || self.viewportAnchor != viewportAnchor {
             target = (trackID, lineIndex)
             hasScrolled = false
         }
         self.animated = animated
         self.viewportAnchor = viewportAnchor
+        self.usesRowSpring = usesRowSpring
         self.onScroll = onScroll
         scheduleScroll()
     }
@@ -731,6 +784,7 @@ private final class LyricsScrollAnchorView: NSView {
               let documentView = scrollView.documentView else { return }
 
         let clipView = scrollView.contentView
+        let viewportChanged = lastViewportSize != nil && lastViewportSize != clipView.bounds.size
         lastViewportSize = clipView.bounds.size
         let row = convert(bounds, to: documentView)
         let proposedOrigin = NSPoint(
@@ -743,7 +797,17 @@ private final class LyricsScrollAnchorView: NSView {
         )).origin
         hasScrolled = true
 
-        if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        let shouldAnimate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if usesRowSpring {
+            let displacement = origin.y - clipView.bounds.origin.y
+            // Opening a song, resizing, or seeking far across it should place
+            // the lyrics directly instead of pulling a whole viewport past.
+            let animatesRows = shouldAnimate && !viewportChanged
+                && abs(displacement) < clipView.bounds.height * 0.75
+            onScroll?(displacement, animatesRows)
+            clipView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(clipView)
+        } else if shouldAnimate {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.45
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -753,6 +817,6 @@ private final class LyricsScrollAnchorView: NSView {
             clipView.scroll(to: origin)
             scrollView.reflectScrolledClipView(clipView)
         }
-        onScroll?()
+        if !usesRowSpring { onScroll?(0, false) }
     }
 }
