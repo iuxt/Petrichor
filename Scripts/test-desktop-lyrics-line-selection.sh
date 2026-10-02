@@ -79,6 +79,16 @@ assertNil(
     "empty active tail line does not wrap to earlier lyrics"
 )
 
+assertEqual(
+    DesktopLyricsLineSelection.syncedDisplayLines(
+        lines: emptyTail,
+        at: 12,
+        gapBehavior: .holdPreviousLine
+    ),
+    DesktopLyricsDisplayLines(current: emptyTail[0], next: nil),
+    "the hold policy keeps the final lyric through an active blank tail"
+)
+
 let finiteTimed = [
     LyricLine(text: "first", startTime: 0, endTime: 1),
     LyricLine(text: "second", startTime: 5, endTime: 6)
@@ -348,6 +358,71 @@ struct DesktopLyricsProviderIntegrationTests {
         gapProvider.disappear()
         precondition(gapPlaybackManager.fineSamplingConsumers == 0,
                      "Gap provider lifecycle must release fine progress sampling")
+
+        let lineTimedTrack = Track(id: UUID())
+        let lineTimedFirst = LyricLine(text: "line first", startTime: 1, endTime: 2)
+        let lineTimedLast = LyricLine(text: "line last", startTime: 5, endTime: 6)
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: lineTimedTrack.id,
+            lines: [lineTimedFirst, lineTimedLast, LyricLine(text: " ", startTime: 6)],
+            hasTimed: true,
+            isKaraoke: false
+        )
+        let lineTimedPlayback = PlaybackManager(
+            currentTrack: lineTimedTrack, currentTime: 3, isPlaying: false
+        )
+        let lineTimedProvider = DesktopLyricsLineProvider(
+            playbackManager: lineTimedPlayback, libraryManager: libraryManager
+        )
+        lineTimedProvider.appear()
+        assertCurrent(lineTimedProvider, equals: lineTimedFirst,
+                      message: "Line-timed lyrics must keep the previous line during a gap")
+        lineTimedProvider.playbackTimeChanged(7)
+        assertCurrent(lineTimedProvider, equals: lineTimedLast,
+                      message: "A blank tail must not report missing lyrics before the next track")
+        lineTimedProvider.playbackTimeChanged(3)
+        assertCurrent(lineTimedProvider, equals: lineTimedFirst,
+                      message: "Seeking back into a gap must recompute the held line")
+        lineTimedProvider.playbackTimeChanged(7)
+
+        let nextTrack = Track(id: UUID())
+        let nextFirst = LyricLine(text: "next track", startTime: 1, endTime: 2)
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: nextTrack.id, lines: [nextFirst], hasTimed: true, isKaraoke: false
+        )
+        lineTimedPlayback.currentTrack = nextTrack
+        lineTimedPlayback.playbackProgressState.currentTime = 0
+        lineTimedProvider.playbackTimeChanged(0)
+        assertCurrent(lineTimedProvider, equals: lineTimedLast,
+                      message: "New-track progress must not reselect outgoing lyrics")
+        lineTimedProvider.currentTrackChanged()
+        assertCurrent(lineTimedProvider, equals: nextFirst,
+                      message: "Track changes must replace held lyrics with the new track")
+
+        let emptyTrack = Track(id: UUID())
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: emptyTrack.id, lines: [], hasTimed: false, isKaraoke: false
+        )
+        lineTimedPlayback.currentTrack = emptyTrack
+        lineTimedProvider.currentTrackChanged()
+        precondition(lineTimedProvider.state == .empty,
+                     "A track without lyrics must still report missing lyrics")
+
+        let blankTrack = Track(id: UUID())
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: blankTrack.id,
+            lines: [LyricLine(text: " ", startTime: 0, endTime: 1)],
+            hasTimed: true,
+            isKaraoke: true
+        )
+        lineTimedPlayback.currentTrack = blankTrack
+        lineTimedProvider.currentTrackChanged()
+        lineTimedProvider.playbackTimeChanged(2)
+        precondition(lineTimedProvider.state == .empty,
+                     "All-blank timed lyrics must not hold an earlier track's text")
+        lineTimedProvider.disappear()
+        precondition(lineTimedPlayback.fineSamplingConsumers == 0,
+                     "Track-transition provider must release fine progress sampling")
         print("Desktop lyrics provider boundary/sample integration tests passed")
     }
 

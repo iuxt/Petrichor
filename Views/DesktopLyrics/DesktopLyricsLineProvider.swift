@@ -63,13 +63,17 @@ final class DesktopLyricsLineProvider: ObservableObject {
     }
 
     func playbackTimeChanged(_ time: TimeInterval) {
+        guard loadedTrackId == playbackManager?.currentTrack?.id else {
+            boundaryScheduler.cancel()
+            return
+        }
         guard hasTimedLyrics else { return }
         updateTimedDisplay(at: time)
         resetKaraokeBoundarySchedule(at: time)
     }
 
     func playbackStateChanged(isPlaying: Bool) {
-        guard isKaraokeLyrics else {
+        guard isKaraokeLyrics, loadedTrackId == playbackManager?.currentTrack?.id else {
             boundaryScheduler.cancel()
             return
         }
@@ -161,16 +165,17 @@ final class DesktopLyricsLineProvider: ObservableObject {
     }
 
     private func updateTimedDisplay(at time: TimeInterval) {
+        guard loadedTrackId == playbackManager?.currentTrack?.id else {
+            boundaryScheduler.cancel()
+            return
+        }
         if isKaraokeLyrics {
             rendererSampleTime = time
         }
-        let gapBehavior: DesktopLyricsLineSelection.GapBehavior = isKaraokeLyrics
-            ? .holdPreviousLine
-            : .empty
         if let lines = DesktopLyricsLineSelection.syncedDisplayLines(
             lines: lyricLines,
             at: time,
-            gapBehavior: gapBehavior
+            gapBehavior: .holdPreviousLine
         ) {
             state = .lyrics(lines)
         } else {

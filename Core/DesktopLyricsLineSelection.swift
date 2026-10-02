@@ -22,18 +22,20 @@ enum DesktopLyricsLineSelection {
         let duetPair = overlappingDuetPair(in: lines, activeIndices: activeIndices)
         let activeIndex = duetPair?.first ?? activeIndices.last
 
-        let currentIndex: Int?
+        let candidateIndex: Int?
         if let activeIndex {
-            currentIndex = nonEmptyIndex(in: lines, from: activeIndex)
+            candidateIndex = nonEmptyIndex(in: lines, from: activeIndex)
         } else if let firstStartTime = lines.first?.startTime, time < firstStartTime {
-            currentIndex = nonEmptyIndex(in: lines, from: 0)
-        } else if gapBehavior == .holdPreviousLine {
-            currentIndex = lastStartedNonEmptyIndex(in: lines, at: time)
+            candidateIndex = nonEmptyIndex(in: lines, from: 0)
         } else {
-            currentIndex = nil
+            candidateIndex = nil
         }
 
-        guard let currentIndex else {
+        // An active blank tail also needs the hold fallback, not just a timing gap.
+        let heldIndex = gapBehavior == .holdPreviousLine
+            ? lastStartedNonEmptyIndex(in: lines, at: time)
+            : nil
+        guard let currentIndex = candidateIndex ?? heldIndex else {
             return nil
         }
         let nextIndex = duetPair?.second ?? nonEmptyIndex(in: lines, from: currentIndex + 1)
