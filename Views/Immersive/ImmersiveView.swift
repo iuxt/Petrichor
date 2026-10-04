@@ -318,7 +318,16 @@ struct ImmersiveView: View {
         }
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .shadow(color: .black.opacity(0.4), radius: 24 * (side / 460), x: 0, y: 12 * (side / 460))
+        .contextMenu {
+            if let track = playbackManager.currentTrack {
+                TrackContextMenuContent(items: TrackContextMenu.createPlayerViewMenuItems(
+                    for: track,
+                    playlistManager: playlistManager
+                ))
+            }
+        }
     }
 
     // MARK: - Panel Box
