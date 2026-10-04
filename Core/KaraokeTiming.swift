@@ -19,7 +19,7 @@ enum KaraokeTiming {
 
 enum KaraokeWordLift {
     static func maximumOffset(fontSize: CGFloat) -> CGFloat {
-        min(4, max(1, fontSize * 0.065))
+        min(9, max(2, fontSize * 0.15))
     }
 
     /// Ease each word up as it fills, then hold it at the raised baseline.

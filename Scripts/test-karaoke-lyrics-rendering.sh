@@ -352,8 +352,12 @@ let liftPositions = (0...60).map { frame in
 let distinctPositions = Set(liftPositions.map { Int(($0 * 10_000).rounded()) })
 precondition(distinctPositions.count > 20,
              "Word lift must preserve subpixel motion instead of stepping between a few pixel rows")
+// Lifted words move across the image resampling grid, so larger amplitudes
+// legitimately cover a fraction of a device pixel between frames. Derive the
+// limit from the bitmap's backing scale instead of a points-based constant.
+let liftDevicePixel = liftRenderer.bounds.width / Double(liftBitmap([0.15, 0]).pixelsWide)
 for (previous, next) in zip(liftPositions, liftPositions.dropFirst()) {
-    precondition(abs(next - previous) < 0.2,
+    precondition(abs(next - previous) < liftDevicePixel,
                  "Consecutive lift frames must not jump by an entire device pixel")
     precondition(next <= previous + 0.02, "Forward playback must lift the word monotonically")
 }
