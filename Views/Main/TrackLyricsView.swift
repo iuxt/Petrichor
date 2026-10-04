@@ -76,6 +76,148 @@ struct TrackLyricsView: View {
     }
 }
 
+private extension LyricLine {
+    func shiftingTiming(by offset: TimeInterval) -> LyricLine {
+        guard offset != 0 else { return self }
+        var shifted = LyricLine(text: text, startTime: startTime + offset,
+                                endTime: endTime.map { $0 + offset },
+                                timingSegments: timingSegments, duetSide: duetSide)
+        shifted.id = id
+        return shifted
+    }
+}
+
+private struct LyricsTimingRequest: Identifiable, Sendable {
+    let id = UUID()
+    let trackID: UUID
+    let audioURL: URL
+    let fileURL: URL
+    let source: LyricsSource
+    let accessURL: URL?
+}
+
+private struct LyricsTimingAdjustmentSheet: View {
+    let request: LyricsTimingRequest
+    let lyricLines: [LyricLine]
+    let isKaraokeLyrics: Bool
+    @Binding var previewOffset: TimeInterval
+    let onSaved: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var playbackManager: PlaybackManager
+    @State private var snapshot: LyricsTimingAdjuster.Snapshot?
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    private var minimumOffset: Double {
+        max(-10, -floor((snapshot?.minimumTime ?? 0) * 10) / 10)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Adjust Lyrics Timing")
+                .font(.headline)
+            Text("Positive values delay the lyrics. Changes are previewed during playback and written to the lyric file only when you save.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 16) {
+                Text("Timing offset")
+                Spacer()
+                Stepper(value: $previewOffset, in: minimumOffset...10, step: 0.1) {
+                    Text(verbatim: String(format: "%+.1f s", previewOffset))
+                        .monospacedDigit()
+                        .frame(minWidth: 65, alignment: .trailing)
+                }
+                .disabled(snapshot == nil || isSaving)
+            }
+
+            Text("Live Preview")
+                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 14) {
+                Button {
+                    _ = playbackManager.isPlaying
+                        ? playbackManager.requestPause()
+                        : playbackManager.requestPlay()
+                } label: {
+                    Image(systemName: playbackManager.isPlaying ? "pause.fill" : "play.fill")
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(playbackManager.isPlaying ? String(appLocalized: "Pause") : String(appLocalized: "Play"))
+                .accessibilityLabel(playbackManager.isPlaying ? String(appLocalized: "Pause") : String(appLocalized: "Play"))
+
+                NowPlayingProgressBar(accent: .accentColor, neutral: .primary, scale: 1.2)
+                    .accessibilityLabel(String(appLocalized: "Seek to Position"))
+            }
+            .disabled(playbackManager.currentTrack?.id != request.trackID)
+
+            TrackLyricsDisplay(
+                lyricLines: lyricLines.map { $0.shiftingTiming(by: previewOffset) },
+                lyricsTrackID: request.trackID,
+                hasTimedLyrics: true,
+                isKaraokeLyrics: isKaraokeLyrics,
+                fontName: nil,
+                fontSize: 16,
+                activeColor: .primary,
+                inactiveColor: .secondary,
+                usesSidePanelStyle: true,
+                usesImmersiveStyle: false
+            )
+            .frame(height: 180)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+
+            if let errorMessage {
+                Text(verbatim: errorMessage)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Spacer()
+                Button(String(appLocalized: "Cancel")) { dismiss() }
+                    .disabled(isSaving)
+                Button(String(appLocalized: "Save")) { save() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(snapshot == nil || isSaving || abs(previewOffset) < 0.000_001)
+            }
+        }
+        .padding(22)
+        .frame(width: 440)
+        .task(id: request.id) {
+            do {
+                snapshot = try await Task.detached(priority: .userInitiated) {
+                    try LyricsTimingAdjuster.load(at: request.fileURL, source: request.source,
+                                                  accessURL: request.accessURL)
+                }.value
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func save() {
+        guard let snapshot else { return }
+        isSaving = true
+        errorMessage = nil
+        let offset = previewOffset
+        Task {
+            do {
+                try await Task.detached(priority: .utility) {
+                    try LyricsTimingAdjuster.save(snapshot, at: request.fileURL, source: request.source,
+                                                  offset: offset, accessURL: request.accessURL)
+                }.value
+                onSaved()
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+                isSaving = false
+            }
+        }
+    }
+}
+
 // MARK: - Lyrics Content (header-less, reusable)
 
 /// The lyrics display (loading / empty / synced scroll) without any header
@@ -115,6 +257,8 @@ struct TrackLyricsContent: View {
     @State private var loadGeneration = UUID()
     @State private var searchRequest: LyricsSearchRequest?
     @State private var deletionRequest: LyricsDeletionRequest?
+    @State private var timingRequest: LyricsTimingRequest?
+    @State private var timingPreviewOffset: TimeInterval = 0
     @State private var hasTimedLyrics: Bool = false
     @State private var isKaraokeLyrics = false
 
@@ -135,7 +279,7 @@ struct TrackLyricsContent: View {
                 emptyLyricsView
             } else {
                 TrackLyricsDisplay(
-                    lyricLines: lyricLines,
+                    lyricLines: lyricLines.map { $0.shiftingTiming(by: timingPreviewOffset) },
                     lyricsTrackID: lyricsTrackID,
                     hasTimedLyrics: hasTimedLyrics,
                     isKaraokeLyrics: isKaraokeLyrics,
@@ -177,6 +321,14 @@ struct TrackLyricsContent: View {
             }
             .disabled(lyricLines.isEmpty || lyricsTrackID != currentTrack?.id)
 
+            Button(String(appLocalized: "Adjust Lyrics Timing..."), systemImage: "clock.arrow.circlepath") {
+                guard let track = currentTrack, let fileURL = currentLyricsFileURL else { return }
+                timingRequest = LyricsTimingRequest(trackID: track.id, audioURL: track.url,
+                                                    fileURL: fileURL, source: lyricsSource,
+                                                    accessURL: timingAccessURL(for: track.url))
+            }
+            .disabled(lyricLines.isEmpty || currentLyricsFileURL == nil)
+
             if let currentLyricsFileURL {
                 Button(String(appLocalized: "Reveal Lyrics in Finder"), systemImage: "finder") {
                     NSWorkspace.shared.selectFile(currentLyricsFileURL.path, inFileViewerRootedAtPath: "")
@@ -197,6 +349,15 @@ struct TrackLyricsContent: View {
             playbackManager.setFineProgressSampling(true)
         }
         .sheet(item: $searchRequest) { LyricsSearchSheet(track: $0.track) }
+        .sheet(item: $timingRequest, onDismiss: { timingPreviewOffset = 0 }) { request in
+            LyricsTimingAdjustmentSheet(request: request, lyricLines: lyricLines,
+                                        isKaraokeLyrics: isKaraokeLyrics,
+                                        previewOffset: $timingPreviewOffset) {
+                timingPreviewOffset = 0
+                LyricsStore.shared.invalidate(for: request.audioURL)
+                NotificationCenter.default.post(name: .downloadedLyricsDidChange, object: request.audioURL)
+            }
+        }
         .alert(String(appLocalized: "Move current lyrics to Trash?"), isPresented: Binding(
             get: { deletionRequest != nil },
             set: { if !$0 { deletionRequest = nil } }
@@ -235,6 +396,8 @@ struct TrackLyricsContent: View {
             playbackManager.setFineProgressSampling(false)
         }
         .onChange(of: playbackManager.currentTrack?.id) { _, _ in
+            timingRequest = nil
+            timingPreviewOffset = 0
             loadLyricsForCurrentTrack()
         }
     }
@@ -293,6 +456,17 @@ struct TrackLyricsContent: View {
     }
 
     // MARK: - Helper Methods
+
+    private func timingAccessURL(for audioURL: URL) -> URL? {
+        let path = audioURL.standardizedFileURL.path
+        guard let folder = libraryManager.folders
+            .filter({ path.hasPrefix($0.url.standardizedFileURL.path + "/") })
+            .max(by: { $0.url.path.count < $1.url.path.count }) else { return nil }
+        guard let bookmark = folder.bookmarkData else { return folder.url }
+        var stale = false
+        return (try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope],
+                         relativeTo: nil, bookmarkDataIsStale: &stale)) ?? folder.url
+    }
 
     private func loadLyricsForCurrentTrack(forceReload: Bool = false) {
         let generation = UUID()
@@ -408,12 +582,12 @@ private struct TrackLyricsDisplay: View {
         .onChange(of: lyricsTrackID) { _, _ in refreshPlaybackSample() }
         .onDisappear { boundaryScheduler.cancel() }
         .onChange(of: playbackManager.isPlaying) { _, isPlaying in
-            transitionKaraokeBoundarySchedule(isPlaying: isPlaying)
+            transitionLineBoundarySchedule(isPlaying: isPlaying)
         }
         .onReceive(playbackManager.playbackProgressState.$currentTime) { newTime in
             sampledPlaybackTime = newTime
             updateCurrentLine(for: newTime)
-            resetKaraokeBoundarySchedule(at: newTime)
+            resetLineBoundarySchedule(at: newTime)
         }
     }
 
@@ -592,7 +766,7 @@ private struct TrackLyricsDisplay: View {
     private func refreshPlaybackSample() {
         sampledPlaybackTime = playbackManager.playbackProgressState.currentTime
         updateCurrentLine(for: sampledPlaybackTime)
-        resetKaraokeBoundarySchedule(at: sampledPlaybackTime)
+        resetLineBoundarySchedule(at: sampledPlaybackTime)
     }
 
     /// Determine the current lyric line based on playback time.
@@ -611,8 +785,8 @@ private struct TrackLyricsDisplay: View {
         }
     }
 
-    private func resetKaraokeBoundarySchedule(at sampleTime: TimeInterval) {
-        guard isKaraokeLyrics else {
+    private func resetLineBoundarySchedule(at sampleTime: TimeInterval) {
+        guard hasTimedLyrics else {
             boundaryScheduler.cancel()
             return
         }
@@ -620,22 +794,22 @@ private struct TrackLyricsDisplay: View {
             sampleTime: sampleTime,
             isPlaying: playbackManager.isPlaying,
             lines: lyricLines,
-            isKaraoke: true
+            isTimed: true
         ) { boundaryTime in
             sampledPlaybackTime = boundaryTime
             updateCurrentLine(for: boundaryTime)
         }
     }
 
-    private func transitionKaraokeBoundarySchedule(isPlaying: Bool) {
-        guard isKaraokeLyrics else {
+    private func transitionLineBoundarySchedule(isPlaying: Bool) {
+        guard hasTimedLyrics else {
             boundaryScheduler.cancel()
             return
         }
         let transitionTime = boundaryScheduler.transition(
             isPlaying: isPlaying,
             lines: lyricLines,
-            isKaraoke: true
+            isTimed: true
         ) { boundaryTime in
             sampledPlaybackTime = boundaryTime
             updateCurrentLine(for: boundaryTime)

@@ -359,6 +359,27 @@ struct DesktopLyricsProviderIntegrationTests {
         precondition(gapPlaybackManager.fineSamplingConsumers == 0,
                      "Gap provider lifecycle must release fine progress sampling")
 
+        let preciseTrack = Track(id: UUID())
+        let preciseFirst = LyricLine(text: "early", startTime: 0.05, endTime: 0.15)
+        let preciseSecond = LyricLine(text: "late", startTime: 0.15, endTime: 0.35)
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: preciseTrack.id, lines: [preciseFirst, preciseSecond],
+            hasTimed: true, isKaraoke: false
+        )
+        let precisePlayback = PlaybackManager(
+            currentTrack: preciseTrack, currentTime: 0, isPlaying: true
+        )
+        let preciseProvider = DesktopLyricsLineProvider(
+            playbackManager: precisePlayback, libraryManager: libraryManager
+        )
+        preciseProvider.appear()
+        assertCurrent(preciseProvider, equals: preciseFirst,
+                      message: "Ordinary timed lyrics must start on the first line")
+        try? await Task.sleep(nanoseconds: 220_000_000)
+        assertCurrent(preciseProvider, equals: preciseSecond,
+                      message: "A 0.15s ordinary line boundary must not wait for the 0.5s progress sample")
+        preciseProvider.disappear()
+
         let lineTimedTrack = Track(id: UUID())
         let lineTimedFirst = LyricLine(text: "line first", startTime: 1, endTime: 2)
         let lineTimedLast = LyricLine(text: "line last", startTime: 5, endTime: 6)

@@ -98,7 +98,9 @@ struct KaraokeLyricText: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isPlaying)) { _ in
+        // Let immersive word movement use the system animation cadence instead
+        // of limiting it to 30 fps. Color-only karaoke keeps its lower cadence.
+        TimelineView(.animation(minimumInterval: usesWordLift ? nil : 1.0 / 30.0, paused: !isPlaying)) { _ in
             let renderTime = anchor.time(at: clock.now, upperBound: line.endTime)
             KaraokeTextRepresentable(
                 line: line,
@@ -264,6 +266,13 @@ enum KaraokeGlyphClusterLayout {
 }
 
 final class KaraokeTextRendererView: NSView {
+    private struct WordFragment {
+        let rect: NSRect
+        let imageRect: NSRect
+        let baseImage: CGImage
+        let activeImage: CGImage
+    }
+
     private struct Configuration {
         let line: LyricLine
         let fontName: String?
@@ -302,6 +311,7 @@ final class KaraokeTextRendererView: NSView {
     private var reduceMotion = false
     private var configuration: Configuration?
     private var glyphClusters: [KaraokeGlyphCluster]?
+    private var wordImages: [NSRange: [WordFragment]] = [:]
     private var needsGlyphClusterRebuild = true
 
     override var isFlipped: Bool { true }
@@ -398,6 +408,7 @@ final class KaraokeTextRendererView: NSView {
         }
         updateContainerWidth(max(1, bounds.width))
         glyphClusters = nil
+        wordImages.removeAll()
         needsGlyphClusterRebuild = true
         invalidateIntrinsicContentSize()
         needsLayout = true
@@ -407,6 +418,18 @@ final class KaraokeTextRendererView: NSView {
     override func layout() {
         super.layout()
         updateContainerWidth(max(1, bounds.width))
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        wordImages.removeAll()
+        needsDisplay = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        wordImages.removeAll()
+        needsDisplay = true
     }
 
     func fittingSize(forWidth width: CGFloat) -> CGSize {
@@ -506,11 +529,42 @@ final class KaraokeTextRendererView: NSView {
         segments: [LyricTimingSegment],
         origin: NSPoint
     ) {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        // Pixel-align the resting displacement so the moving image joins the
+        // directly drawn, completed words without a final positional jump.
+        let maximumLift = (wordLiftHeadroom * scale).rounded() / scale
         for cluster in clusters {
             let progress = cluster.fillFraction(segments: segments, fillFractions: fillFractions)
-            let lift = reduceMotion ? 0 : wordLiftHeadroom * KaraokeWordLift.fraction(for: progress)
+            let lift = reduceMotion ? 0 : maximumLift * KaraokeWordLift.fraction(for: progress)
             let liftedOrigin = NSPoint(x: origin.x, y: origin.y - lift)
 
+            // Only moving words need interpolated images. Keep stationary text
+            // on the inexpensive TextKit path, and create each image on demand.
+            if !reduceMotion, progress > 0, progress < 1,
+               let context = NSGraphicsContext.current?.cgContext {
+                if wordImages[cluster.glyphRange] == nil {
+                    wordImages[cluster.glyphRange] = makeWordImages(cluster: cluster, scale: scale)
+                }
+                if let fragments = wordImages[cluster.glyphRange] {
+                    var remainingWidth = fragments.reduce(CGFloat(0)) { $0 + $1.rect.width } * progress
+                    for fragment in fragments {
+                        let imageRect = fragment.imageRect.offsetBy(dx: liftedOrigin.x, dy: liftedOrigin.y)
+                        drawWordImage(fragment.baseImage, in: imageRect, context: context)
+                        if remainingWidth > 0 {
+                            var clip = fragment.rect.offsetBy(dx: liftedOrigin.x, dy: liftedOrigin.y)
+                            clip.size.width = min(clip.width, remainingWidth)
+                            context.saveGState()
+                            context.clip(to: clip)
+                            drawWordImage(fragment.activeImage, in: imageRect, context: context)
+                            context.restoreGState()
+                        }
+                        remainingWidth -= fragment.rect.width
+                    }
+                    continue
+                }
+            }
+
+            // Also serves as a fallback if a bitmap could not be allocated.
             // Move both colors together so no dim copy remains at the old baseline.
             baseLayout.drawGlyphs(forGlyphRange: cluster.glyphRange, at: liftedOrigin)
             if progress >= 1 {
@@ -519,6 +573,59 @@ final class KaraokeTextRendererView: NSView {
                 drawPartialWord(cluster: cluster, progress: progress, origin: liftedOrigin)
             }
         }
+    }
+
+    private func makeWordImages(cluster: KaraokeGlyphCluster, scale: CGFloat) -> [WordFragment]? {
+        var ranges: [NSRange] = []
+        activeLayout.enumerateLineFragments(forGlyphRange: cluster.glyphRange) { _, _, _, range, _ in
+            let intersection = NSIntersectionRange(range, cluster.glyphRange)
+            if intersection.length > 0 { ranges.append(intersection) }
+        }
+        var fragments: [WordFragment] = []
+        for range in ranges {
+            let rect = activeLayout.boundingRect(forGlyphRange: range, in: activeContainer)
+            // Include antialiased edges and align the cached pixels to the
+            // text layout. Only the image's destination moves each frame.
+            let padded = rect.insetBy(dx: -2, dy: -2)
+            let imageRect = NSRect(
+                x: floor(padded.minX * scale) / scale,
+                y: floor(padded.minY * scale) / scale,
+                width: (ceil(padded.maxX * scale) - floor(padded.minX * scale)) / scale,
+                height: (ceil(padded.maxY * scale) - floor(padded.minY * scale)) / scale
+            )
+            guard let base = wordImage(layout: baseLayout, range: range, rect: imageRect, scale: scale),
+                  let active = wordImage(layout: activeLayout, range: range, rect: imageRect, scale: scale) else {
+                return nil
+            }
+            fragments.append(WordFragment(rect: rect, imageRect: imageRect, baseImage: base, activeImage: active))
+        }
+        return fragments
+    }
+
+    private func wordImage(layout: NSLayoutManager, range: NSRange, rect: NSRect, scale: CGFloat) -> CGImage? {
+        guard let context = CGContext(
+            data: nil, width: Int((rect.width * scale).rounded()), height: Int((rect.height * scale).rounded()),
+            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(context.height))
+        context.scaleBy(x: scale, y: -scale)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        layout.drawGlyphs(forGlyphRange: range, at: NSPoint(x: -rect.minX, y: -rect.minY))
+        return context.makeImage()
+    }
+
+    private func drawWordImage(_ image: CGImage, in rect: NSRect, context: CGContext) {
+        context.saveGState()
+        defer { context.restoreGState() }
+        // TextKit snaps glyph origins to pixels. Moving a cached image instead
+        // preserves fractional vertical positions throughout the small lift.
+        context.interpolationQuality = .high
+        context.translateBy(x: rect.minX, y: rect.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: NSRect(origin: .zero, size: rect.size))
     }
 
     private func drawPartialWord(cluster: KaraokeGlyphCluster, progress: Double, origin: NSPoint) {
@@ -552,6 +659,7 @@ final class KaraokeTextRendererView: NSView {
         baseContainer.containerSize = size
         activeContainer.containerSize = size
         glyphClusters = nil
+        wordImages.removeAll()
         needsGlyphClusterRebuild = true
     }
 

@@ -116,7 +116,8 @@ final class LyricsStore {
                 script: selection.script,
                 languageTag: selection.languageTag
             )
-            let hasTimed = result.lyrics.contains { $0.startTime > 0 || $0.endTime != nil }
+            let hasTimed = result.source.sidecarURL(for: track.url) != nil
+                || result.lyrics.contains { $0.startTime > 0 || $0.endTime != nil }
             return Lyrics(
                 trackId: trackId,
                 lines: result.lyrics,

@@ -398,25 +398,6 @@ struct ImmersiveView: View {
 
     private var floatingToolbar: some View {
         VStack {
-            HStack {
-                Spacer()
-
-                HStack(spacing: 12) {
-                    Image(systemName: "speaker.wave.2.fill")
-                    Slider(value: Binding(
-                        get: { playbackManager.volume },
-                        set: { playbackManager.setVolume($0) }
-                    ), in: 0...1)
-                    .labelsHidden()
-                    .accessibilityLabel(String(appLocalized: "Volume"))
-                    .frame(width: 120)
-                    .tint(adaptiveText)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .floatingControlClusterBackground()
-            }
-
             Spacer()
 
             panelToolbar
@@ -428,6 +409,24 @@ struct ImmersiveView: View {
 
     private var panelToolbar: some View {
         HStack(spacing: 4) {
+            HStack(spacing: 12) {
+                Image(systemName: "speaker.wave.2.fill")
+                Slider(value: Binding(
+                    get: { playbackManager.volume },
+                    set: { playbackManager.setVolume($0) }
+                ), in: 0...1)
+                .labelsHidden()
+                .accessibilityLabel(String(appLocalized: "Volume"))
+                .frame(width: 120)
+                .tint(adaptiveText)
+            }
+            .padding(.horizontal, 10)
+
+            Divider()
+                .frame(height: 20)
+                .overlay(adaptiveText.opacity(0.15))
+                .padding(.horizontal, 4)
+
             PanelToolbarButton(
                 isActive: panel == .queue,
                 isEnabled: true,
