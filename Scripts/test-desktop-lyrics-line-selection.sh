@@ -385,6 +385,14 @@ struct DesktopLyricsProviderIntegrationTests {
                       message: "Seeking back into a gap must recompute the held line")
         lineTimedProvider.playbackTimeChanged(7)
 
+        let reloadedLine = LyricLine(text: "reloaded same track", startTime: 1, endTime: 2)
+        LyricsStore.shared.cached = LyricsStore.Lyrics(
+            trackId: lineTimedTrack.id, lines: [reloadedLine], hasTimed: true, isKaraoke: false
+        )
+        lineTimedProvider.currentTrackChanged()
+        assertCurrent(lineTimedProvider, equals: reloadedLine,
+                      message: "A lyrics-change notification must replace local lines without changing tracks")
+
         let nextTrack = Track(id: UUID())
         let nextFirst = LyricLine(text: "next track", startTime: 1, endTime: 2)
         LyricsStore.shared.cached = LyricsStore.Lyrics(
@@ -393,7 +401,7 @@ struct DesktopLyricsProviderIntegrationTests {
         lineTimedPlayback.currentTrack = nextTrack
         lineTimedPlayback.playbackProgressState.currentTime = 0
         lineTimedProvider.playbackTimeChanged(0)
-        assertCurrent(lineTimedProvider, equals: lineTimedLast,
+        assertCurrent(lineTimedProvider, equals: reloadedLine,
                       message: "New-track progress must not reselect outgoing lyrics")
         lineTimedProvider.currentTrackChanged()
         assertCurrent(lineTimedProvider, equals: nextFirst,

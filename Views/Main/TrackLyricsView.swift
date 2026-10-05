@@ -162,7 +162,8 @@ struct TrackLyricsContent: View {
             .disabled(currentTrack == nil)
 
             Button(String(appLocalized: "Reload Lyrics"), systemImage: "arrow.clockwise") {
-                loadLyricsForCurrentTrack(forceReload: true)
+                guard let track = currentTrack else { return }
+                LyricsStore.shared.reload(for: track.url)
             }
             .disabled(currentTrack == nil)
 
@@ -281,7 +282,8 @@ struct TrackLyricsContent: View {
 
             if fetchFailed {
                 Button {
-                    loadLyricsForCurrentTrack(forceReload: true)
+                    guard let track = currentTrack else { return }
+                    LyricsStore.shared.reload(for: track.url)
                 } label: {
                     Label("Retry", systemImage: Icons.arrowClockwise)
                 }
@@ -294,7 +296,7 @@ struct TrackLyricsContent: View {
 
     // MARK: - Helper Methods
 
-    private func loadLyricsForCurrentTrack(forceReload: Bool = false) {
+    private func loadLyricsForCurrentTrack() {
         let generation = UUID()
         loadGeneration = generation
         guard let track = currentTrack else {
@@ -312,7 +314,7 @@ struct TrackLyricsContent: View {
 
         let loadedTrackId = track.id
 
-        if !forceReload, let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
+        if let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
             lyricLines = cached.lines
             lyricsSource = cached.source
             availableLanguages = cached.availableLanguages
@@ -338,11 +340,10 @@ struct TrackLyricsContent: View {
         Task {
             do {
                 // Shared cache + single-flight: concurrent lyrics views (main window,
-                // mini player, immersive) for the same track load only once.
+                // mini player, immersive, desktop) for the same track load only once.
                 let result = try await LyricsStore.shared.lyrics(
                     for: track,
-                    using: libraryManager.databaseManager.dbQueue,
-                    forceReload: forceReload
+                    using: libraryManager.databaseManager.dbQueue
                 )
 
                 await MainActor.run {

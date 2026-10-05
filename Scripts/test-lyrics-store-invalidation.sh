@@ -20,6 +20,7 @@ struct LyricLanguage: Equatable, Sendable {
 }
 extension Notification.Name {
     static let lyricsScriptPreferenceDidChange = Notification.Name("lyricsScriptPreferenceDidChange")
+    static let downloadedLyricsDidChange = Notification.Name("DownloadedLyricsDidChange")
 }
 @MainActor final class LyricsScriptSettings {
     static let shared = LyricsScriptSettings()
@@ -141,6 +142,52 @@ func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(m
             catch is CancellationError {} catch { throw error }
         }
         expect(store.cachedLyrics(for: track.id) == nil, "Obsolete selection must not enter the cache")
+
+        // Manual reload invalidates before notifying all four surfaces, which
+        // must share one fresh read even if an older read is still pending.
+        let oldLoad = Task { try await store.lyrics(for: track, using: db) }
+        await wait { await LyricsLoader.controlled.count == 8 }
+        var readers: [Task<LyricsStore.Lyrics, Error>] = []
+        let observers = (0..<4).map { _ in
+            NotificationCenter.default.addObserver(
+                forName: .downloadedLyricsDidChange, object: nil, queue: .main
+            ) { notification in
+                MainActor.assumeIsolated {
+                    guard let url = notification.object as? URL,
+                          url.standardizedFileURL == track.url.standardizedFileURL else { return }
+                    expect(store.cachedLyrics(for: track.id) == nil,
+                           "Every surface must see the cache invalidated before reloading")
+                    readers.append(Task { try await store.lyrics(for: track, using: db) })
+                }
+            }
+        }
+        store.reload(for: URL(fileURLWithPath: "/tmp/unrelated.flac"))
+        expect(readers.isEmpty, "Reloading another track must not refresh current surfaces")
+        store.reload(for: track.url)
+        expect(readers.count == 4, "Manual reload must notify all four surfaces")
+        await wait { await LyricsLoader.controlled.count == 9 }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        expect(await LyricsLoader.controlled.count == 9, "Four surfaces must share one fresh read")
+        await LyricsLoader.controlled.complete(9, "manually-reloaded")
+        for reader in readers {
+            expect(try await reader.value.lines[0].text == "manually-reloaded",
+                   "Every surface must receive the new lyrics")
+        }
+        await LyricsLoader.controlled.complete(8, "before-reload")
+        do { _ = try await oldLoad.value; fatalError("Manual reload must reject pending old lyrics") }
+        catch is CancellationError {} catch { throw error }
+        expect(store.cachedLyrics(for: track.id)?.lines[0].text == "manually-reloaded",
+               "An old read must not replace manually reloaded lyrics")
+        readers.removeAll()
+        store.reload(for: track.url)
+        expect(readers.count == 4, "Reload must also notify surfaces with cached lyrics")
+        await wait { await LyricsLoader.controlled.count == 10 }
+        await LyricsLoader.controlled.complete(10, "edited-sidecar")
+        for reader in readers {
+            expect(try await reader.value.lines[0].text == "edited-sidecar",
+                   "Reload must replace cached lyrics on every surface")
+        }
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
         print("Lyrics cache invalidation and stale-load checks passed")
     }
 }

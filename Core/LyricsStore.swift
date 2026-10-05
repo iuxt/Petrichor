@@ -1,8 +1,8 @@
 import Foundation
 import GRDB
 
-/// Single-flight, single-entry lyrics cache shared by every `TrackLyricsContent`
-/// instance (main window, mini player, immersive mode).
+/// Single-flight, single-entry lyrics cache shared by the main window, mini
+/// player, immersive mode, and desktop lyrics.
 @MainActor
 final class LyricsStore {
     static let shared = LyricsStore()
@@ -57,6 +57,13 @@ final class LyricsStore {
         if let scriptObserver {
             NotificationCenter.default.removeObserver(scriptObserver)
         }
+    }
+
+    /// Clear old data before notifying every lyrics surface. Consumers use a
+    /// normal load so they all join the same fresh read.
+    func reload(for audioURL: URL) {
+        invalidate(for: audioURL)
+        NotificationCenter.default.post(name: .downloadedLyricsDidChange, object: audioURL)
     }
 
     func invalidate(for audioURL: URL) {
