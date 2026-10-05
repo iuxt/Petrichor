@@ -69,18 +69,18 @@ final class DesktopLyricsLineProvider: ObservableObject {
         }
         guard hasTimedLyrics else { return }
         updateTimedDisplay(at: time)
-        resetKaraokeBoundarySchedule(at: time)
+        resetLineBoundarySchedule(at: time)
     }
 
     func playbackStateChanged(isPlaying: Bool) {
-        guard isKaraokeLyrics, loadedTrackId == playbackManager?.currentTrack?.id else {
+        guard hasTimedLyrics, loadedTrackId == playbackManager?.currentTrack?.id else {
             boundaryScheduler.cancel()
             return
         }
         let transitionTime = boundaryScheduler.transition(
             isPlaying: isPlaying,
             lines: lyricLines,
-            isKaraoke: true
+            isTimed: true
         ) { [weak self] boundaryTime in
             self?.updateTimedDisplay(at: boundaryTime)
         }
@@ -161,7 +161,7 @@ final class DesktopLyricsLineProvider: ObservableObject {
         } else {
             state = .empty
         }
-        resetKaraokeBoundarySchedule(at: time)
+        resetLineBoundarySchedule(at: time)
     }
 
     private func updateTimedDisplay(at time: TimeInterval) {
@@ -183,8 +183,8 @@ final class DesktopLyricsLineProvider: ObservableObject {
         }
     }
 
-    private func resetKaraokeBoundarySchedule(at sampleTime: TimeInterval) {
-        guard isKaraokeLyrics, let playbackManager else {
+    private func resetLineBoundarySchedule(at sampleTime: TimeInterval) {
+        guard hasTimedLyrics, let playbackManager else {
             boundaryScheduler.cancel()
             return
         }
@@ -192,7 +192,7 @@ final class DesktopLyricsLineProvider: ObservableObject {
             sampleTime: sampleTime,
             isPlaying: playbackManager.isPlaying,
             lines: lyricLines,
-            isKaraoke: true
+            isTimed: true
         ) { [weak self] boundaryTime in
             self?.updateTimedDisplay(at: boundaryTime)
         }

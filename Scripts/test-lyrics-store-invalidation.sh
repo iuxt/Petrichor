@@ -12,7 +12,12 @@ import Foundation
 import GRDB
 struct Track: Sendable { let id: UUID; let url: URL }
 struct LyricLine: Sendable { let text: String; let startTime: Double; let endTime: Double?; let timingSegments: [Int]? }
-enum LyricsSource { case lrc, ksc }
+enum LyricsSource {
+    case lrc, ksc
+    func sidecarURL(for audioURL: URL) -> URL? {
+        audioURL.deletingPathExtension().appendingPathExtension(self == .lrc ? "lrc" : "ksc")
+    }
+}
 enum LyricScript: String, CaseIterable, Sendable { case original, simplified, traditional }
 struct LyricLanguage: Equatable, Sendable {
     let languageTag: String?

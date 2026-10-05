@@ -327,6 +327,83 @@ let reducedMotion = liftBitmap([1, 0], reduceMotion: true)
 precondition(abs(glyphTop(reducedMotion, first: true, active: true) - firstBaseline) <= 0.75,
              "Reduce Motion must disable word lift (allowing color antialiasing differences)")
 
+// Sample the still-dim right stem while the first word rises. Its alpha-weighted
+// position must move between device pixels, independently of the highlight mask.
+func stemCenter(_ bitmap: NSBitmapImageRep, active: Bool = false) -> Double {
+    let scale = Double(bitmap.pixelsWide) / liftRenderer.bounds.width
+    let columns = active ? Int(4 * scale)..<Int(10 * scale) : Int(22 * scale)..<Int(28 * scale)
+    var mass = 0.0
+    var weightedY = 0.0
+    for y in 0..<bitmap.pixelsHigh {
+        for x in columns {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+            let weight = Double((active ? color.redComponent : color.greenComponent) * color.alphaComponent)
+            mass += weight
+            weightedY += Double(y) * weight
+        }
+    }
+    precondition(mass > 0, "The sampled stem must remain visible during highlighting")
+    return weightedY / mass / scale
+}
+
+let liftPositions = (0...60).map { frame in
+    stemCenter(liftBitmap([0.15 + Double(frame) / 120, 0]))
+}
+let distinctPositions = Set(liftPositions.map { Int(($0 * 10_000).rounded()) })
+precondition(distinctPositions.count > 20,
+             "Word lift must preserve subpixel motion instead of stepping between a few pixel rows")
+// Lifted words move across the image resampling grid, so larger amplitudes
+// legitimately cover a fraction of a device pixel between frames. Derive the
+// limit from the bitmap's backing scale instead of a points-based constant.
+let liftDevicePixel = liftRenderer.bounds.width / Double(liftBitmap([0.15, 0]).pixelsWide)
+for (previous, next) in zip(liftPositions, liftPositions.dropFirst()) {
+    precondition(abs(next - previous) < liftDevicePixel,
+                 "Consecutive lift frames must not jump by an entire device pixel")
+    precondition(next <= previous + 0.02, "Forward playback must lift the word monotonically")
+}
+precondition(liftPositions.first! - liftPositions.last! > 1,
+             "Subpixel rendering must preserve the intended lift distance")
+for (before, after, active) in [(0.0, 0.000_001, false), (0.999_999, 1.0, true)] {
+    let beforeCenter = stemCenter(liftBitmap([before, 0]), active: active)
+    let afterCenter = stemCenter(liftBitmap([after, 0]), active: active)
+    precondition(abs(afterCenter - beforeCenter) < 0.2,
+                 "Switching between moving images and resting text must not cause a baseline jump")
+}
+print("Karaoke subpixel lift continuity checks passed (\(distinctPositions.count)/61 distinct positions)")
+
+// Cached text must retain the orientation, shaping, and baseline of direct
+// TextKit drawing, including descenders, CJK fallback fonts, and color emoji.
+let shapeRenderer = KaraokeTextRendererView(frame: NSRect(x: 0, y: 0, width: 500, height: 100))
+let shapeText = "gQj音乐🙂"
+let shapeLine = LyricLine(text: shapeText, startTime: 0, endTime: 1, timingSegments: [
+    LyricTimingSegment(text: shapeText, startOffset: 0, duration: 1)
+])
+func shapeBitmap(cached: Bool) -> NSBitmapImageRep {
+    shapeRenderer.configure(
+        line: shapeLine, fillFractions: [cached ? 0.000_001 : 0], fontName: "Menlo", fontSize: 48,
+        fontWeight: .regular, activeColor: .red, inactiveColor: .green,
+        lineLimit: 0, lineSpacing: 0, textAlignment: .left, usesWordLift: cached
+    )
+    shapeRenderer.layoutSubtreeIfNeeded()
+    let bitmap = shapeRenderer.bitmapImageRepForCachingDisplay(in: shapeRenderer.bounds)!
+    shapeRenderer.cacheDisplay(in: shapeRenderer.bounds, to: bitmap)
+    return bitmap
+}
+let directShape = shapeBitmap(cached: false)
+let cachedShape = shapeBitmap(cached: true)
+var shapeIntersection = 0
+var shapeUnion = 0
+for y in 0..<directShape.pixelsHigh {
+    for x in 0..<directShape.pixelsWide {
+        let direct = directShape.colorAt(x: x, y: y)!.alphaComponent > 0.5
+        let cached = cachedShape.colorAt(x: x, y: y)!.alphaComponent > 0.5
+        if direct || cached { shapeUnion += 1 }
+        if direct && cached { shapeIntersection += 1 }
+    }
+}
+precondition(shapeUnion > 0 && Double(shapeIntersection) / Double(shapeUnion) > 0.9,
+             "Cached glyphs must preserve the shape and orientation of directly drawn text")
+
 // Render a single timing segment that spans three visual lines. Its first
 // fragment must fill before later fragments, with no text clipped at the top.
 let wrappedLine = LyricLine(text: "HH HH HH", startTime: 0, endTime: 2, timingSegments: [
@@ -354,6 +431,26 @@ for y in 0..<wrappedBitmap.pixelsHigh {
 precondition(!redRows.isEmpty && !greenRows.isEmpty, "Wrapped text must retain both lyric colors")
 precondition(redRows.reduce(0, +) / redRows.count < greenRows.reduce(0, +) / greenRows.count,
              "Wrapped words must highlight their first visual line before later lines")
+
+// Changing only the container width must invalidate the cached fragments.
+liftRenderer.setFrameSize(NSSize(width: 500, height: 240))
+liftRenderer.layoutSubtreeIfNeeded()
+let wideBitmap = liftRenderer.bitmapImageRepForCachingDisplay(in: liftRenderer.bounds)!
+liftRenderer.cacheDisplay(in: liftRenderer.bounds, to: wideBitmap)
+var wideRows: [Int] = []
+for y in 0..<wideBitmap.pixelsHigh {
+    for x in 0..<wideBitmap.pixelsWide {
+        if wideBitmap.colorAt(x: x, y: y)!.alphaComponent > 0.5 { wideRows.append(y) }
+    }
+}
+let wrappedRows = redRows + greenRows
+precondition(!wideRows.isEmpty && wideRows.max()! - wideRows.min()! < (wrappedRows.max()! - wrappedRows.min()!) / 2,
+             "Resizing must rebuild word images for the new line wrapping")
+liftRenderer.viewDidChangeBackingProperties()
+let refreshedBitmap = liftRenderer.bitmapImageRepForCachingDisplay(in: liftRenderer.bounds)!
+liftRenderer.cacheDisplay(in: liftRenderer.bounds, to: refreshedBitmap)
+precondition(wideBitmap.tiffRepresentation == refreshedBitmap.tiffRepresentation,
+             "Rebuilding images after a backing change must preserve the rendered text")
 print("Karaoke word lift drawing checks passed")
 SWIFT
 

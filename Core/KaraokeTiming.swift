@@ -19,7 +19,7 @@ enum KaraokeTiming {
 
 enum KaraokeWordLift {
     static func maximumOffset(fontSize: CGFloat) -> CGFloat {
-        min(4, max(1, fontSize * 0.065))
+        min(9, max(2, fontSize * 0.15))
     }
 
     /// Ease each word up as it fills, then hold it at the raised baseline.
@@ -88,6 +88,8 @@ struct KaraokePlaybackTimeAnchor: Sendable {
 
 @MainActor
 final class KaraokeLineBoundaryScheduler: ObservableObject {
+    // Exact line boundaries are useful for both word-timed karaoke and ordinary
+    // synchronized lyrics; the global playback sampler only runs every 0.5s.
     private let clock = ContinuousClock()
     private var anchor: KaraokePlaybackTimeAnchor
     private var task: Task<Void, Never>?
@@ -105,7 +107,7 @@ final class KaraokeLineBoundaryScheduler: ObservableObject {
         sampleTime: TimeInterval,
         isPlaying: Bool,
         lines: [LyricLine],
-        isKaraoke: Bool,
+        isTimed: Bool,
         onBoundary: @escaping @MainActor (TimeInterval) -> Void
     ) {
         let now = clock.now
@@ -114,19 +116,19 @@ final class KaraokeLineBoundaryScheduler: ObservableObject {
             sampleInstant: now,
             isPlaying: isPlaying
         )
-        schedule(lines: lines, isKaraoke: isKaraoke, onBoundary: onBoundary)
+        schedule(lines: lines, isTimed: isTimed, onBoundary: onBoundary)
     }
 
     @discardableResult
     func transition(
         isPlaying: Bool,
         lines: [LyricLine],
-        isKaraoke: Bool,
+        isTimed: Bool,
         onBoundary: @escaping @MainActor (TimeInterval) -> Void
     ) -> TimeInterval {
         let now = clock.now
         anchor = anchor.reanchored(at: now, isPlaying: isPlaying, upperBound: nil)
-        schedule(lines: lines, isKaraoke: isKaraoke, onBoundary: onBoundary)
+        schedule(lines: lines, isTimed: isTimed, onBoundary: onBoundary)
         return anchor.sampleTime
     }
 
@@ -137,11 +139,11 @@ final class KaraokeLineBoundaryScheduler: ObservableObject {
 
     private func schedule(
         lines: [LyricLine],
-        isKaraoke: Bool,
+        isTimed: Bool,
         onBoundary: @escaping @MainActor (TimeInterval) -> Void
     ) {
         cancel()
-        guard isKaraoke, anchor.isPlaying else { return }
+        guard isTimed, anchor.isPlaying else { return }
 
         let scheduledAnchor = anchor
         let boundaries = KaraokeLineBoundaries.all(in: lines)
