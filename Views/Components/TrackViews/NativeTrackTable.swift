@@ -247,7 +247,7 @@ struct NativeTrackTable: NSViewRepresentable {
             cell.textField?.textColor = selected ? .alternateSelectedControlTextColor : .labelColor
             if let titleCell = cell as? NativeTrackTitleCell {
                 titleCell.configure(track: track, expanded: parent.rowSize == .expanded,
-                    current: current, playing: parent.isPlaying, selected: selected, revision: parent.artworkRevision)
+                    current: current, playing: parent.isPlaying, revision: parent.artworkRevision)
                 titleCell.play = { [weak self] track in self?.parent.onPlay(track) }
             } else {
                 let value: String
@@ -401,14 +401,14 @@ struct NativeTrackTable: NSViewRepresentable {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(track: Track, expanded: Bool, current: Bool, playing: Bool, selected: Bool, revision: Int) {
+    func configure(track: Track, expanded: Bool, current: Bool, playing: Bool, revision: Int) {
         self.track = track
         self.expanded = expanded
         textField?.stringValue = track.title
         artwork.isHidden = !expanded
         if expanded { artwork.configure(request: .thumbnail(track.url, albumTitle: track.album), revision: revision) }
         else { artwork.stopLoading() }
-        button.isHidden = !current && !selected
+        button.isHidden = !current
         button.image = NSImage(systemSymbolName: current && playing ? "pause.fill" : "play.fill", accessibilityDescription: nil)
         button.contentTintColor = expanded ? .white : .labelColor
         button.layer?.backgroundColor = expanded ? NSColor.black.withAlphaComponent(0.5).cgColor : nil
