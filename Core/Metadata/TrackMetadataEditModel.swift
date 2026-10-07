@@ -100,6 +100,8 @@ struct TrackMetadataSnapshot: Equatable, Sendable {
     let file: TrackMetadataFileSummary
     let isWritable: Bool
     let restrictionReason: String?
+    var embeddedLyrics: String? = nil
+    var embeddedArtwork: [Data] = []
 }
 
 enum TrackMetadataLoadResult: Sendable {
@@ -170,6 +172,9 @@ struct TrackMetadataPatch: Equatable, Sendable {
     var compilation: MetadataPatchValue<Bool> = .unchanged
     var comment: MetadataPatchValue<String> = .unchanged
 
+    var removeEmbeddedLyrics = false
+    var removeEmbeddedArtwork = false
+
     var isEmpty: Bool {
         [
             title.isUnchanged,
@@ -185,7 +190,9 @@ struct TrackMetadataPatch: Equatable, Sendable {
             discTotal.isUnchanged,
             bpm.isUnchanged,
             compilation.isUnchanged,
-            comment.isUnchanged
+            comment.isUnchanged,
+            !removeEmbeddedLyrics,
+            !removeEmbeddedArtwork
         ].allSatisfy { $0 }
     }
 

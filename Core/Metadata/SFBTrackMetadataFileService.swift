@@ -8,6 +8,7 @@ enum TrackMetadataFileError: LocalizedError {
     case readFailed(String)
     case writeFailed(String)
     case verificationFailed([TrackMetadataEditableField])
+    case embeddedRemovalFailed
 
     var errorDescription: String? {
         switch self {
@@ -36,6 +37,8 @@ enum TrackMetadataFileError: LocalizedError {
                 String(appLocalized: "Could not save tags: %1$@"),
                 detail
             )
+        case .embeddedRemovalFailed:
+            return String(appLocalized: "Embedded lyrics or artwork could not be deleted. Please reopen the editor and try again.")
         case .verificationFailed(let fields):
             let names = fields.map(localizedMetadataFieldName).joined(separator: ", ")
             return String.localizedStringWithFormat(
@@ -49,7 +52,7 @@ enum TrackMetadataFileError: LocalizedError {
         switch self {
         case .fileMissing, .unsupportedFormat, .fileNotWritable:
             return true
-        case .readFailed, .writeFailed, .verificationFailed:
+        case .readFailed, .writeFailed, .verificationFailed, .embeddedRemovalFailed:
             return false
         }
     }
@@ -168,6 +171,10 @@ actor SFBTrackMetadataFileService {
         guard mismatches.isEmpty else {
             throw TrackMetadataFileError.verificationFailed(mismatches)
         }
+        guard (!patch.removeEmbeddedLyrics || verified.embeddedLyrics == nil),
+              (!patch.removeEmbeddedArtwork || verified.embeddedArtwork.isEmpty) else {
+            throw TrackMetadataFileError.embeddedRemovalFailed
+        }
         return verified
     }
 
@@ -227,7 +234,9 @@ actor SFBTrackMetadataFileService {
                 fileSize: fileSize
             ),
             isWritable: restrictionReason == nil,
-            restrictionReason: restrictionReason
+            restrictionReason: restrictionReason,
+            embeddedLyrics: metadata.lyrics,
+            embeddedArtwork: metadata.attachedPictures.map(\.imageData)
         )
     }
 
@@ -259,6 +268,12 @@ actor SFBTrackMetadataFileService {
         apply(patch.bpm, to: \.bpm, on: metadata)
         apply(patch.compilation, to: \.isCompilation, on: metadata)
         apply(patch.comment, to: \.comment, on: metadata)
+        if patch.removeEmbeddedLyrics {
+            metadata.lyrics = nil
+        }
+        if patch.removeEmbeddedArtwork {
+            metadata.removeAllAttachedPictures()
+        }
 
         do {
             try audioFile.writeMetadata()

@@ -121,6 +121,14 @@ enum ID3TrackMetadataWriter {
         append(patch.bpm, field: PTID3MetadataFieldBPM, to: &result)
         appendCompilation(patch.compilation, to: &result)
         append(patch.comment, field: PTID3MetadataFieldComment, to: &result)
+        if patch.removeEmbeddedLyrics {
+            result.append(Operation(field: PTID3MetadataFieldEmbeddedLyrics,
+                                    action: PTID3PatchActionRemove, value: nil))
+        }
+        if patch.removeEmbeddedArtwork {
+            result.append(Operation(field: PTID3MetadataFieldEmbeddedArtwork,
+                                    action: PTID3PatchActionRemove, value: nil))
+        }
         return result
     }
 

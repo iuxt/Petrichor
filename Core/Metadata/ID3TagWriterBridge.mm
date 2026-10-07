@@ -38,7 +38,7 @@ using TagLib::ID3v2::Tag;
 using TagLib::ID3v2::TextIdentificationFrame;
 
 constexpr size_t kFieldCount =
-    static_cast<size_t>(PTID3MetadataFieldComment) + 1;
+    static_cast<size_t>(PTID3MetadataFieldEmbeddedArtwork) + 1;
 
 void setError(
     char *buffer,
@@ -234,7 +234,7 @@ PTID3ContainerKind probeContainer(const char *path)
 bool validField(PTID3MetadataField field)
 {
     return field >= PTID3MetadataFieldTitle &&
-           field <= PTID3MetadataFieldComment;
+           field <= PTID3MetadataFieldEmbeddedArtwork;
 }
 
 bool validateOperations(
@@ -266,6 +266,12 @@ bool validateOperations(
             return false;
         }
 
+        if((operation.field == PTID3MetadataFieldEmbeddedLyrics ||
+            operation.field == PTID3MetadataFieldEmbeddedArtwork) &&
+           operation.action != PTID3PatchActionRemove) {
+            error = "Embedded metadata only supports removal.";
+            return false;
+        }
         const auto fieldIndex = static_cast<size_t>(operation.field);
         if(seen[fieldIndex]) {
             error = "A metadata field was supplied more than once.";
@@ -451,6 +457,14 @@ void applyOperations(
     size_t operationCount
 )
 {
+    if(findOperation(PTID3MetadataFieldEmbeddedLyrics, operations, operationCount)) {
+        tag->removeFrames(ByteVector("USLT"));
+        tag->removeFrames(ByteVector("SYLT"));
+    }
+    if(findOperation(PTID3MetadataFieldEmbeddedArtwork, operations, operationCount)) {
+        tag->removeFrames(ByteVector("APIC"));
+    }
+
     constexpr std::array<PTID3MetadataField, 8> textFields = {
         PTID3MetadataFieldTitle,
         PTID3MetadataFieldArtist,

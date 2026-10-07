@@ -42,6 +42,8 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     @Published private(set) var isAwaitingPlaybackRestoration = false
     @Published private(set) var allSelectedItemsSaved = false
     @Published private(set) var form: TrackMetadataEditForm?
+    @Published private(set) var lyricsRemovalTargets: Set<TrackMetadataEditTarget> = []
+    @Published private(set) var artworkRemovalTargets: Set<TrackMetadataEditTarget> = []
     private(set) var appliedOnlineTagCandidate: OnlineTagCandidate?
 
     let tracks: [Track]
@@ -50,6 +52,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     private var loadTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var retryPatch: TrackMetadataPatch?
+    private var selectedSaveTargets: Set<TrackMetadataEditTarget> = []
     private var playbackRestorationErrorTarget: TrackMetadataEditTarget?
 
     init(
@@ -93,12 +96,35 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         guard phase == .editing,
               snapshots.contains(where: \.isWritable),
               let form,
-              form.isDirty,
+              (form.isDirty || !lyricsRemovalTargets.isEmpty || !artworkRemovalTargets.isEmpty),
               validationError == nil,
               let patch = try? form.makePatch() else {
             return false
         }
-        return !patch.isEmpty
+        return !patch.isEmpty || !lyricsRemovalTargets.isEmpty || !artworkRemovalTargets.isEmpty
+    }
+
+    func toggleLyricsRemoval(for target: TrackMetadataEditTarget) {
+        guard phase == .editing,
+              snapshots.contains(where: { $0.target == target && $0.isWritable && $0.embeddedLyrics != nil }) else { return }
+        if !lyricsRemovalTargets.insert(target).inserted {
+            lyricsRemovalTargets.remove(target)
+        }
+    }
+
+    func toggleArtworkRemoval(for target: TrackMetadataEditTarget) {
+        guard phase == .editing,
+              snapshots.contains(where: { $0.target == target && $0.isWritable && !$0.embeddedArtwork.isEmpty }) else { return }
+        if !artworkRemovalTargets.insert(target).inserted {
+            artworkRemovalTargets.remove(target)
+        }
+    }
+
+    private func patch(_ base: TrackMetadataPatch, for target: TrackMetadataEditTarget) -> TrackMetadataPatch {
+        var patch = base
+        patch.removeEmbeddedLyrics = lyricsRemovalTargets.contains(target)
+        patch.removeEmbeddedArtwork = artworkRemovalTargets.contains(target)
+        return patch
     }
 
     var canLookUpTags: Bool {
@@ -217,8 +243,9 @@ final class TrackMetadataEditorViewModel: ObservableObject {
             playbackRestorationError = nil
             playbackRestorationErrorTarget = nil
             let writableTargets = snapshots
-                .filter(\.isWritable)
+                .filter { $0.isWritable && !self.patch(patch, for: $0.target).isEmpty }
                 .map(\.target)
+            selectedSaveTargets = Set(writableTargets)
             beginSave(
                 targets: writableTargets,
                 patch: patch,
@@ -371,7 +398,7 @@ final class TrackMetadataEditorViewModel: ObservableObject {
 
                 let verified = try await fileService.write(
                     target: target,
-                    patch: patch
+                    patch: self.patch(patch, for: target)
                 )
                 try Task.checkCancellation()
                 let reindexed = try await libraryManager.databaseManager
@@ -486,6 +513,8 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         snapshots = snapshots.map { snapshot in
             verifiedByTarget[snapshot.target] ?? snapshot
         }
+        lyricsRemovalTargets.subtract(verifiedByTarget.keys)
+        artworkRemovalTargets.subtract(verifiedByTarget.keys)
         saveResults = results
         form = TrackMetadataEditForm(tags: snapshots.map(\.tags))
         validationError = nil
@@ -541,9 +570,9 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         let outcomes = Dictionary(
             uniqueKeysWithValues: saveResults.map { ($0.target, $0.outcome) }
         )
-        let allTargetsSaved = tracks
-            .map(Self.target(for:))
-            .allSatisfy { target in
+        let allTargetsSaved = unavailableResults.isEmpty
+            && !selectedSaveTargets.isEmpty
+            && selectedSaveTargets.allSatisfy { target in
                 if case .saved? = outcomes[target] {
                     return true
                 }

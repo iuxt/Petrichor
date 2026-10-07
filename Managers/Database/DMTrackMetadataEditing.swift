@@ -48,6 +48,12 @@ extension DatabaseManager {
                 .fetchSet(db)
 
             applyVerifiedEditableTags(verified.tags, to: &track)
+            var extended = track.extendedMetadata ?? ExtendedMetadata()
+            extended.lyrics = verified.embeddedLyrics
+            track.extendedMetadata = extended
+            // Artwork is resolved from the file on demand. Drop legacy stored bytes.
+            track.trackArtworkData = nil
+            track.albumArtworkData = nil
             track.albumId = nil
             if let values = try? target.url.resourceValues(
                 forKeys: [.fileSizeKey, .contentModificationDateKey]

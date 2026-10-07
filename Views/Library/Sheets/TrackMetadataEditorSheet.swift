@@ -15,6 +15,18 @@ struct TrackMetadataEditorSheet: View {
     @State private var didFinishSuccessfully = false
     @State private var showingOnlineTagLookup = false
     @State private var didStartOnlineArtworkDownload = false
+    @State private var embeddedTarget: TrackMetadataEditTarget?
+    @State private var embeddedPreview: EmbeddedPreview?
+
+    private struct EmbeddedPreview: Identifiable {
+        enum Content {
+            case lyrics(String)
+            case artwork([Data])
+        }
+        let id = UUID()
+        let filename: String
+        let content: Content
+    }
 
     init(request: TrackMetadataEditorRequest) {
         _model = StateObject(
@@ -45,6 +57,9 @@ struct TrackMetadataEditorSheet: View {
         }
         .onChange(of: model.savedCount) { _, count in
             if count > 0 { startOnlineArtworkDownloadIfNeeded() }
+        }
+        .sheet(item: $embeddedPreview) { preview in
+            embeddedPreviewSheet(preview)
         }
         .sheet(isPresented: $showingOnlineTagLookup) {
             if let form = model.form, let snapshot = model.snapshots.first {
@@ -222,7 +237,10 @@ struct TrackMetadataEditorSheet: View {
     private func editorContent(isDisabled: Bool) -> some View {
         ScrollView {
             HStack(alignment: .top, spacing: 14) {
-                fileInformationGroup
+                VStack(spacing: 14) {
+                    fileInformationGroup
+                    embeddedInformationGroup
+                }
                     .frame(minWidth: 245, idealWidth: 265, maxWidth: 285)
 
                 tagInformationGroup
@@ -275,6 +293,128 @@ struct TrackMetadataEditorSheet: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Embedded Content
+
+    private var embeddedSnapshot: TrackMetadataSnapshot? {
+        model.snapshots.first { $0.target == embeddedTarget } ?? model.snapshots.first
+    }
+
+    private var embeddedInformationGroup: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                if model.snapshots.count > 1 {
+                    Picker(String(appLocalized: "Selected Tracks"), selection: Binding(
+                        get: { embeddedSnapshot?.target },
+                        set: { embeddedTarget = $0 }
+                    )) {
+                        ForEach(model.snapshots, id: \.target) { snapshot in
+                            Text(verbatim: snapshot.file.filename)
+                                .tag(Optional(snapshot.target))
+                        }
+                    }
+                    .labelsHidden()
+                }
+
+                if let snapshot = embeddedSnapshot {
+                    embeddedContentRow(
+                        title: String(appLocalized: "Embedded Lyrics"),
+                        isPresent: snapshot.embeddedLyrics != nil,
+                        isRemoving: model.lyricsRemovalTargets.contains(snapshot.target),
+                        isWritable: snapshot.isWritable,
+                        view: {
+                            guard let lyrics = snapshot.embeddedLyrics else { return }
+                            embeddedPreview = EmbeddedPreview(filename: snapshot.file.filename, content: .lyrics(lyrics))
+                        },
+                        toggleRemoval: { model.toggleLyricsRemoval(for: snapshot.target) }
+                    )
+                    Divider()
+                    embeddedContentRow(
+                        title: String(appLocalized: "Embedded Artwork"),
+                        isPresent: !snapshot.embeddedArtwork.isEmpty,
+                        isRemoving: model.artworkRemovalTargets.contains(snapshot.target),
+                        isWritable: snapshot.isWritable,
+                        view: {
+                            embeddedPreview = EmbeddedPreview(filename: snapshot.file.filename, content: .artwork(snapshot.embeddedArtwork))
+                        },
+                        toggleRemoval: { model.toggleArtworkRemoval(for: snapshot.target) }
+                    )
+                }
+                Text(verbatim: String(appLocalized: "Embedded content is deleted only when you save. External lyrics and artwork files are kept."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Text(verbatim: String(appLocalized: "Embedded Content"))
+                .font(.subheadline)
+                .fontWeight(.semibold)
+        }
+    }
+
+    private func embeddedContentRow(
+        title: String,
+        isPresent: Bool,
+        isRemoving: Bool,
+        isWritable: Bool,
+        view: @escaping () -> Void,
+        toggleRemoval: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(verbatim: title).font(.subheadline)
+                Spacer()
+                Text(verbatim: String(appLocalized: isRemoving ? "Pending Deletion" : (isPresent ? "Present" : "Not Present")))
+                    .font(.caption)
+                    .foregroundStyle(isRemoving ? .orange : .secondary)
+            }
+            if isPresent {
+                HStack {
+                    Button(String(appLocalized: "View Embedded Content"), action: view)
+                    Spacer()
+                    Button(String(appLocalized: isRemoving ? "Undo Deletion" : "Delete"), action: toggleRemoval)
+                        .disabled(!isWritable)
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func embeddedPreviewSheet(_ preview: EmbeddedPreview) -> some View {
+        VStack(spacing: 12) {
+            Text(verbatim: {
+                switch preview.content {
+                case .lyrics: String(appLocalized: "Embedded Lyrics")
+                case .artwork: String(appLocalized: "Embedded Artwork")
+                }
+            }())
+            .font(.headline)
+            Text(verbatim: preview.filename)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ScrollView {
+                switch preview.content {
+                case .lyrics(let lyrics):
+                    Text(verbatim: lyrics)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                case .artwork(let pictures):
+                    LazyVStack(spacing: 12) {
+                        ForEach(pictures.indices, id: \.self) { index in
+                            EmbeddedArtworkPreview(data: pictures[index])
+                        }
+                    }
+                    .padding(12)
+                }
+            }
+            Button(String(appLocalized: "Close")) { embeddedPreview = nil }
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(16)
+        .frame(width: 620, height: 540)
     }
 
     // MARK: - File Information
@@ -816,5 +956,32 @@ struct TrackMetadataEditorSheet: View {
 
     private static func formattedFileSize(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+private struct EmbeddedArtworkPreview: View {
+    let data: Data
+    @State private var image: NSImage?
+    @State private var didLoad = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: 440)
+                    .accessibilityLabel(String(appLocalized: "Embedded Artwork"))
+            } else if didLoad {
+                Text(verbatim: String(appLocalized: "This embedded artwork cannot be displayed."))
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .task {
+            image = await Task.detached(priority: .userInitiated) { NSImage(data: data) }.value
+            didLoad = true
+        }
     }
 }

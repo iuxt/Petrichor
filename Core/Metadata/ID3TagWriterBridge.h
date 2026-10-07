@@ -32,7 +32,9 @@ typedef enum PTID3MetadataField {
     PTID3MetadataFieldDiscTotal = 10,
     PTID3MetadataFieldBPM = 11,
     PTID3MetadataFieldCompilation = 12,
-    PTID3MetadataFieldComment = 13
+    PTID3MetadataFieldComment = 13,
+    PTID3MetadataFieldEmbeddedLyrics = 14,
+    PTID3MetadataFieldEmbeddedArtwork = 15
 } PTID3MetadataField;
 
 typedef enum PTID3PatchAction {

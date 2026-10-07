@@ -94,8 +94,10 @@ cat >"$HARNESS" <<'HARNESS_EOF'
 #include <taglib/trueaudiofile.h>
 #include <taglib/uniquefileidentifierframe.h>
 #include <taglib/unsynchronizedlyricsframe.h>
+#include <taglib/synchronizedlyricsframe.h>
 #include <taglib/wavfile.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -114,6 +116,7 @@ using TagLib::ID3v2::Tag;
 using TagLib::ID3v2::TextIdentificationFrame;
 using TagLib::ID3v2::UniqueFileIdentifierFrame;
 using TagLib::ID3v2::UnsynchronizedLyricsFrame;
+using TagLib::ID3v2::SynchronizedLyricsFrame;
 using TagLib::ID3v2::UserTextIdentificationFrame;
 
 [[noreturn]] static void fail(const std::string &message)
@@ -156,7 +159,7 @@ static void seedFrames(Tag *tag)
     require(tag != nullptr, "ID3v2 tag is unavailable while seeding");
 
     for(const char *id : {"TIT2", "TPE1", "TDRC", "TCMP", "POPM", "USLT",
-                          "APIC", "TXXX", "PRIV", "UFID"}) {
+                          "APIC", "SYLT", "TXXX", "PRIV", "UFID"}) {
         tag->removeFrames(ByteVector(id));
     }
 
@@ -191,6 +194,15 @@ static void seedFrames(Tag *tag)
     lyricsTwo->setDescription(String("translation", String::UTF8));
     lyricsTwo->setText(String("Second preserved lyric", String::UTF8));
     tag->addFrame(lyricsTwo);
+
+    auto *synchronized = new SynchronizedLyricsFrame(String::UTF8);
+    synchronized->setLanguage(bytes("eng"));
+    synchronized->setType(SynchronizedLyricsFrame::Lyrics);
+    synchronized->setTimestampFormat(SynchronizedLyricsFrame::AbsoluteMilliseconds);
+    SynchronizedLyricsFrame::SynchedTextList timedLines;
+    timedLines.append(SynchronizedLyricsFrame::SynchedText(1000, String("Timed lyric", String::UTF8)));
+    synchronized->setSynchedText(timedLines);
+    tag->addFrame(synchronized);
 
     auto *front = new AttachedPictureFrame();
     front->setTextEncoding(String::UTF8);
@@ -236,7 +248,7 @@ static FrameSnapshot preservedSnapshot(Tag *tag)
     for(Frame *frame : tag->frameList()) {
         const ByteVector idBytes = frame->frameID();
         const std::string id(idBytes.data(), idBytes.size());
-        if(id == "POPM" || id == "USLT" || id == "APIC" || id == "TXXX" ||
+        if(id == "POPM" || id == "USLT" || id == "APIC" || id == "SYLT" || id == "TXXX" ||
            id == "PRIV" || id == "UFID" || id == "TPE1") {
             const ByteVector rendered = frame->render();
             result.emplace_back(
@@ -332,6 +344,44 @@ static void exercise(const char *path, PTID3ContainerKind expected)
         typename Adapter::File file(path, true, TagLib::AudioProperties::Fast);
         verifySecondWrite(Adapter::tag(file, false));
     }
+
+    const PTID3MetadataOperation removeArtwork[] = {
+        {PTID3MetadataFieldEmbeddedArtwork, PTID3PatchActionRemove, nullptr}
+    };
+    require(PTID3WriteMetadataAtPath(path, removeArtwork, 1, error, sizeof(error)),
+            std::string("Artwork removal failed: ") + error);
+    {
+        typename Adapter::File file(path, true, TagLib::AudioProperties::Fast);
+        auto *tag = Adapter::tag(file, false);
+        require(tag->frameListMap()["APIC"].isEmpty(), "All artwork frames must be removed");
+        require(tag->frameListMap()["USLT"].size() == 2, "Artwork removal must preserve every lyric frame");
+        auto expected = before;
+        expected.erase(std::remove_if(expected.begin(), expected.end(),
+            [](const auto &frame) { return frame.first == "APIC"; }), expected.end());
+        require(preservedSnapshot(tag) == expected, "Artwork removal changed unrelated frames");
+    }
+
+    const PTID3MetadataOperation removeLyrics[] = {
+        {PTID3MetadataFieldEmbeddedLyrics, PTID3PatchActionRemove, nullptr}
+    };
+    require(PTID3WriteMetadataAtPath(path, removeLyrics, 1, error, sizeof(error)),
+            std::string("Lyrics removal failed: ") + error);
+    {
+        typename Adapter::File file(path, true, TagLib::AudioProperties::Fast);
+        auto *tag = Adapter::tag(file, false);
+        require(tag->frameListMap()["USLT"].isEmpty(), "All language variants of lyrics must be removed");
+        require(tag->frameListMap()["SYLT"].isEmpty(), "Synchronized lyrics must be removed");
+        auto expected = before;
+        expected.erase(std::remove_if(expected.begin(), expected.end(),
+            [](const auto &frame) { return frame.first == "APIC" || frame.first == "USLT" || frame.first == "SYLT"; }), expected.end());
+        require(preservedSnapshot(tag) == expected, "Lyrics removal changed unrelated frames");
+    }
+
+    const PTID3MetadataOperation invalid[] = {
+        {PTID3MetadataFieldEmbeddedArtwork, PTID3PatchActionSet, "unsupported"}
+    };
+    require(!PTID3WriteMetadataAtPath(path, invalid, 1, error, sizeof(error)),
+            "Removal-only fields must reject set operations");
 }
 
 struct MPEGAdapter {

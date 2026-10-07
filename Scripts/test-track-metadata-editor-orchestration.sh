@@ -373,6 +373,7 @@ actor ScriptedFileService: TrackMetadataFileServicing {
     private var writeFailuresRemaining: [Int64: Int]
     private var cancellingWriteIDs: Set<Int64>
     private var receivedTitlePatches: [Int64: [MetadataPatchValue<String>]] = [:]
+    private var receivedPatches: [Int64: [TrackMetadataPatch]] = [:]
 
     init(
         recorder: EventRecorder,
@@ -411,6 +412,7 @@ actor ScriptedFileService: TrackMetadataFileServicing {
         let id = target.trackID!
         await recorder.append("write:\(id)")
         receivedTitlePatches[id, default: []].append(patch.title)
+        receivedPatches[id, default: []].append(patch)
         if cancellingWriteIDs.remove(id) != nil {
             withUnsafeCurrentTask { task in
                 task?.cancel()
@@ -423,6 +425,8 @@ actor ScriptedFileService: TrackMetadataFileServicing {
         }
         return writes[id]!
     }
+
+    func patches(for id: Int64) -> [TrackMetadataPatch] { receivedPatches[id] ?? [] }
 
     func writtenTitles(for id: Int64) -> [MetadataPatchValue<String>] {
         receivedTitlePatches[id] ?? []
@@ -510,6 +514,7 @@ func makeManagers(
 struct Harness {
     @MainActor
     static func main() async {
+        await testEmbeddedRemovalStagesAndRetriesPerTarget()
         await testFreshLoadAggregation()
         await testOnlineTagsOnlyStageSingleWritableTrack()
         await testSequentialSaveAndFailedOnlyRetry()
@@ -518,6 +523,58 @@ struct Harness {
         await testPlaybackRestoreFailureBlocksDismissal()
         await testCancellationRestoresCurrentBeforeStopping()
         print("Track metadata editor orchestration checks passed")
+    }
+
+    @MainActor
+    private static func testEmbeddedRemovalStagesAndRetriesPerTarget() async {
+        let recorder = EventRecorder()
+        let one = Track(id: 1, name: "one")
+        let two = Track(id: 2, name: "two")
+        let three = Track(id: 3, name: "untouched")
+        var originalOne = snapshot(one, title: "One")
+        originalOne.embeddedLyrics = "Original lyrics"
+        originalOne.embeddedArtwork = [Data([1, 2, 3])]
+        var originalTwo = snapshot(two, title: "Two")
+        originalTwo.embeddedLyrics = "Other lyrics"
+        originalTwo.embeddedArtwork = [Data([4, 5, 6])]
+        var savedOne = originalOne
+        savedOne.embeddedLyrics = nil
+        var savedTwo = originalTwo
+        savedTwo.embeddedArtwork = []
+        let service = ScriptedFileService(recorder: recorder, loads: [
+            1: .loaded(originalOne), 2: .loaded(originalTwo), 3: .loaded(snapshot(three, title: "Untouched"))
+        ], writes: [1: savedOne, 2: savedTwo], writeFailuresRemaining: [1: 1])
+        let model = TrackMetadataEditorViewModel(tracks: [one, two, three], fileService: service)
+        model.load()
+        await waitUntil("embedded load") { model.phase == .editing }
+        model.toggleLyricsRemoval(for: originalOne.target)
+        expect(model.canSave, "Deleting embedded content alone must enable Save")
+        expect(model.snapshots[0].embeddedLyrics == "Original lyrics", "Deletion must keep the preview until Save")
+        model.toggleLyricsRemoval(for: originalOne.target)
+        expect(!model.canSave, "Undoing the only deletion must disable Save")
+        model.toggleLyricsRemoval(for: originalOne.target)
+        model.toggleArtworkRemoval(for: originalTwo.target)
+        expect(recorder.events == ["load:1", "load:2", "load:3"], "Staging and undo must never write files")
+        let (library, playlists, playback, database) = makeManagers(recorder: recorder, currentTrack: nil)
+        for track in [one, two] {
+            database.results[track.trackId!] = .init(track: track, fullTrack: .init(trackId: track.trackId!))
+        }
+        model.save(libraryManager: library, playlistManager: playlists, playbackManager: playback)
+        await waitUntil("embedded partial save") { model.phase == .results }
+        let firstPatch = await service.patches(for: 1)[0]
+        let secondPatch = await service.patches(for: 2)[0]
+        expect(firstPatch.removeEmbeddedLyrics && !firstPatch.removeEmbeddedArtwork, "Lyrics deletion must be scoped to its track")
+        expect(!secondPatch.removeEmbeddedLyrics && secondPatch.removeEmbeddedArtwork, "Artwork deletion must be scoped to its track")
+        expect(firstPatch.title == .unchanged && secondPatch.title == .unchanged, "Deleting content must preserve text tags")
+        let untouchedPatches = await service.patches(for: 3)
+        expect(untouchedPatches.isEmpty, "Untouched batch tracks must not be written")
+        model.retryFailed(libraryManager: library, playlistManager: playlists, playbackManager: playback)
+        await waitUntil("embedded retry") { model.allSelectedItemsSaved }
+        let retries = await service.patches(for: 1)
+        expect(retries == [firstPatch, firstPatch], "Retry must retain the failed track's removal intent")
+        let successfulPatches = await service.patches(for: 2)
+        expect(successfulPatches.count == 1, "Retry must never rewrite an already successful track")
+        expect(model.snapshots[0].embeddedLyrics == nil && model.snapshots[1].embeddedArtwork.isEmpty, "Successful snapshots must reflect deletions")
     }
 
     @MainActor
