@@ -8782,6 +8782,17 @@
         }
       }
     },
+    "Tags": {
+      "comment": "Tab title in the track metadata editor.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签"
+          }
+        }
+      }
+    },
     "The %1$@ format is read-only.": {
       "comment": "Metadata editor preflight message. The argument is the audio format.",
       "localizations": {
@@ -9365,6 +9376,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "歌曲信息（%1$lld 首）"
+          }
+        }
+      }
+    },
+    "Track Information Details": {
+      "comment": "Tab title in the track metadata editor.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌曲信息详情"
           }
         }
       }

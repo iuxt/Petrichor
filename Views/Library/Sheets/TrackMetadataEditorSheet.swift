@@ -16,17 +16,51 @@ struct TrackMetadataEditorSheet: View {
     @State private var showingOnlineTagLookup = false
     @State private var didStartOnlineArtworkDownload = false
     @State private var embeddedTarget: TrackMetadataEditTarget?
-    @State private var embeddedPreview: EmbeddedPreview?
+    @State private var selectedTab: EditorTab = .details
 
-    private struct EmbeddedPreview: Identifiable {
-        enum Content {
-            case lyrics(String)
-            case artwork([Data])
+    private enum EditorTab: CaseIterable, TabbedItem {
+        case details
+        case tags
+        case artwork
+        case lyrics
+
+        var title: String {
+            switch self {
+            case .details: String(appLocalized: "Track Information Details")
+            case .tags: String(appLocalized: "Tags")
+            case .artwork: String(appLocalized: "Embedded Artwork")
+            case .lyrics: String(appLocalized: "Embedded Lyrics")
+            }
         }
-        let id = UUID()
-        let filename: String
-        let content: Content
+
+        var icon: String { "" }
     }
+
+    private enum EmbeddedContent {
+        case artwork
+        case lyrics
+
+        var title: String {
+            switch self {
+            case .artwork: String(appLocalized: "Embedded Artwork")
+            case .lyrics: String(appLocalized: "Embedded Lyrics")
+            }
+        }
+    }
+
+    private static let tabStyle = TabbedButtonStyle(
+        showIcon: false,
+        showTitle: true,
+        iconSize: 12,
+        textSize: 12,
+        iconTextSpacing: 0,
+        buttonWidth: nil,
+        verticalPadding: 5,
+        contentShapeRadius: 6,
+        backgroundViewRadius: 6,
+        expandButtons: true,
+        horizontalContentPadding: 8
+    )
 
     init(request: TrackMetadataEditorRequest) {
         _model = StateObject(
@@ -58,9 +92,6 @@ struct TrackMetadataEditorSheet: View {
         .onChange(of: model.savedCount) { _, count in
             if count > 0 { startOnlineArtworkDownloadIfNeeded() }
         }
-        .sheet(item: $embeddedPreview) { preview in
-            embeddedPreviewSheet(preview)
-        }
         .sheet(isPresented: $showingOnlineTagLookup) {
             if let form = model.form, let snapshot = model.snapshots.first {
                 OnlineTagLookupSheet(
@@ -69,6 +100,7 @@ struct TrackMetadataEditorSheet: View {
                     duration: snapshot.file.duration
                 ) { candidate, fields in
                     model.applyOnlineTags(candidate, fields: fields)
+                    selectedTab = .tags
                 }
             }
         }
@@ -235,18 +267,35 @@ struct TrackMetadataEditorSheet: View {
     }
 
     private func editorContent(isDisabled: Bool) -> some View {
-        ScrollView {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(spacing: 14) {
-                    fileInformationGroup
-                    embeddedInformationGroup
-                }
-                    .frame(minWidth: 245, idealWidth: 265, maxWidth: 285)
+        VStack(spacing: 0) {
+            TabbedButtons(
+                items: EditorTab.allCases,
+                selection: $selectedTab,
+                style: Self.tabStyle,
+                animation: .transform,
+                isDisabled: isDisabled
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
 
-                tagInformationGroup
-                    .frame(minWidth: 390, maxWidth: .infinity)
+            ScrollView {
+                Group {
+                    switch selectedTab {
+                    case .details:
+                        fileInformationGroup
+                    case .tags:
+                        tagInformationGroup
+                    case .artwork:
+                        embeddedInformationGroup(for: .artwork)
+                    case .lyrics:
+                        embeddedInformationGroup(for: .lyrics)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
-            .padding(16)
+            .id(selectedTab)
         }
         .disabled(isDisabled)
     }
@@ -301,9 +350,9 @@ struct TrackMetadataEditorSheet: View {
         model.snapshots.first { $0.target == embeddedTarget } ?? model.snapshots.first
     }
 
-    private var embeddedInformationGroup: some View {
+    private func embeddedInformationGroup(for content: EmbeddedContent) -> some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 if model.snapshots.count > 1 {
                     Picker(String(appLocalized: "Selected Tracks"), selection: Binding(
                         get: { embeddedSnapshot?.target },
@@ -314,33 +363,52 @@ struct TrackMetadataEditorSheet: View {
                                 .tag(Optional(snapshot.target))
                         }
                     }
-                    .labelsHidden()
                 }
 
                 if let snapshot = embeddedSnapshot {
-                    embeddedContentRow(
-                        title: String(appLocalized: "Embedded Lyrics"),
-                        isPresent: snapshot.embeddedLyrics != nil,
-                        isRemoving: model.lyricsRemovalTargets.contains(snapshot.target),
-                        isWritable: snapshot.isWritable,
-                        view: {
-                            guard let lyrics = snapshot.embeddedLyrics else { return }
-                            embeddedPreview = EmbeddedPreview(filename: snapshot.file.filename, content: .lyrics(lyrics))
-                        },
-                        toggleRemoval: { model.toggleLyricsRemoval(for: snapshot.target) }
-                    )
-                    Divider()
-                    embeddedContentRow(
-                        title: String(appLocalized: "Embedded Artwork"),
-                        isPresent: !snapshot.embeddedArtwork.isEmpty,
-                        isRemoving: model.artworkRemovalTargets.contains(snapshot.target),
-                        isWritable: snapshot.isWritable,
-                        view: {
-                            embeddedPreview = EmbeddedPreview(filename: snapshot.file.filename, content: .artwork(snapshot.embeddedArtwork))
-                        },
-                        toggleRemoval: { model.toggleArtworkRemoval(for: snapshot.target) }
-                    )
+                    Text(verbatim: snapshot.file.filename)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+
+                    switch content {
+                    case .artwork:
+                        embeddedContentControls(
+                            isPresent: !snapshot.embeddedArtwork.isEmpty,
+                            isRemoving: model.artworkRemovalTargets.contains(snapshot.target),
+                            isWritable: snapshot.isWritable,
+                            toggleRemoval: { model.toggleArtworkRemoval(for: snapshot.target) }
+                        )
+                        LazyVStack(spacing: 12) {
+                            ForEach(snapshot.embeddedArtwork.indices, id: \.self) { index in
+                                EmbeddedArtworkPreview(data: snapshot.embeddedArtwork[index])
+                            }
+                        }
+                        .id(snapshot.target)
+                    case .lyrics:
+                        embeddedContentControls(
+                            isPresent: snapshot.embeddedLyrics != nil,
+                            isRemoving: model.lyricsRemovalTargets.contains(snapshot.target),
+                            isWritable: snapshot.isWritable,
+                            toggleRemoval: { model.toggleLyricsRemoval(for: snapshot.target) }
+                        )
+                        if let lyrics = snapshot.embeddedLyrics {
+                            Text(verbatim: lyrics)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(
+                                    Color(nsColor: .textBackgroundColor),
+                                    in: RoundedRectangle(cornerRadius: 5)
+                                )
+                        }
+                    }
+                } else {
+                    Text(verbatim: String(appLocalized: "Not Present"))
+                        .foregroundStyle(.secondary)
                 }
+
+                Divider()
                 Text(verbatim: String(appLocalized: "Embedded content is deleted only when you save. External lyrics and artwork files are kept."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -348,73 +416,29 @@ struct TrackMetadataEditorSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
-            Text(verbatim: String(appLocalized: "Embedded Content"))
+            Text(verbatim: content.title)
                 .font(.subheadline)
                 .fontWeight(.semibold)
         }
     }
 
-    private func embeddedContentRow(
-        title: String,
+    private func embeddedContentControls(
         isPresent: Bool,
         isRemoving: Bool,
         isWritable: Bool,
-        view: @escaping () -> Void,
         toggleRemoval: @escaping () -> Void
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(verbatim: title).font(.subheadline)
-                Spacer()
-                Text(verbatim: String(appLocalized: isRemoving ? "Pending Deletion" : (isPresent ? "Present" : "Not Present")))
-                    .font(.caption)
-                    .foregroundStyle(isRemoving ? .orange : .secondary)
-            }
-            if isPresent {
-                HStack {
-                    Button(String(appLocalized: "View Embedded Content"), action: view)
-                    Spacer()
-                    Button(String(appLocalized: isRemoving ? "Undo Deletion" : "Delete"), action: toggleRemoval)
-                        .disabled(!isWritable)
-                }
-                .controlSize(.small)
-            }
-        }
-    }
-
-    private func embeddedPreviewSheet(_ preview: EmbeddedPreview) -> some View {
-        VStack(spacing: 12) {
-            Text(verbatim: {
-                switch preview.content {
-                case .lyrics: String(appLocalized: "Embedded Lyrics")
-                case .artwork: String(appLocalized: "Embedded Artwork")
-                }
-            }())
-            .font(.headline)
-            Text(verbatim: preview.filename)
+        HStack {
+            Text(verbatim: String(appLocalized: isRemoving ? "Pending Deletion" : (isPresent ? "Present" : "Not Present")))
                 .font(.caption)
-                .foregroundStyle(.secondary)
-            ScrollView {
-                switch preview.content {
-                case .lyrics(let lyrics):
-                    Text(verbatim: lyrics)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                case .artwork(let pictures):
-                    LazyVStack(spacing: 12) {
-                        ForEach(pictures.indices, id: \.self) { index in
-                            EmbeddedArtworkPreview(data: pictures[index])
-                        }
-                    }
-                    .padding(12)
-                }
+                .foregroundStyle(isRemoving ? .orange : .secondary)
+            Spacer()
+            if isPresent {
+                Button(String(appLocalized: isRemoving ? "Undo Deletion" : "Delete"), action: toggleRemoval)
+                    .disabled(!isWritable)
+                    .controlSize(.small)
             }
-            Button(String(appLocalized: "Close")) { embeddedPreview = nil }
-                .keyboardShortcut(.cancelAction)
         }
-        .padding(16)
-        .frame(width: 620, height: 540)
     }
 
     // MARK: - File Information
