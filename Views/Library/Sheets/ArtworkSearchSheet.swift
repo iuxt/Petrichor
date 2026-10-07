@@ -103,10 +103,7 @@ struct ArtworkSearchSheet: View {
                         Text(verbatim: String(appLocalized: "Select a song to preview its artwork."))
                             .foregroundStyle(.secondary)
                     }
-                    if model.hasEmbeddedArtwork {
-                        Text(verbatim: String(appLocalized: "This song has embedded artwork. External artwork cannot replace it here."))
-                            .foregroundStyle(.orange)
-                    } else if model.hasExistingArtwork {
+                    if model.hasExistingArtwork {
                         Text(verbatim: String(appLocalized: "Saving another cover will use it for this song. Shared folder artwork is kept."))
                             .foregroundStyle(.secondary)
                     }
@@ -122,7 +119,7 @@ struct ArtworkSearchSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(verbatim: String(appLocalized: "The selected cover is saved as a same-name JPEG beside this song. It takes priority over shared folder artwork; the audio file is unchanged."))
+            Text(verbatim: String(appLocalized: "The selected cover is saved as a same-name JPEG beside this song. It takes priority over embedded and shared folder artwork; the audio file is unchanged."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -135,7 +132,7 @@ struct ArtworkSearchSheet: View {
                 Button(String(appLocalized: "Save Artwork")) { model.save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.previewData == nil || model.isSaving || model.isCheckingArtwork ||
-                              model.hasEmbeddedArtwork || model.savedURL != nil)
+                              model.savedURL != nil)
             }
         }
         .padding(16)

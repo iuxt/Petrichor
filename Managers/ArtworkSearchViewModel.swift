@@ -21,7 +21,6 @@ final class ArtworkSearchViewModel: ObservableObject {
     @Published private(set) var isCheckingArtwork = false
     @Published private(set) var hasSearched = false
     @Published private(set) var hasExistingArtwork = false
-    @Published private(set) var hasEmbeddedArtwork = false
     @Published private(set) var savedURL: URL?
     @Published private(set) var errorMessage: String?
     @Published var needsOverwriteConfirmation = false
@@ -61,17 +60,10 @@ final class ArtworkSearchViewModel: ObservableObject {
         isCheckingArtwork = true
         let track = track
         localTask = Task { [weak self] in
-            let embedded = await MetadataEngine.extractEmbeddedArtwork(from: track.url) != nil
-            let existing: Bool
-            if embedded {
-                existing = true
-            } else {
-                let request = ArtworkRequest.album(albumId: track.albumId,
-                                                   representativeTrackURL: track.url, albumTitle: track.album)
-                existing = await ArtworkResolver.shared.artworkData(for: request) != nil
-            }
+            let request = ArtworkRequest.album(albumId: track.albumId,
+                                               representativeTrackURL: track.url, albumTitle: track.album)
+            let existing = await ArtworkResolver.shared.artworkData(for: request) != nil
             guard let self, !Task.isCancelled else { return }
-            self.hasEmbeddedArtwork = embedded
             self.hasExistingArtwork = existing
             self.isCheckingArtwork = false
             self.localTask = nil
@@ -103,7 +95,7 @@ final class ArtworkSearchViewModel: ObservableObject {
     }
 
     func save(overwrite: Bool = false) {
-        guard !isSaving, !isCheckingArtwork, !hasEmbeddedArtwork,
+        guard !isSaving, !isCheckingArtwork,
               savedURL == nil, let image = previewData else { return }
         if hasExistingArtwork && !overwrite {
             needsOverwriteConfirmation = true

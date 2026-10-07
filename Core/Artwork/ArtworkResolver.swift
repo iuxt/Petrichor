@@ -38,14 +38,8 @@ final class ArtworkResolver {
 
     private func resolveArtwork(for request: ArtworkRequest) async -> Data? {
         guard !Task.isCancelled else { return nil }
-        if let embedded = await cachedOrEmbeddedArtwork(for: request) {
-            return embedded
-        }
-        guard !Task.isCancelled else { return nil }
-
-        // List the track's directory once and reuse the candidate set for both the
-        // same-stem and generic artwork lookups. Previously each miss re-listed the
-        // folder, doubling directory IO for every track without embedded artwork.
+        // External covers override embedded artwork, including cached embedded
+        // artwork. Reuse one directory listing for all external source lookups.
         let directory = request.audioURL.deletingLastPathComponent()
         let candidates = artworkCandidates(in: directory)
 
@@ -69,7 +63,8 @@ final class ArtworkResolver {
             return generic
         }
 
-        return nil
+        guard !Task.isCancelled else { return nil }
+        return await cachedOrEmbeddedArtwork(for: request)
     }
 
     func invalidateMemoryCache() {
