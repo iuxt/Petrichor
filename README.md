@@ -134,7 +134,17 @@ AMLL 歌词保留为同名 `.ttml`，网易云音乐和 QQ 音乐歌词保存为
 xcodebuild -project Petrichor.xcodeproj -scheme Petrichor -configuration Debug build
 ```
 
-没有开发签名证书时，可在命令中添加 `CODE_SIGNING_ALLOWED=NO` 验证本地编译。安装包构建方式见 [打包脚本](Scripts/build-installer.sh)，开发与验证约定见 [AGENTS.md](AGENTS.md)。
+本地构建并安装使用仓库根目录的 [build.sh](build.sh)：
+
+```bash
+./build.sh
+```
+
+脚本默认构建当前 Mac 架构的 Release 应用，不需要开发签名证书或公证，不生成 DMG。构建成功后先正常退出正在运行的 Petrichor，再安装到 `/Applications/Petrichor.app` 并替换旧版本，随后自动启动新版本。应用未能退出时会停止安装，保留旧版本。目录权限不足时会通过 `sudo` 请求管理员权限。
+
+使用 `./build.sh --universal` 构建通用版，或用 `./build.sh --no-install` 仅构建（不退出或启动应用）；应用和构建日志保存在 `build/local-AppleSilicon/`、`build/local-Intel/` 或 `build/local-Universal/` 中。可通过 `--install-dir <目录>` 更改安装位置。
+
+GitHub Actions 继续使用 [发布打包脚本](Scripts/build-installer.sh) 生成通用版 DMG、SHA256 校验文件并发布 Release。开发与验证约定见 [AGENTS.md](AGENTS.md)。
 
 ### 鸣谢
 

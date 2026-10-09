@@ -514,6 +514,8 @@ func makeManagers(
 struct Harness {
     @MainActor
     static func main() async {
+        await testEmbeddedEmbeddingStagesAndRetriesPerTarget()
+        await testEmbeddedImportValidation()
         await testEmbeddedRemovalStagesAndRetriesPerTarget()
         await testFreshLoadAggregation()
         await testOnlineTagsOnlyStageSingleWritableTrack()
@@ -523,6 +525,99 @@ struct Harness {
         await testPlaybackRestoreFailureBlocksDismissal()
         await testCancellationRestoresCurrentBeforeStopping()
         print("Track metadata editor orchestration checks passed")
+    }
+
+    @MainActor
+    private static func testEmbeddedEmbeddingStagesAndRetriesPerTarget() async {
+        let recorder = EventRecorder()
+        let one = Track(id: 1, name: "one")
+        let two = Track(id: 2, name: "two")
+        let three = Track(id: 3, name: "untouched")
+        var originalOne = snapshot(one, title: "One")
+        originalOne.embeddedLyrics = "Original lyrics"
+        var originalTwo = snapshot(two, title: "Two")
+        originalTwo.embeddedArtwork = [Data([1, 2, 3])]
+        var savedOne = originalOne
+        savedOne.embeddedLyrics = "Replacement lyrics"
+        var savedTwo = originalTwo
+        savedTwo.embeddedArtwork = [Data([4, 5, 6])]
+        let service = ScriptedFileService(recorder: recorder, loads: [
+            1: .loaded(originalOne), 2: .loaded(originalTwo), 3: .loaded(snapshot(three, title: "Untouched"))
+        ], writes: [1: savedOne, 2: savedTwo], writeFailuresRemaining: [1: 1])
+        let model = TrackMetadataEditorViewModel(tracks: [one, two, three], fileService: service)
+        model.load()
+        await waitUntil("embedding load") { model.phase == .editing }
+        model.stageLyrics("Replacement lyrics", for: originalOne.target)
+        expect(model.canSave, "Embedding content alone must enable Save")
+        expect(model.snapshots[0].embeddedLyrics == "Original lyrics", "Staging must preserve the saved snapshot")
+        model.undoEmbedding(for: originalOne.target, artwork: false)
+        expect(!model.canSave, "Undoing embedding must disable Save")
+        model.toggleLyricsRemoval(for: originalOne.target)
+        model.stageLyrics("Replacement lyrics", for: originalOne.target)
+        expect(!model.lyricsRemovalTargets.contains(originalOne.target), "Embedding must cancel pending deletion")
+        model.stageArtwork(Data([4, 5, 6]), for: originalTwo.target)
+        model.toggleArtworkRemoval(for: originalTwo.target)
+        expect(model.pendingArtwork[originalTwo.target] == nil && model.artworkRemovalTargets.contains(originalTwo.target),
+               "Deleting a replacement must remove the pending image and stage deletion")
+        model.stageArtwork(Data([4, 5, 6]), for: originalTwo.target)
+        let emptyTarget = TrackMetadataEditTarget(trackID: 3, url: three.url)
+        model.stageLyrics("Temporary", for: emptyTarget)
+        model.toggleLyricsRemoval(for: emptyTarget)
+        expect(model.pendingLyrics[emptyTarget] == nil && !model.lyricsRemovalTargets.contains(emptyTarget),
+               "Deleting a new embedding must restore the original absence")
+        expect(recorder.events == ["load:1", "load:2", "load:3"], "Staging must never write files")
+        let (library, playlists, playback, database) = makeManagers(recorder: recorder, currentTrack: nil)
+        for track in [one, two] {
+            database.results[track.trackId!] = .init(track: track, fullTrack: .init(trackId: track.trackId!))
+        }
+        model.save(libraryManager: library, playlistManager: playlists, playbackManager: playback)
+        await waitUntil("embedding partial save") { model.phase == .results }
+        let firstPatch = await service.patches(for: 1)[0]
+        let secondPatch = await service.patches(for: 2)[0]
+        expect(firstPatch.embeddedLyrics == "Replacement lyrics" && firstPatch.embeddedArtwork == nil,
+               "Lyrics embedding must be scoped to its target")
+        expect(secondPatch.embeddedLyrics == nil && secondPatch.embeddedArtwork == Data([4, 5, 6]),
+               "Artwork embedding must be scoped to its target")
+        let untouchedPatches = await service.patches(for: 3)
+        expect(untouchedPatches.isEmpty, "Untouched batch tracks must not be written")
+        model.retryFailed(libraryManager: library, playlistManager: playlists, playbackManager: playback)
+        await waitUntil("embedding retry") { model.allSelectedItemsSaved }
+        let retries = await service.patches(for: 1)
+        expect(retries == [firstPatch, firstPatch], "Retry must retain failed embedding data")
+        expect(model.pendingLyrics.isEmpty && model.pendingArtwork.isEmpty, "Successful embedding must clear pending state")
+    }
+
+    @MainActor
+    private static func testEmbeddedImportValidation() async {
+        let recorder = EventRecorder()
+        let one = Track(id: 1, name: "one")
+        let original = snapshot(one, title: "One")
+        let service = ScriptedFileService(recorder: recorder, loads: [1: .loaded(original)], writes: [:])
+        let model = TrackMetadataEditorViewModel(tracks: [one], fileService: service)
+        model.load()
+        await waitUntil("import load") { model.phase == .editing }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        do {
+            try Data("[00:01.00]中文歌词\n[00:02.00]Second line".utf8).write(to: url)
+            await model.importEmbeddedContent(from: url, for: original.target, artwork: false)
+            expect(model.pendingLyrics[original.target] == "[00:01.00]中文歌词\n[00:02.00]Second line", "Import must preserve UTF-8 lyrics and timing")
+            expect(model.canSave && !model.isImportingEmbeddedContent, "Import must finish with Save enabled")
+            await model.importEmbeddedContent(from: url, for: original.target, artwork: true)
+            expect(model.embeddedImportError != nil && model.pendingArtwork.isEmpty, "Invalid images must not be staged")
+            model.embeddedImportError = nil
+            try Data([0xFF, 0xFE, 0x00]).write(to: url)
+            await model.importEmbeddedContent(from: url, for: original.target, artwork: false)
+            expect(model.embeddedImportError != nil && model.pendingLyrics[original.target] != nil,
+                   "Invalid lyrics must preserve the prior valid draft")
+            model.embeddedImportError = nil
+            let picture = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVxkAAAAASUVORK5CYII=")!
+            try picture.write(to: url)
+            await model.importEmbeddedContent(from: url, for: original.target, artwork: true)
+            expect(model.pendingArtwork[original.target] == picture && model.embeddedImportError == nil,
+                   "Valid PNG imports must stage the original image bytes")
+            expect(recorder.events == ["load:1"], "Importing must never write audio files")
+        } catch { fatalError("Import fixture failed: \(error)") }
     }
 
     @MainActor

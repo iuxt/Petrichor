@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import ImageIO
 
 struct TrackMetadataEditorRequest: Identifiable {
     let id = UUID()
@@ -44,6 +45,10 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     @Published private(set) var form: TrackMetadataEditForm?
     @Published private(set) var lyricsRemovalTargets: Set<TrackMetadataEditTarget> = []
     @Published private(set) var artworkRemovalTargets: Set<TrackMetadataEditTarget> = []
+    @Published private(set) var pendingLyrics: [TrackMetadataEditTarget: String] = [:]
+    @Published private(set) var pendingArtwork: [TrackMetadataEditTarget: Data] = [:]
+    @Published private(set) var isImportingEmbeddedContent = false
+    @Published var embeddedImportError: String?
     private(set) var appliedOnlineTagCandidate: OnlineTagCandidate?
 
     let tracks: [Track]
@@ -94,29 +99,118 @@ final class TrackMetadataEditorViewModel: ObservableObject {
 
     var canSave: Bool {
         guard phase == .editing,
+              !isImportingEmbeddedContent,
               snapshots.contains(where: \.isWritable),
               let form,
-              (form.isDirty || !lyricsRemovalTargets.isEmpty || !artworkRemovalTargets.isEmpty),
+              (form.isDirty || hasEmbeddedChanges),
               validationError == nil,
               let patch = try? form.makePatch() else {
             return false
         }
-        return !patch.isEmpty || !lyricsRemovalTargets.isEmpty || !artworkRemovalTargets.isEmpty
+        return !patch.isEmpty || hasEmbeddedChanges
+    }
+
+    private var hasEmbeddedChanges: Bool {
+        !lyricsRemovalTargets.isEmpty || !artworkRemovalTargets.isEmpty ||
+        !pendingLyrics.isEmpty || !pendingArtwork.isEmpty
     }
 
     func toggleLyricsRemoval(for target: TrackMetadataEditTarget) {
-        guard phase == .editing,
-              snapshots.contains(where: { $0.target == target && $0.isWritable && $0.embeddedLyrics != nil }) else { return }
+        guard phase == .editing, !isImportingEmbeddedContent,
+              let snapshot = snapshots.first(where: { $0.target == target }),
+              snapshot.isWritable else { return }
+        let hadPending = pendingLyrics[target] != nil
+        pendingLyrics.removeValue(forKey: target)
+        guard snapshot.embeddedLyrics != nil else { return }
+        if hadPending {
+            lyricsRemovalTargets.insert(target)
+            return
+        }
         if !lyricsRemovalTargets.insert(target).inserted {
             lyricsRemovalTargets.remove(target)
         }
     }
 
     func toggleArtworkRemoval(for target: TrackMetadataEditTarget) {
-        guard phase == .editing,
-              snapshots.contains(where: { $0.target == target && $0.isWritable && !$0.embeddedArtwork.isEmpty }) else { return }
+        guard phase == .editing, !isImportingEmbeddedContent,
+              let snapshot = snapshots.first(where: { $0.target == target }),
+              snapshot.isWritable else { return }
+        let hadPending = pendingArtwork[target] != nil
+        pendingArtwork.removeValue(forKey: target)
+        guard !snapshot.embeddedArtwork.isEmpty else { return }
+        if hadPending {
+            artworkRemovalTargets.insert(target)
+            return
+        }
         if !artworkRemovalTargets.insert(target).inserted {
             artworkRemovalTargets.remove(target)
+        }
+    }
+
+    func stageLyrics(_ lyrics: String, for target: TrackMetadataEditTarget) {
+        guard phase == .editing,
+              snapshots.contains(where: { $0.target == target && $0.isWritable }) else { return }
+        pendingLyrics[target] = lyrics
+        lyricsRemovalTargets.remove(target)
+    }
+
+    func stageArtwork(_ artwork: Data, for target: TrackMetadataEditTarget) {
+        guard phase == .editing,
+              snapshots.contains(where: { $0.target == target && $0.isWritable }) else { return }
+        pendingArtwork[target] = artwork
+        artworkRemovalTargets.remove(target)
+    }
+
+    func undoEmbedding(for target: TrackMetadataEditTarget, artwork: Bool) {
+        guard phase == .editing, !isImportingEmbeddedContent else { return }
+        if artwork { pendingArtwork.removeValue(forKey: target) }
+        else { pendingLyrics.removeValue(forKey: target) }
+    }
+
+    func importEmbeddedContent(from url: URL, for target: TrackMetadataEditTarget, artwork: Bool) async {
+        guard phase == .editing, !isImportingEmbeddedContent,
+              snapshots.contains(where: { $0.target == target && $0.isWritable }) else { return }
+        isImportingEmbeddedContent = true
+        defer { isImportingEmbeddedContent = false }
+        do {
+            let data = try await Task.detached(priority: .userInitiated) {
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                let limit = artwork ? 20 * 1_024 * 1_024 : 4 * 1_024 * 1_024
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size <= limit else { throw EmbeddedImportFailure.tooLarge }
+                let data = try Data(contentsOf: url)
+                guard data.count <= limit else { throw EmbeddedImportFailure.tooLarge }
+                if artwork {
+                    guard let image = CGImageSourceCreateWithData(data as CFData, nil),
+                          let type = CGImageSourceGetType(image) as String?,
+                          ["public.jpeg", "public.png"].contains(type),
+                          CGImageSourceCreateImageAtIndex(image, 0, nil) != nil else {
+                        throw EmbeddedImportFailure.invalidArtwork
+                    }
+                } else {
+                    guard let text = String(data: data, encoding: .utf8),
+                          !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                          !text.contains("\0") else { throw EmbeddedImportFailure.invalidLyrics }
+                }
+                return data
+            }.value
+            if artwork { stageArtwork(data, for: target) }
+            else if let lyrics = String(data: data, encoding: .utf8) { stageLyrics(lyrics, for: target) }
+        } catch {
+            embeddedImportError = error.localizedDescription
+        }
+    }
+
+    private enum EmbeddedImportFailure: LocalizedError {
+        case tooLarge, invalidArtwork, invalidLyrics
+
+        var errorDescription: String? {
+            switch self {
+            case .tooLarge: String(appLocalized: "The selected file is too large. Artwork must be at most 20 MB and lyrics at most 4 MB.")
+            case .invalidArtwork: String(appLocalized: "Choose a valid JPEG or PNG image.")
+            case .invalidLyrics: String(appLocalized: "Choose a nonempty UTF-8 lyrics file.")
+            }
         }
     }
 
@@ -124,6 +218,8 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         var patch = base
         patch.removeEmbeddedLyrics = lyricsRemovalTargets.contains(target)
         patch.removeEmbeddedArtwork = artworkRemovalTargets.contains(target)
+        patch.embeddedLyrics = pendingLyrics[target]
+        patch.embeddedArtwork = pendingArtwork[target]
         return patch
     }
 
@@ -515,6 +611,10 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         }
         lyricsRemovalTargets.subtract(verifiedByTarget.keys)
         artworkRemovalTargets.subtract(verifiedByTarget.keys)
+        for target in verifiedByTarget.keys {
+            pendingLyrics.removeValue(forKey: target)
+            pendingArtwork.removeValue(forKey: target)
+        }
         saveResults = results
         form = TrackMetadataEditForm(tags: snapshots.map(\.tags))
         validationError = nil

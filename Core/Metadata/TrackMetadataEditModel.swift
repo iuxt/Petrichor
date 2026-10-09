@@ -174,6 +174,8 @@ struct TrackMetadataPatch: Equatable, Sendable {
 
     var removeEmbeddedLyrics = false
     var removeEmbeddedArtwork = false
+    var embeddedLyrics: String?
+    var embeddedArtwork: Data?
 
     var isEmpty: Bool {
         [
@@ -192,7 +194,9 @@ struct TrackMetadataPatch: Equatable, Sendable {
             compilation.isUnchanged,
             comment.isUnchanged,
             !removeEmbeddedLyrics,
-            !removeEmbeddedArtwork
+            !removeEmbeddedArtwork,
+            embeddedLyrics == nil,
+            embeddedArtwork == nil
         ].allSatisfy { $0 }
     }
 

@@ -2,6 +2,7 @@
 
 #include <taglib/apefile.h>
 #include <taglib/aifffile.h>
+#include <taglib/attachedpictureframe.h>
 #include <taglib/commentsframe.h>
 #include <taglib/dsdifffile.h>
 #include <taglib/dsffile.h>
@@ -18,6 +19,7 @@
 #include <taglib/textidentificationframe.h>
 #include <taglib/tfilestream.h>
 #include <taglib/trueaudiofile.h>
+#include <taglib/unsynchronizedlyricsframe.h>
 #include <taglib/vorbisfile.h>
 #include <taglib/wavfile.h>
 #include <taglib/wavpackfile.h>
@@ -25,6 +27,7 @@
 #include <array>
 #include <cstdio>
 #include <exception>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -266,10 +269,11 @@ bool validateOperations(
             return false;
         }
 
-        if((operation.field == PTID3MetadataFieldEmbeddedLyrics ||
-            operation.field == PTID3MetadataFieldEmbeddedArtwork) &&
-           operation.action != PTID3PatchActionRemove) {
-            error = "Embedded metadata only supports removal.";
+        if(operation.field == PTID3MetadataFieldEmbeddedArtwork &&
+           operation.action == PTID3PatchActionSet &&
+           (operation.data == nullptr || operation.dataSize == 0 ||
+            operation.dataSize > std::numeric_limits<unsigned int>::max())) {
+            error = "An artwork operation has no valid image data.";
             return false;
         }
         const auto fieldIndex = static_cast<size_t>(operation.field);
@@ -457,12 +461,26 @@ void applyOperations(
     size_t operationCount
 )
 {
-    if(findOperation(PTID3MetadataFieldEmbeddedLyrics, operations, operationCount)) {
+    if(const auto *operation = findOperation(PTID3MetadataFieldEmbeddedLyrics, operations, operationCount)) {
         tag->removeFrames(ByteVector("USLT"));
         tag->removeFrames(ByteVector("SYLT"));
+        if(operation->action == PTID3PatchActionSet) {
+            auto *frame = new TagLib::ID3v2::UnsynchronizedLyricsFrame(String::UTF8);
+            frame->setLanguage(ByteVector("eng"));
+            frame->setText(String(operation->value, String::UTF8));
+            tag->addFrame(frame);
+        }
     }
-    if(findOperation(PTID3MetadataFieldEmbeddedArtwork, operations, operationCount)) {
+    if(const auto *operation = findOperation(PTID3MetadataFieldEmbeddedArtwork, operations, operationCount)) {
         tag->removeFrames(ByteVector("APIC"));
+        if(operation->action == PTID3PatchActionSet) {
+            auto *frame = new TagLib::ID3v2::AttachedPictureFrame;
+            frame->setType(TagLib::ID3v2::AttachedPictureFrame::FrontCover);
+            frame->setMimeType(String(operation->value, String::UTF8));
+            frame->setPicture(ByteVector(reinterpret_cast<const char *>(operation->data),
+                                         static_cast<unsigned int>(operation->dataSize)));
+            tag->addFrame(frame);
+        }
     }
 
     constexpr std::array<PTID3MetadataField, 8> textFields = {

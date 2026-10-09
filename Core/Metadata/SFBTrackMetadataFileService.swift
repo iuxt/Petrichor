@@ -9,6 +9,7 @@ enum TrackMetadataFileError: LocalizedError {
     case writeFailed(String)
     case verificationFailed([TrackMetadataEditableField])
     case embeddedRemovalFailed
+    case embeddedWriteFailed
 
     var errorDescription: String? {
         switch self {
@@ -39,6 +40,8 @@ enum TrackMetadataFileError: LocalizedError {
             )
         case .embeddedRemovalFailed:
             return String(appLocalized: "Embedded lyrics or artwork could not be deleted. Please reopen the editor and try again.")
+        case .embeddedWriteFailed:
+            return String(appLocalized: "Embedded lyrics or artwork could not be verified after saving. Please reopen the editor and try again.")
         case .verificationFailed(let fields):
             let names = fields.map(localizedMetadataFieldName).joined(separator: ", ")
             return String.localizedStringWithFormat(
@@ -52,7 +55,7 @@ enum TrackMetadataFileError: LocalizedError {
         switch self {
         case .fileMissing, .unsupportedFormat, .fileNotWritable:
             return true
-        case .readFailed, .writeFailed, .verificationFailed, .embeddedRemovalFailed:
+        case .readFailed, .writeFailed, .verificationFailed, .embeddedRemovalFailed, .embeddedWriteFailed:
             return false
         }
     }
@@ -175,6 +178,12 @@ actor SFBTrackMetadataFileService {
               (!patch.removeEmbeddedArtwork || verified.embeddedArtwork.isEmpty) else {
             throw TrackMetadataFileError.embeddedRemovalFailed
         }
+        if let lyrics = patch.embeddedLyrics, verified.embeddedLyrics != lyrics {
+            throw TrackMetadataFileError.embeddedWriteFailed
+        }
+        if let artwork = patch.embeddedArtwork, verified.embeddedArtwork != [artwork] {
+            throw TrackMetadataFileError.embeddedWriteFailed
+        }
         return verified
     }
 
@@ -273,6 +282,13 @@ actor SFBTrackMetadataFileService {
         }
         if patch.removeEmbeddedArtwork {
             metadata.removeAllAttachedPictures()
+        }
+        if let lyrics = patch.embeddedLyrics {
+            metadata.lyrics = lyrics
+        }
+        if let artwork = patch.embeddedArtwork {
+            metadata.removeAllAttachedPictures()
+            metadata.attachPicture(AttachedPicture(imageData: artwork, type: .frontCover))
         }
 
         do {

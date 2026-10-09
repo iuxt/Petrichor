@@ -35,6 +35,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"build-installer.sh",
+				"test-build-local-install.sh",
 				"test-build-warning-cleanliness.sh",
 				"test-audit-regressions.sh",
 				"test-desktop-lyrics-line-selection.sh",

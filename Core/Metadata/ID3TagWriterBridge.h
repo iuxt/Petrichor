@@ -46,6 +46,8 @@ typedef struct PTID3MetadataOperation {
     PTID3MetadataField field;
     PTID3PatchAction action;
     const char *value;
+    const unsigned char *data;
+    size_t dataSize;
 } PTID3MetadataOperation;
 
 PTID3ContainerKind PTID3ProbeContainerAtPath(const char *path);

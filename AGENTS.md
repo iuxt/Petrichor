@@ -51,7 +51,15 @@ Scripts/test-search-ranking.sh
 Scripts/test-localization-format-specifiers.sh
 ```
 
-仅在用户明确要求时创建 release DMG：
+本地构建 Release，退出正在运行的应用，安装到 `/Applications` 替换旧版本，再自动启动（不生成 DMG）：
+
+```sh
+./build.sh
+```
+
+仅验证本地构建时使用 `./build.sh --no-install`；可添加 `--universal` 构建通用版。
+
+GitHub Actions 保留发布 DMG 的流程；仅在用户明确要求时手动创建 release DMG：
 
 ```sh
 Scripts/build-installer.sh

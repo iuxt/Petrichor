@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Compact metadata editor for one track or a batch selection.
 ///
@@ -17,6 +18,9 @@ struct TrackMetadataEditorSheet: View {
     @State private var didStartOnlineArtworkDownload = false
     @State private var embeddedTarget: TrackMetadataEditTarget?
     @State private var selectedTab: EditorTab = .details
+    @State private var showingEmbeddedImporter = false
+    @State private var embeddedImportTarget: TrackMetadataEditTarget?
+    @State private var importingArtwork = false
 
     private enum EditorTab: CaseIterable, TabbedItem {
         case details
@@ -103,6 +107,34 @@ struct TrackMetadataEditorSheet: View {
                     selectedTab = .tags
                 }
             }
+        }
+        .fileImporter(
+            isPresented: $showingEmbeddedImporter,
+            allowedContentTypes: importingArtwork ? [.jpeg, .png] : [
+                .plainText,
+                UTType(filenameExtension: "lrc") ?? .plainText,
+                UTType(filenameExtension: "ttml") ?? .xml,
+                UTType(filenameExtension: "srt") ?? .plainText,
+                UTType(filenameExtension: "ksc") ?? .plainText
+            ]
+        ) { result in
+            switch result {
+            case .success(let url):
+                if let target = embeddedImportTarget {
+                    let artwork = importingArtwork
+                    Task { await model.importEmbeddedContent(from: url, for: target, artwork: artwork) }
+                }
+            case .failure(let error):
+                model.embeddedImportError = error.localizedDescription
+            }
+        }
+        .alert(String(appLocalized: "Could Not Embed Content"), isPresented: Binding(
+            get: { model.embeddedImportError != nil },
+            set: { if !$0 { model.embeddedImportError = nil } }
+        )) {
+            Button(String(appLocalized: "OK")) { model.embeddedImportError = nil }
+        } message: {
+            Text(verbatim: model.embeddedImportError ?? "")
         }
     }
 
@@ -373,26 +405,34 @@ struct TrackMetadataEditorSheet: View {
 
                     switch content {
                     case .artwork:
+                        let artwork = model.pendingArtwork[snapshot.target].map { [$0] } ?? snapshot.embeddedArtwork
                         embeddedContentControls(
-                            isPresent: !snapshot.embeddedArtwork.isEmpty,
+                            isPresent: !artwork.isEmpty,
                             isRemoving: model.artworkRemovalTargets.contains(snapshot.target),
+                            isEmbedding: model.pendingArtwork[snapshot.target] != nil,
                             isWritable: snapshot.isWritable,
+                            embed: { beginEmbeddedImport(for: snapshot.target, artwork: true) },
+                            undoEmbedding: { model.undoEmbedding(for: snapshot.target, artwork: true) },
                             toggleRemoval: { model.toggleArtworkRemoval(for: snapshot.target) }
                         )
                         LazyVStack(spacing: 12) {
-                            ForEach(snapshot.embeddedArtwork.indices, id: \.self) { index in
-                                EmbeddedArtworkPreview(data: snapshot.embeddedArtwork[index])
+                            ForEach(artwork.indices, id: \.self) { index in
+                                EmbeddedArtworkPreview(data: artwork[index])
                             }
                         }
                         .id(snapshot.target)
                     case .lyrics:
+                        let lyrics = model.pendingLyrics[snapshot.target] ?? snapshot.embeddedLyrics
                         embeddedContentControls(
-                            isPresent: snapshot.embeddedLyrics != nil,
+                            isPresent: lyrics != nil,
                             isRemoving: model.lyricsRemovalTargets.contains(snapshot.target),
+                            isEmbedding: model.pendingLyrics[snapshot.target] != nil,
                             isWritable: snapshot.isWritable,
+                            embed: { beginEmbeddedImport(for: snapshot.target, artwork: false) },
+                            undoEmbedding: { model.undoEmbedding(for: snapshot.target, artwork: false) },
                             toggleRemoval: { model.toggleLyricsRemoval(for: snapshot.target) }
                         )
-                        if let lyrics = snapshot.embeddedLyrics {
+                        if let lyrics {
                             Text(verbatim: lyrics)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -409,7 +449,7 @@ struct TrackMetadataEditorSheet: View {
                 }
 
                 Divider()
-                Text(verbatim: String(appLocalized: "Embedded content is deleted only when you save. External lyrics and artwork files are kept."))
+                Text(verbatim: String(appLocalized: "Embedding replaces the existing embedded content. Changes are written only when you save. External lyrics and artwork files are kept."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -422,20 +462,40 @@ struct TrackMetadataEditorSheet: View {
         }
     }
 
+    private func beginEmbeddedImport(for target: TrackMetadataEditTarget, artwork: Bool) {
+        embeddedImportTarget = target
+        importingArtwork = artwork
+        showingEmbeddedImporter = true
+    }
+
     private func embeddedContentControls(
         isPresent: Bool,
         isRemoving: Bool,
+        isEmbedding: Bool,
         isWritable: Bool,
+        embed: @escaping () -> Void,
+        undoEmbedding: @escaping () -> Void,
         toggleRemoval: @escaping () -> Void
     ) -> some View {
         HStack {
-            Text(verbatim: String(appLocalized: isRemoving ? "Pending Deletion" : (isPresent ? "Present" : "Not Present")))
+            Text(verbatim: String(appLocalized: isRemoving ? "Pending Deletion" : (isEmbedding ? "Pending Embedding" : (isPresent ? "Present" : "Not Present"))))
                 .font(.caption)
                 .foregroundStyle(isRemoving ? .orange : .secondary)
             Spacer()
+            if model.isImportingEmbeddedContent {
+                ProgressView().controlSize(.small)
+            }
+            Button(String(appLocalized: "Embed…"), action: embed)
+                .disabled(!isWritable || model.isImportingEmbeddedContent)
+                .controlSize(.small)
+            if isEmbedding {
+                Button(String(appLocalized: "Undo Embedding"), action: undoEmbedding)
+                    .disabled(model.isImportingEmbeddedContent)
+                    .controlSize(.small)
+            }
             if isPresent {
                 Button(String(appLocalized: isRemoving ? "Undo Deletion" : "Delete"), action: toggleRemoval)
-                    .disabled(!isWritable)
+                    .disabled(!isWritable || model.isImportingEmbeddedContent)
                     .controlSize(.small)
             }
         }

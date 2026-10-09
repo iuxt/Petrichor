@@ -25,6 +25,7 @@ enum ID3TrackMetadataWriter {
         let field: PTID3MetadataField
         let action: PTID3PatchAction
         let value: String?
+        var data: Data? = nil
     }
 
     private struct WriteError: LocalizedError {
@@ -69,11 +70,21 @@ enum ID3TrackMetadataWriter {
             }
         }
 
-        var operations = zip(pending, allocatedValues).map {
+        let allocatedData: [UnsafeMutablePointer<UInt8>?] = pending.map { operation in
+            guard let data = operation.data, !data.isEmpty else { return nil }
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: data.count)
+            data.copyBytes(to: buffer, count: data.count)
+            return buffer
+        }
+        defer { allocatedData.forEach { $0?.deallocate() } }
+
+        var operations = pending.indices.map { index in
             PTID3MetadataOperation(
-                field: $0.0.field,
-                action: $0.0.action,
-                value: $0.1.map { UnsafePointer<CChar>($0) }
+                field: pending[index].field,
+                action: pending[index].action,
+                value: allocatedValues[index].map { UnsafePointer<CChar>($0) },
+                data: allocatedData[index].map { UnsafePointer<UInt8>($0) },
+                dataSize: pending[index].data?.count ?? 0
             )
         }
         var errorBuffer = [CChar](repeating: 0, count: 1_024)
@@ -128,6 +139,15 @@ enum ID3TrackMetadataWriter {
         if patch.removeEmbeddedArtwork {
             result.append(Operation(field: PTID3MetadataFieldEmbeddedArtwork,
                                     action: PTID3PatchActionRemove, value: nil))
+        }
+        if let lyrics = patch.embeddedLyrics {
+            result.append(Operation(field: PTID3MetadataFieldEmbeddedLyrics,
+                                    action: PTID3PatchActionSet, value: lyrics))
+        }
+        if let artwork = patch.embeddedArtwork {
+            let mime = artwork.starts(with: [0x89, 0x50, 0x4E, 0x47]) ? "image/png" : "image/jpeg"
+            result.append(Operation(field: PTID3MetadataFieldEmbeddedArtwork,
+                                    action: PTID3PatchActionSet, value: mime, data: artwork))
         }
         return result
     }

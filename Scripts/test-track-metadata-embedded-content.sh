@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Exercises the production file service on disposable MP3/FLAC/M4A/Ogg files.
+# Exercises the production file service on disposable MP3/FLAC/M4A/Ogg/WAV/AIFF/TTA files.
 # Build Debug first; override PETRICHOR_DERIVED_DATA_DIR and FFMPEG as needed.
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FFMPEG="${FFMPEG:-/opt/homebrew/bin/ffmpeg}"
@@ -23,10 +23,13 @@ CHECKOUTS="$DERIVED/SourcePackages/checkouts"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/petrichor-embedded-content.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-for format in mp3 flac m4a ogg; do
+for format in mp3 flac m4a ogg wav aiff tta; do
     "$FFMPEG" -hide_banner -loglevel error -f lavfi \
         -i 'sine=frequency=440:sample_rate=44100' -t 0.2 "$TMP_DIR/sample.$format"
 done
+
+"$FFMPEG" -hide_banner -loglevel error -f lavfi \
+    -i 'color=c=red:s=16x16' -frames:v 1 "$TMP_DIR/replacement.jpg"
 
 cat >"$TMP_DIR/Harness.swift" <<'SWIFT'
 import Foundation
@@ -45,7 +48,8 @@ struct Harness {
     static func main() async throws {
         let service = SFBTrackMetadataFileService()
         let picture = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVxkAAAAASUVORK5CYII=")!
-        for path in CommandLine.arguments.dropFirst() {
+        let replacement = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
+        for path in CommandLine.arguments.dropFirst(2) {
             let source = URL(fileURLWithPath: path)
             let file = try AudioFile(readingPropertiesAndMetadataFrom: source)
             file.metadata.title = "Keep this title"
@@ -86,10 +90,34 @@ struct Harness {
                 let second = try await service.write(target: target, patch: patch)
                 expect(second.embeddedLyrics == nil && second.embeddedArtwork.isEmpty, "Both embedded fields must be deleted")
                 expect(second.tags == original.tags, "Sequential deletion must preserve tags")
+                var embed = TrackMetadataPatch()
+                embed.embeddedLyrics = "[00:03.00]新歌词\n[00:04.00]New line"
+                expect(!embed.isEmpty, "Lyrics-only embedding must enable writing")
+                let lyricsAdded = try await service.write(target: target, patch: embed)
+                expect(lyricsAdded.embeddedLyrics == embed.embeddedLyrics && lyricsAdded.embeddedArtwork.isEmpty,
+                       "Embedding lyrics must preserve the absence of artwork")
+                embed = TrackMetadataPatch()
+                embed.embeddedArtwork = picture
+                expect(!embed.isEmpty, "Artwork-only embedding must enable writing")
+                let artworkAdded = try await service.write(target: target, patch: embed)
+                expect(artworkAdded.embeddedArtwork == [picture] && artworkAdded.embeddedLyrics == lyricsAdded.embeddedLyrics,
+                       "Embedding artwork must preserve lyrics")
+                embed.embeddedArtwork = replacement
+                embed.embeddedLyrics = "[00:05.00]替换后的歌词"
+                let replaced = try await service.write(target: target, patch: embed)
+                expect(replaced.embeddedArtwork == [replacement] && replaced.embeddedLyrics == embed.embeddedLyrics,
+                       "Embedding again must replace existing content and support JPEG artwork")
+                expect(replaced.tags == original.tags, "Embedding must preserve other tags")
+                var remove = TrackMetadataPatch()
+                remove.removeEmbeddedArtwork = true
+                remove.removeEmbeddedLyrics = true
+                let removedAgain = try await service.write(target: target, patch: remove)
+                expect(removedAgain.embeddedArtwork.isEmpty && removedAgain.embeddedLyrics == nil,
+                       "Newly embedded content must be deletable")
                 let externalLyrics = try Data(contentsOf: sidecar)
                 let externalArtwork = try Data(contentsOf: external)
                 expect(externalLyrics == Data("External lyrics".utf8) && externalArtwork == picture, "External files must be untouched")
-                print("Embedded content removal passed: \(url.lastPathComponent)")
+                print("Embedded content embedding/replacement/removal passed: \(url.lastPathComponent)")
             }
         }
     }
@@ -125,8 +153,9 @@ xcrun swiftc -parse-as-library -swift-version 5 \
     -framework AVFAudio -framework CoreAudio -framework ImageIO -framework UniformTypeIdentifiers \
     -lc++ -lz -Xlinker -rpath -Xlinker "$PRODUCTS" -o "$TMP_DIR/harness"
 
-"$TMP_DIR/harness" "$TMP_DIR/sample.mp3" "$TMP_DIR/sample.flac" "$TMP_DIR/sample.m4a" "$TMP_DIR/sample.ogg"
-for format in mp3 flac m4a ogg; do
+"$TMP_DIR/harness" "$TMP_DIR/replacement.jpg" "$TMP_DIR/sample.mp3" "$TMP_DIR/sample.flac" \
+    "$TMP_DIR/sample.m4a" "$TMP_DIR/sample.ogg" "$TMP_DIR/sample.wav" "$TMP_DIR/sample.aiff" "$TMP_DIR/sample.tta"
+for format in mp3 flac m4a ogg wav aiff tta; do
     before="$("$FFMPEG" -v error -i "$TMP_DIR/sample.$format" -map 0:a:0 -f hash -hash sha256 -)"
     for order in art-first lyrics-first; do
         after="$("$FFMPEG" -v error -i "$TMP_DIR/sample.$order.$format" -map 0:a:0 -f hash -hash sha256 -)"
