@@ -100,6 +100,7 @@ struct FoldersSidebarView: View {
             return (
                 generation: hierarchyLoadGeneration,
                 selectedPath: selectedNode?.url.standardizedFileURL.path,
+                singleRootPath: folderNodes.count == 1 ? folderNodes.first?.url.standardizedFileURL.path : nil,
                 expandedPaths: expandedNodePaths(in: folderNodes)
             )
         }
@@ -117,6 +118,10 @@ struct FoldersSidebarView: View {
             guard generation == hierarchyLoadGeneration else { return }
 
             restoreExpansion(in: nodes, expandedPaths: expandedPaths)
+            if nodes.count == 1, let rootNode = nodes.first,
+               rootNode.url.standardizedFileURL.path != refreshState.singleRootPath {
+                rootNode.isExpanded = true
+            }
             folderNodes = nodes
             isLoadingHierarchy = false
 
