@@ -81,8 +81,10 @@ enum M3UPlaylistCodec {
             while relativePath.hasPrefix("./") {
                 relativePath = String(relativePath.dropFirst(2))
             }
-            appendUnique(musicFolder.appendingPathComponent(relativePath).standardizedFileURL.path)
+            // Standard M3U paths are relative to the playlist itself. Retain the
+            // music-root interpretation only as a fallback for legacy files.
             appendUnique(playlistFileURL.deletingLastPathComponent().appendingPathComponent(relativePath).standardizedFileURL.path)
+            appendUnique(musicFolder.appendingPathComponent(relativePath).standardizedFileURL.path)
             appendUnique(relativePath)
         }
 

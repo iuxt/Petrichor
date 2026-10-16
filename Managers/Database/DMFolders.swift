@@ -627,7 +627,12 @@ extension DatabaseManager {
         hasRemainingFiles: Bool,
         globalScanState: GlobalScanState? = nil
     ) async throws {
-        let existingTracks = getTracksForFolder(folderId)
+        // Reconciliation must include hidden duplicates, unlike UI queries.
+        let existingTracks = try await dbQueue.read { db in
+            try Track.select(Track.lightweightSelection)
+                .filter(Track.Columns.folderId == folderId)
+                .fetchAll(db)
+        }
         let foundPathStrings = Set(foundPaths.map { $0.standardizedFileURL.path })
         let tracksToRemove = existingTracks.filter { !foundPathStrings.contains($0.url.standardizedFileURL.path) }
         let trackIdsToRemove = tracksToRemove.compactMap { $0.trackId }

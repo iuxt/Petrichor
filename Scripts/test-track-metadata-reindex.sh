@@ -46,7 +46,7 @@ require_pattern "$REINDEX" 'album\.releaseYear = aggregate\.releaseYear' 'Album 
 require_pattern "$REINDEX" 'album\.totalDiscs = aggregate\.totalDiscs' 'Album disc totals must support decreases and clearing.'
 require_pattern "$REINDEX" 'AlbumArtist[\s\S]*\.deleteAll\(db\)' 'Album-artist rebuilding must remove stale junctions before inserting current relationships.'
 require_pattern "$REINDEX" 'try updateEntityStats\(in: db\)' 'Artist and album aggregate counts must refresh in the reindex transaction.'
-require_pattern "$REINDEX" 'private func refreshDuplicateGroups\([\s\S]*\) throws -> \[Track\]' 'Duplicate refresh must return every affected lightweight track.'
+require_pattern "$REINDEX" 'func refreshDuplicateGroups\([\s\S]*\) throws -> \[Track\]' 'Duplicate refresh must return every affected lightweight track.'
 reject_pattern "$REINDEX" 'scan|processFilesInBatches|refreshFolder' 'Metadata saving must not rescan a folder.'
 reject_pattern "$PROCESSING" 'processUpdatedTrack\([^\n]*metadata:' 'The unused metadata parameter must be removed.'
 

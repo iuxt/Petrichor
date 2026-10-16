@@ -31,8 +31,8 @@ let rootRelative = M3UPlaylistCodec.pathVariations(
     musicFolder: root,
     playlistFileURL: playlistFile
 )
-precondition(rootRelative[0] == "/Music/Artist/Album/Song.flac", rootRelative.joined(separator: "|"))
-precondition(rootRelative.contains("/Music/playlists/Artist/Album/Song.flac"), rootRelative.joined(separator: "|"))
+precondition(rootRelative[0] == "/Music/playlists/Artist/Album/Song.flac", rootRelative.joined(separator: "|"))
+precondition(rootRelative.contains("/Music/Artist/Album/Song.flac"), rootRelative.joined(separator: "|"))
 
 let encoded = M3UPlaylistCodec.pathVariations(
     for: "file:///Music/Encoded%20Name.m4a",

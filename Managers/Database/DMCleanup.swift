@@ -132,13 +132,14 @@ extension DatabaseManager {
             
             // 3. Clean up other orphaned data using raw SQL
 
-            // Delete orphaned pinned items
+            // File-backed playlists have no database row. Their pins are removed
+            // by explicit playlist deletion, never inferred from this table.
+            // Delete orphaned library pins.
             try db.execute(
                 sql: """
                 DELETE FROM pinned_items
                 WHERE (artist_id IS NOT NULL AND artist_id NOT IN (SELECT id FROM artists))
                    OR (album_id IS NOT NULL AND album_id NOT IN (SELECT id FROM albums))
-                   OR (playlist_id IS NOT NULL AND playlist_id NOT IN (SELECT id FROM playlists))
                 """
             )
             deletedCounts["pinned_items"] = Int(db.changesCount)
@@ -182,6 +183,13 @@ extension DatabaseManager {
     func deleteTracksAndCleanupLocked(_ trackIds: [Int64], in db: Database) throws {
         guard !trackIds.isEmpty else { return }
 
+        // Capture duplicate keys before deletion so surviving copies can become
+        // visible in the same transaction that removes their primary track.
+        let duplicateKeys = Set(try Track
+            .select(Track.lightweightSelection)
+            .filter(trackIds.contains(Track.Columns.trackId))
+            .fetchAll(db).map(\.duplicateKey))
+
         // Capture affected parent IDs before the cascade clears the junction rows.
         let affectedArtistIds = try TrackArtist
             .filter(trackIds.contains(TrackArtist.Columns.trackId))
@@ -196,6 +204,12 @@ extension DatabaseManager {
             .fetchSet(db)
             .compactMap { $0 }
 
+        let affectedAlbumArtistIds = try AlbumArtist
+            .filter(affectedAlbumIds.contains(AlbumArtist.Columns.albumId))
+            .select(AlbumArtist.Columns.artistId, as: Int64.self)
+            .fetchSet(db)
+        let candidateArtistIds = affectedArtistIds.union(affectedAlbumArtistIds)
+
         let affectedGenreIds = try TrackGenre
             .filter(trackIds.contains(TrackGenre.Columns.trackId))
             .select(TrackGenre.Columns.genreId, as: Int64.self)
@@ -207,20 +221,7 @@ extension DatabaseManager {
             .filter(trackIds.contains(Track.Columns.trackId))
             .deleteAll(db)
         Logger.info("Deleted \(deletedCount) tracks and their junction rows")
-
-        // Now prune the parents that no longer have any tracks.
-        let artistsWithTracks = try TrackArtist
-            .filter(affectedArtistIds.contains(TrackArtist.Columns.artistId))
-            .select(TrackArtist.Columns.artistId, as: Int64.self)
-            .distinct()
-            .fetchSet(db)
-        let artistsToDelete = Set(affectedArtistIds).subtracting(artistsWithTracks)
-        if !artistsToDelete.isEmpty {
-            let count = try Artist
-                .filter(artistsToDelete.contains(Artist.Columns.id))
-                .deleteAll(db)
-            Logger.info("Removed \(count) orphaned artists")
-        }
+        _ = try refreshDuplicateGroups(keys: duplicateKeys, in: db)
 
         let albumsWithTracks = try Track
             .filter(affectedAlbumIds.contains(Track.Columns.albumId))
@@ -234,6 +235,25 @@ extension DatabaseManager {
                 .filter(albumsToDelete.contains(Album.Columns.id))
                 .deleteAll(db)
             Logger.info("Removed \(count) orphaned albums")
+        }
+
+        // Albums must be pruned first so their cascading junction deletions do
+        // not leave album-only artists behind. Keep either kind of live reference.
+        let artistsWithTracks = try TrackArtist
+            .filter(candidateArtistIds.contains(TrackArtist.Columns.artistId))
+            .select(TrackArtist.Columns.artistId, as: Int64.self)
+            .distinct()
+            .fetchSet(db)
+        let artistsWithAlbums = try AlbumArtist
+            .filter(candidateArtistIds.contains(AlbumArtist.Columns.artistId))
+            .select(AlbumArtist.Columns.artistId, as: Int64.self)
+            .fetchSet(db)
+        let artistsToDelete = candidateArtistIds.subtracting(artistsWithTracks.union(artistsWithAlbums))
+        if !artistsToDelete.isEmpty {
+            let count = try Artist
+                .filter(artistsToDelete.contains(Artist.Columns.id))
+                .deleteAll(db)
+            Logger.info("Removed \(count) orphaned artists")
         }
 
         let genresWithTracks = try TrackGenre

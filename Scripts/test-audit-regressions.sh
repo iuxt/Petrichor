@@ -63,7 +63,11 @@ struct PlaylistFileBacking: Hashable {
 
 
 struct Playlist { var id = UUID(); var name: String; var tracks: [Track]; var fileBacking: PlaylistFileBacking? = nil; var trackCount = 0; var dateModified = Date() }
-class DatabaseManager { var byPath: [String: Track] = [:]; func findTrackByPath(_ path: String) async -> Track? { byPath[path] ?? byPath.values.first { $0.url.lastPathComponent == URL(fileURLWithPath: path).lastPathComponent } } }
+class DatabaseManager { var byPath: [String: Track] = [:]; func findTrackByPath(_ path: String) async -> Track? {
+ // Match whole canonical paths, as scanner-created database records do.
+ let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+ return byPath.values.first { $0.url.resolvingSymlinksInPath().standardizedFileURL.path == canonical }
+} }
 enum Logger { static func error(_ message: String) {}; static func warning(_ message: String) {}; static func info(_ message: String) {} }
 extension String { init(appLocalized: String) { self = appLocalized } }
 enum FilesystemUtils { static func sanitizeFilename(_ value: String) -> String { value } }
@@ -74,22 +78,29 @@ cat > "$test_dir/FileMain.swift" <<'SWIFT'
 import Foundation
 @main struct Main {
  static func main() async throws {
- let root = URL(fileURLWithPath: CommandLine.arguments[1]).resolvingSymlinksInPath()
+ var root = URL(fileURLWithPath: CommandLine.arguments[1])
  try FileManager.default.createDirectory(at: root.appendingPathComponent("playlists"), withIntermediateDirectories: true)
+ root = root.resolvingSymlinksInPath().standardizedFileURL
  let song = Track(trackId: 1, url: root.appendingPathComponent("known.mp3"))
  let other = Track(trackId: 2, url: root.appendingPathComponent("other.mp3"))
  let url = root.appendingPathComponent("playlists/Test.m3u")
  try "#EXTM3U\n../known.mp3\n../unresolved.mp3\n".write(to: url, atomically: true, encoding: .utf8)
  let db = DatabaseManager(); db.byPath[song.url.path] = song; db.byPath[other.url.path] = other
+ // A same-name song outside the root must never steal the relative M3U entry.
+ let collision = Track(trackId: 3, url: root.deletingLastPathComponent().appendingPathComponent("known.mp3"))
+ db.byPath[collision.url.path] = collision
+ for track in [song, other, collision] { try Data().write(to: track.url) }
  let store = PlaylistFileStore()
  let loaded = await store.loadPlaylists(from: [Folder(url: root)], databaseManager: db)
  let playlist = loaded.playlists[0]
  precondition(playlist.tracks.count == 1 && playlist.fileBacking?.unresolvedEntries == ["../unresolved.mp3"])
+ precondition(playlist.tracks[0].trackId == song.trackId)
  let renamed = try store.rename(playlist, to: "Renamed")
  precondition(renamed.id == playlist.id)
  let edited = try store.write(tracks: [song, other], for: renamed)
  let reloaded = await store.loadPlaylists(from: [Folder(url: root)], databaseManager: db)
  precondition(reloaded.playlists[0].id == playlist.id && reloaded.playlists[0].tracks.count == 2)
+ precondition(reloaded.playlists[0].tracks.map(\.trackId) == [song.trackId, other.trackId])
  let target = edited.fileBacking!.fileURL
  let entries = M3UPlaylistCodec.parseTrackEntries(from: try String(contentsOf: target, encoding: .utf8))
  precondition(entries.count == 3 && entries.contains("../unresolved.mp3"))

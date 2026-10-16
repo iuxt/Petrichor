@@ -290,11 +290,14 @@ actor OrderedGate {
             print("4,000-track pass \(pass + 1): entries=\(state.cached), pending=\(state.pending), thumbnail loads=\(loads.value), metadata reads=\(MetadataEngine.rawReads.value)")
         }
         precondition(MetadataEngine.largeReads.value == 0, "list requests must bypass full artwork compression")
-        precondition(MetadataEngine.rawReads.value == 4000, "second pass must reuse missing-embedded results")
+        precondition(MetadataEngine.rawReads.value == 0, "external covers must bypass embedded metadata reads")
         precondition(manager.listings.value < 10, "must not enumerate a 4,000-track directory for every row")
         _ = disk.cacheSize() // flush pending disk writes
         let files = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("ArtworkCache/images").path)
         precondition(files.count == 1 && files[0].hasSuffix(".jpg"), "shared folder artwork must have one thumbnail file")
+        // Remove the higher-priority cover before exercising embedded artwork.
+        try FileManager.default.removeItem(at: music.appendingPathComponent("cover.jpg"))
+        resolver.invalidateMemoryCache()
         // A new audio file with embedded artwork must still take the raw-picture path.
         let embedded = music.appendingPathComponent("embedded.mp3")
         try raw.write(to: embedded)
@@ -302,10 +305,14 @@ actor OrderedGate {
         let image = ImageUtils.downsampledImage(from: small!, maxDimension: 2400)!
         precondition(image.width == 80 && image.height == 40)
         precondition(MetadataEngine.largeReads.value == 0)
+        // Cache a real missing-embedded result, and verify reuse before mutation.
+        _ = await resolver.artworkData(for: requests[0])
+        _ = await resolver.artworkData(for: requests[0])
+        precondition(MetadataEngine.rawReads.value == 2)
         // A changed audio source invalidates a cached missing-embedded result.
         try Data([0, 1]).write(to: requests[0].audioURL)
         _ = await resolver.artworkData(for: requests[0])
-        precondition(MetadataEngine.rawReads.value == 4002)
+        precondition(MetadataEngine.rawReads.value == 3)
         _ = disk.cacheSize()
         print("8,000 thumbnail requests: \(Date().timeIntervalSince(start))s; folder listings=\(manager.listings.value); disk files=\(files.count)")
     }

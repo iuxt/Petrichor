@@ -453,6 +453,9 @@ extension DatabaseManager {
 
     func deletePlaylist(_ playlistId: UUID) async throws {
         try await dbQueue.write { db in
+            try PinnedItem
+                .filter(PinnedItem.Columns.playlistId == playlistId.uuidString)
+                .deleteAll(db)
             // Use GRDB's model deletion
             if let playlist = try Playlist
                 .filter(Playlist.Columns.id == playlistId.uuidString)

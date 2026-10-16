@@ -142,7 +142,8 @@ extension DatabaseManager {
         track.extendedMetadata = extended
     }
 
-    private func refreshDuplicateGroups(
+    // Shared by metadata edits and deletions; callers hold the write transaction.
+    func refreshDuplicateGroups(
         keys: Set<String>,
         in db: Database
     ) throws -> [Track] {
