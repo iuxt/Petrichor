@@ -270,7 +270,9 @@ let liftLine = LyricLine(text: "HH", startTime: 0, endTime: 2, timingSegments: [
 func liftBitmap(_ fractions: [Double], reduceMotion: Bool = false) -> NSBitmapImageRep {
     liftRenderer.configure(
         line: liftLine, fillFractions: fractions, fontName: "Menlo", fontSize: 48,
-        fontWeight: .regular, activeColor: .red, inactiveColor: .green,
+        fontWeight: .regular,
+        activeColor: Color(.sRGB, red: 1, green: 0, blue: 0),
+        inactiveColor: Color(.sRGB, red: 0, green: 1, blue: 0),
         lineLimit: 0, lineSpacing: 0, textAlignment: .left,
         usesWordLift: true, reduceMotion: reduceMotion
     )
@@ -326,6 +328,30 @@ assertClose(glyphTop(seekBack, first: true, active: false), firstBaseline,
 let reducedMotion = liftBitmap([1, 0], reduceMotion: true)
 precondition(abs(glyphTop(reducedMotion, first: true, active: true) - firstBaseline) <= 0.75,
              "Reduce Motion must disable word lift (allowing color antialiasing differences)")
+
+// A soft scan must blend across several interior glyph columns, rather than
+// merely antialiasing a one-pixel rectangular clipping edge. Reduce Motion
+// disables lift but must preserve this color treatment.
+for reduceMotion in [false, true] {
+    let bitmap = liftBitmap([0.5, 0], reduceMotion: reduceMotion)
+    let scale = Double(bitmap.pixelsWide) / liftRenderer.bounds.width
+    var blendedColumns = Set<Int>()
+    var upcomingRed = 0.0
+    for y in 0..<bitmap.pixelsHigh {
+        for x in 0..<Int(58 * scale) {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                  color.alphaComponent > 0.95 else { continue }
+            if x < Int(28 * scale), color.redComponent > 0.1, color.greenComponent > 0.1 {
+                blendedColumns.insert(x)
+            }
+            if x >= Int(30 * scale) { upcomingRed = max(upcomingRed, color.redComponent) }
+        }
+    }
+    precondition(blendedColumns.count >= Int(6 * scale),
+                 "The scan edge must have a visible feathered color transition")
+    precondition(upcomingRed < 0.01, "The gradient must not leak into an upcoming word")
+}
+print("Karaoke feathered sweep checks passed")
 
 // Sample the still-dim right stem while the first word rises. Its alpha-weighted
 // position must move between device pixels, independently of the highlight mask.

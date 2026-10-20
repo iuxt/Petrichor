@@ -538,27 +538,30 @@ final class KaraokeTextRendererView: NSView {
             let lift = reduceMotion ? 0 : maximumLift * KaraokeWordLift.fraction(for: progress)
             let liftedOrigin = NSPoint(x: origin.x, y: origin.y - lift)
 
-            // Only moving words need interpolated images. Keep stationary text
-            // on the inexpensive TextKit path, and create each image on demand.
-            if !reduceMotion, progress > 0, progress < 1,
+            // Cache only the word being sung. The same images support a soft
+            // sweep with Reduce Motion enabled, without moving its baseline.
+            if progress > 0, progress < 1,
                let context = NSGraphicsContext.current?.cgContext {
                 if wordImages[cluster.glyphRange] == nil {
                     wordImages[cluster.glyphRange] = makeWordImages(cluster: cluster, scale: scale)
                 }
                 if let fragments = wordImages[cluster.glyphRange] {
-                    var remainingWidth = fragments.reduce(CGFloat(0)) { $0 + $1.rect.width } * progress
+                    let totalWidth = fragments.reduce(CGFloat(0)) { $0 + $1.rect.width }
+                    var precedingWidth: CGFloat = 0
                     for fragment in fragments {
                         let imageRect = fragment.imageRect.offsetBy(dx: liftedOrigin.x, dy: liftedOrigin.y)
                         drawWordImage(fragment.baseImage, in: imageRect, context: context)
-                        if remainingWidth > 0 {
-                            var clip = fragment.rect.offsetBy(dx: liftedOrigin.x, dy: liftedOrigin.y)
-                            clip.size.width = min(clip.width, remainingWidth)
-                            context.saveGState()
-                            context.clip(to: clip)
+                        drawSoftSweep(
+                            in: imageRect,
+                            textMinX: fragment.rect.minX + liftedOrigin.x,
+                            precedingWidth: precedingWidth,
+                            totalWidth: totalWidth,
+                            progress: progress,
+                            context: context
+                        ) {
                             drawWordImage(fragment.activeImage, in: imageRect, context: context)
-                            context.restoreGState()
                         }
-                        remainingWidth -= fragment.rect.width
+                        precedingWidth += fragment.rect.width
                     }
                     continue
                 }
@@ -638,18 +641,61 @@ final class KaraokeTextRendererView: NSView {
             let rect = self.activeLayout.boundingRect(forGlyphRange: intersection, in: self.activeContainer)
             fragments.append((intersection, rect))
         }
-        var remainingWidth = fragments.reduce(CGFloat(0)) { $0 + $1.rect.width } * progress
-        for fragment in fragments where remainingWidth > 0 {
-            var clipRect = fragment.rect.offsetBy(dx: origin.x, dy: origin.y)
-            clipRect.size.width = min(clipRect.width, remainingWidth)
-            remainingWidth -= fragment.rect.width
-            guard clipRect.width > 0, clipRect.height > 0 else { continue }
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(rect: clipRect).addClip()
-            activeLayout.drawGlyphs(forGlyphRange: fragment.range, at: origin)
-            NSGraphicsContext.restoreGraphicsState()
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let totalWidth = fragments.reduce(CGFloat(0)) { $0 + $1.rect.width }
+        var precedingWidth: CGFloat = 0
+        for fragment in fragments {
+            let rect = fragment.rect.offsetBy(dx: origin.x, dy: origin.y)
+            drawSoftSweep(
+                in: rect.insetBy(dx: -2, dy: -2),
+                textMinX: rect.minX,
+                precedingWidth: precedingWidth,
+                totalWidth: totalWidth,
+                progress: progress,
+                context: context
+            ) {
+                activeLayout.drawGlyphs(forGlyphRange: fragment.range, at: origin)
+            }
+            precedingWidth += fragment.rect.width
         }
     }
+
+    private func drawSoftSweep(
+        in rect: NSRect,
+        textMinX: CGFloat,
+        precedingWidth: CGFloat,
+        totalWidth: CGFloat,
+        progress: Double,
+        context: CGContext,
+        draw: () -> Void
+    ) {
+        guard totalWidth > 0,
+              let gradient = Self.sweepGradient else { return }
+        let feather = min((configuration?.fontSize ?? 36) * 0.6, totalWidth * 0.65)
+        // Travel from fully outside the leading edge to fully outside the
+        // trailing edge, so starting/finishing a word never pops in brightness.
+        // Unroll wrapped fragments into one continuous reading-order sweep.
+        let edge = textMinX - precedingWidth + (totalWidth + feather) * progress
+        context.saveGState()
+        context.clip(to: rect)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        draw()
+        context.setBlendMode(.destinationIn)
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: edge - feather, y: rect.midY),
+            end: CGPoint(x: edge, y: rect.midY),
+            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+        )
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
+    private static let sweepGradient = CGGradient(
+        colorsSpace: CGColorSpaceCreateDeviceRGB(),
+        colors: [NSColor.white.cgColor, NSColor.white.withAlphaComponent(0).cgColor] as CFArray,
+        locations: [0, 1]
+    )
 
     private func updateContainerWidth(_ width: CGFloat) {
         let size = NSSize(width: max(1, width), height: .greatestFiniteMagnitude)
