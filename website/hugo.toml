@@ -1,0 +1,26 @@
+baseURL = 'https://iuxt.github.io/Petrichor/'
+locale = 'zh-CN'
+defaultContentLanguage = 'zh'
+title = 'Petrichor · 让收藏的音乐，重新被听见'
+disableKinds = ['taxonomy', 'term', 'RSS']
+enableRobotsTXT = true
+
+[params]
+description = 'Petrichor 是一款原生 macOS 本地音乐播放器。离线资料库、逐字同步歌词、无缝播放，让你专心聆听自己的音乐收藏。'
+repository = 'https://github.com/iuxt/Petrichor'
+download = 'https://github.com/iuxt/Petrichor/releases/latest'
+requirements = 'macOS 15+ · Apple Silicon 与 Intel'
+
+[module]
+[[module.mounts]]
+source = 'assets'
+target = 'assets'
+[[module.mounts]]
+source = '../docs/images'
+target = 'assets/screenshots'
+[[module.mounts]]
+source = '../Resources/Brand'
+target = 'assets/brand'
+
+[caches.images]
+dir = ':cacheDir/images'

@@ -6,6 +6,8 @@
 
 [下载安装](https://github.com/iuxt/Petrichor/releases) · [反馈问题](https://github.com/iuxt/Petrichor/issues)
 
+官网源码位于 [`website/`](website/README.md)，使用 Hugo 渲染，并通过 GitHub Actions 部署到 GitHub Pages。
+
 ## 特点
 
 1. 使用 Swift、SwiftUI 和 AppKit 构建

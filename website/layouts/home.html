@@ -1,0 +1,62 @@
+{{ define "main" }}
+<section class="hero">
+  <div class="container">
+    <div class="hero-heading">
+      <div>
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> 原生 macOS 本地音乐播放器</p>
+        <h1>让收藏的音乐，<br><em>重新被听见。</em></h1>
+      </div>
+      <div class="hero-intro">
+        <p>那些认真收藏的专辑，<br>值得一个专心聆听的地方。</p>
+        <p class="muted">把音乐文件夹交给 Petrichor。<br>清晰的资料库、流动的歌词，和熟悉的 Mac 体验。</p>
+        <a class="button" href="{{ site.Params.download }}"><span aria-hidden="true">↓</span> 下载 Petrichor <span aria-hidden="true">↗</span></a>
+        <span class="requirements">{{ site.Params.requirements }}</span>
+      </div>
+    </div>
+    <figure class="hero-preview">
+      <div class="preview-label"><span><span class="status-dot" aria-hidden="true"></span> 你的音乐，你的资料库</span><span>01 / LIBRARY</span></div>
+      {{ partial "screenshot.html" (dict "name" "library-and-lyrics" "alt" "Petrichor 真实界面：本地资料库、歌曲搜索、TTML 对唱歌词和底部播放器" "eager" true) }}
+      <figcaption>从一首熟悉的歌，开始今天的聆听。<span>应用真实截图</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="features" class="section container">
+  <div class="section-heading"><div><p class="eyebrow">01 / 为你的收藏而设计</p><h2>从文件夹，<br>到你的音乐世界。</h2></div><p class="section-intro">不必改变收藏的方式。添加音乐文件夹，<br class="desktop-break">就能按自己的习惯浏览、整理和播放。</p></div>
+  <div class="feature-grid">
+    <article><span class="feature-number">01</span><h3>每张专辑，都好找</h3><p>按艺人、专辑、流派或年份浏览；也可以直接沿文件夹探索。搜索、筛选、固定常听内容，让下一首好歌触手可及。</p><span class="feature-note">资料库 · 文件夹 · 全文搜索</span></article>
+    <article><span class="feature-number">02</span><h3>一张专辑，一气呵成</h3><p>现代播放引擎支持无缝播放，让现场录音与连续专辑自然衔接。用 10 段均衡器、前置增益和立体声扩展，调整喜欢的声音。</p><span class="feature-note">无缝播放 · 10 段均衡器</span></article>
+    <article><span class="feature-number">03</span><h3>把喜欢，排在一起</h3><p>拖拽安排播放队列，用普通播放列表收藏心情，或让智能播放列表按条件挑歌。普通列表以 M3U 文件保存在音乐文件夹中。</p><span class="feature-note">播放队列 · M3U · 智能播放列表</span></article>
+  </div>
+  <div class="format-strip"><span>让不同格式，<br><strong>在同一个地方相遇。</strong></span><div aria-label="支持的部分音频格式"><span>FLAC</span><span>ALAC</span><span>MP3</span><span>AAC</span><span>WAV</span><span>APE</span><span>DSD</span></div><a href="{{ site.Params.repository }}#支持的音频格式">查看全部格式 ↗</a></div>
+</section>
+
+<section id="lyrics" class="lyrics-section">
+  <div class="container">
+    <div class="section-heading"><div><p class="eyebrow">02 / 跟着每一句，走进音乐</p><h2>这一刻，<br>只留给音乐。</h2></div><div class="section-intro"><p>封面的颜色缓缓铺开，逐字歌词随歌声点亮。<br>打开全屏歌词，把注意力还给正在听的歌。</p><span class="quiet-label">TTML 逐字高亮 / 对唱排版 / 多语言切换</span></div></div>
+    <figure class="immersive-preview">{{ partial "screenshot.html" (dict "name" "immersive-lyrics" "alt" "Petrichor 全屏歌词真实界面：专辑封面、逐字高亮歌词与随封面变化的背景") }}<figcaption>02 / IMMERSIVE LYRICS <span>应用真实截图</span></figcaption></figure>
+    <div class="lyrics-details"><article><h3>在你喜欢的位置看歌词</h3><p>主窗口侧栏、全屏、迷你播放器和桌面歌词。从专心聆听到边工作边听，总有适合的位置。</p></article><article><h3>已有的歌词，直接读</h3><p>支持同名 TTML、KSC、LRC、SRT 与内嵌歌词。点击同步歌词跳转，或通过预览快速校准时间。</p></article><article><h3>缺少的资料，按需补齐</h3><p>手动搜索歌词、封面和歌曲标签。自动歌词与自动封面分别授权，默认关闭，下载不会覆盖已有内容。</p></article></div>
+  </div>
+</section>
+
+<section class="section container native-section">
+  <div class="section-heading"><div><p class="eyebrow">03 / 熟悉的 Mac，熟悉的自在</p><h2>自然融入，<br>每一天的使用。</h2></div><p class="section-intro">用 Swift、SwiftUI 和 AppKit 构建，<br>让播放器成为 Mac 上顺手的一部分。</p></div>
+  <div class="native-grid"><article><span aria-hidden="true">⌘</span><h3>抬手就能控制</h3><p>媒体键、键盘快捷键、菜单栏与 Dock 播放控制，以及「快捷指令」自动化。</p></article><article><span class="appearance-icon" aria-hidden="true">◐</span><h3>跟随你的偏好</h3><p>浅色、深色或跟随系统；从封面提取界面颜色，也可以选择关闭。支持中文与英文。</p></article></div>
+  <div class="privacy-panel"><div><p class="eyebrow">本地收藏，安心聆听</p><h2>音乐在本机，<br>选择权在你。</h2></div><div><p>资料库与播放数据保存在本机。无需账户即可离线浏览与播放，不收集使用分析，也不上传音频。</p><p>日常扫描和播放不会改写音频或整理文件夹。在线补全只发送匹配所需的歌曲信息；标签在你明确保存时写入，下载的歌词与封面以独立文件保存。</p><a href="{{ site.Params.repository }}#本地文件与隐私">了解文件与隐私行为 <span aria-hidden="true">↗</span></a></div></div>
+</section>
+
+<section class="faq-section container">
+  <div><p class="eyebrow">开始之前</p><h2>你可能想知道。</h2></div>
+  <div class="faq-list">
+    <details><summary>需要联网或注册账户吗？</summary><p>无需注册账户，本地音乐的扫描、浏览、播放和已有歌词的读取均可离线使用。搜索在线标签、歌词或封面时才需要联网。自动歌词和自动封面为独立的可选功能，默认关闭。</p></details>
+    <details><summary>如何导入我的音乐？</summary><p>打开 Petrichor，点击「添加音乐文件夹」，选择已有的音乐目录，等待扫描完成即可。应用通过 macOS 沙盒访问你选择的目录，日常播放不改变音频文件和文件夹结构。</p></details>
+    <details><summary>可以使用已有的歌词文件吗？</summary><p>可以。将歌词与音频放在同一目录，保持相同文件名，例如 Song.flac 与 Song.ttml。旁车文件按 TTML → KSC → LRC → SRT 的优先级读取，没有有效旁车歌词时再读取内嵌歌词。</p></details>
+    <details><summary>支持哪些 Mac？首次安装需要注意什么？</summary><p>需要 macOS 15 或更高版本，支持 Apple Silicon 和 Intel Mac。从 GitHub Releases 下载安装包，将应用拖入「应用程序」。当前自动发布的安装包未签名、未公证，首次打开可能出现 macOS 安全提示，请阅读对应版本的发布说明。</p></details>
+    <details><summary>遇到问题，在哪里反馈？</summary><p>请前往 <a href="{{ site.Params.repository }}/issues">GitHub Issues</a>，附上 macOS 版本、应用版本和复现步骤。关于安装、格式与使用方式，也可以查看 <a href="{{ site.Params.repository }}#readme">项目文档</a>。</p></details>
+  </div>
+</section>
+
+<section id="download" class="download-section">
+  <div class="container download-inner">{{ $mark := resources.Get "brand/PetrichorMark.svg" }}<img class="download-mark" src="{{ $mark.RelPermalink }}" alt="" width="88" height="88"><p class="eyebrow">你的下一次聆听，从这里开始</p><h2>给收藏已久的音乐，<br>一个常常打开的理由。</h2><a class="button" href="{{ site.Params.download }}"><span aria-hidden="true">↓</span> 下载 Petrichor <span aria-hidden="true">↗</span></a><p class="requirements">{{ site.Params.requirements }}</p><p class="download-note">前往 GitHub Releases 获取安装包与版本说明。<br>当前安装包未签名、未公证。</p></div>
+</section>
+{{ end }}

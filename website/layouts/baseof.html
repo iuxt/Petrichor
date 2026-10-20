@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6ef">
+  <title>{{ if .IsHome }}{{ site.Title }}{{ else }}{{ .Title }} · Petrichor{{ end }}</title>
+  <meta name="description" content="{{ site.Params.description }}">
+  <link rel="canonical" href="{{ .Permalink }}">
+  {{ $mark := resources.Get "brand/PetrichorMark.svg" }}
+  <link rel="icon" type="image/svg+xml" href="{{ $mark.RelPermalink }}">
+  {{ $style := resources.Get "css/main.css" | minify | fingerprint }}
+  <link rel="stylesheet" href="{{ $style.RelPermalink }}" integrity="{{ $style.Data.Integrity }}">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:site_name" content="Petrichor">
+  <meta property="og:title" content="{{ site.Title }}">
+  <meta property="og:description" content="{{ site.Params.description }}">
+  <meta property="og:url" content="{{ .Permalink }}">
+  {{ $social := (resources.Get "screenshots/library-and-lyrics.png").Resize "1200x webp q85" }}
+  <meta property="og:image" content="{{ $social.Permalink }}">
+  <meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳转到主要内容</a>
+  <header class="header">
+    <nav class="nav container" aria-label="主导航">
+      <a class="brand" href="{{ site.Home.RelPermalink }}" aria-label="Petrichor 首页"><img src="{{ $mark.RelPermalink }}" width="36" height="36" alt=""><span>Petrichor</span></a>
+      <div class="nav-links">
+        <a href="{{ site.Home.RelPermalink }}#features">功能</a>
+        <a href="{{ site.Home.RelPermalink }}#lyrics">歌词体验</a>
+        <a class="nav-source" href="{{ site.Params.repository }}">GitHub <span aria-hidden="true">↗</span></a>
+      </div>
+      <a class="button button-small" href="{{ site.Home.RelPermalink }}#download">下载 macOS 版 <span aria-hidden="true">↓</span></a>
+    </nav>
+  </header>
+  <main id="main">{{ block "main" . }}{{ end }}</main>
+  <footer class="footer container">
+    <div><a class="brand" href="{{ site.Home.RelPermalink }}"><img src="{{ $mark.RelPermalink }}" width="30" height="30" alt=""><span>Petrichor</span></a><p>雨后泥土的气息，和再次听见的好音乐。</p></div>
+    <div class="footer-links"><a href="{{ site.Params.repository }}">源代码 ↗</a><a href="{{ site.Params.repository }}/issues">问题反馈 ↗</a><a href="{{ site.Params.repository }}/blob/main/LICENSE">许可证 ↗</a><a href="{{ site.Params.repository }}/blob/main/ACKNOWLEDGEMENTS.md">鸣谢 ↗</a></div>
+    <p class="colophon">为 macOS 而生 · 用 Hugo 构建</p>
+  </footer>
+</body>
+</html>
