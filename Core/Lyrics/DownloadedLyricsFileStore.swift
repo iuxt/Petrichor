@@ -3,26 +3,46 @@ import Foundation
 
 protocol DownloadedLyricsWriting: Sendable {
     func save(_ lyrics: DownloadedLyrics, for audioURL: URL, overwrite: Bool, automatic: Bool) async throws -> URL
+    func save(_ lyrics: DownloadedLyrics, target: LyricsFileTarget, overwrite: Bool, automatic: Bool) async throws -> URL
+}
+
+extension DownloadedLyricsWriting {
+    func save(_ lyrics: DownloadedLyrics, target: LyricsFileTarget, overwrite: Bool, automatic: Bool) async throws -> URL {
+        guard target.cueSheetURL == nil else { throw LyricsDownloadError.unsafeDestination }
+        return try await save(lyrics, for: target.audioURL, overwrite: overwrite, automatic: automatic)
+    }
 }
 
 actor DownloadedLyricsFileStore: DownloadedLyricsWriting {
     static let shared = DownloadedLyricsFileStore()
 
-    func save(_ lyrics: DownloadedLyrics, for audioURL: URL, overwrite: Bool = false, automatic: Bool = false) throws -> URL {
+    func save(_ lyrics: DownloadedLyrics, for audioURL: URL, overwrite: Bool = false, automatic: Bool = false) async throws -> URL {
+        try await save(lyrics, target: LyricsFileTarget(audioURL: audioURL), overwrite: overwrite, automatic: automatic)
+    }
+
+    func save(_ lyrics: DownloadedLyrics, target: LyricsFileTarget, overwrite: Bool = false, automatic: Bool = false) async throws -> URL {
+        let audioURL = target.audioURL
+        let anchor = target.anchorURL
         try Task.checkCancellation()
-        guard audioURL.isFileURL else { throw LyricsDownloadError.unsafeDestination }
-        let directory = audioURL.deletingLastPathComponent()
+        guard anchor.isFileURL, audioURL.isFileURL else { throw LyricsDownloadError.unsafeDestination }
+        let directory = anchor.deletingLastPathComponent()
+        let anchorScope = anchor.startAccessingSecurityScopedResource()
         let audioScope = audioURL.startAccessingSecurityScopedResource()
         let directoryScope = directory.startAccessingSecurityScopedResource()
         defer {
+            if anchorScope { anchor.stopAccessingSecurityScopedResource() }
             if audioScope { audioURL.stopAccessingSecurityScopedResource() }
             if directoryScope { directory.stopAccessingSecurityScopedResource() }
         }
         let manager = FileManager.default
         guard manager.fileExists(atPath: audioURL.path) else { throw CocoaError(.fileNoSuchFile) }
-        let destination = audioURL.deletingPathExtension().appendingPathExtension(lyrics.format.rawValue)
+        guard manager.fileExists(atPath: anchor.path),
+              target.cueSheetURL == nil || (target.cueSheetURL?.pathExtension.lowercased() == "cue" && (1...99).contains(target.cueTrackNumber ?? 0)) else {
+            throw LyricsDownloadError.unsafeDestination
+        }
+        let destination = target.destination(extension: lyrics.format.rawValue)
         if automatic {
-            let base = audioURL.deletingPathExtension().lastPathComponent.lowercased()
+            let base = target.baseURL.lastPathComponent.lowercased()
             let names = try manager.contentsOfDirectory(atPath: directory.path).map { $0.lowercased() }
             if ["ttml", "ksc", "lrc", "srt"].contains(where: { names.contains(base + "." + $0) }) {
                 throw LyricsDownloadError.existingSidecar

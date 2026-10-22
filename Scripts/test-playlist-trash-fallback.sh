@@ -7,7 +7,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 cat > "$tmpdir/stubs.swift" <<'SWIFT'
 import Foundation
 
-struct Track {
+struct Track { var playlistURL: URL { url };
     var trackId: Int64?
     let url: URL
 }

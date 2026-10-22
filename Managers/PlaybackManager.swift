@@ -1002,7 +1002,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         if let currentTrackId = currentTrack.trackId, let trackId = track.trackId {
             return currentTrackId == trackId
         }
-        return currentTrack.url == track.url
+        return currentTrack.libraryPath == track.libraryPath
     }
 
     private func beginPlaybackRequest() -> UInt64 {
@@ -1226,7 +1226,7 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         artworkLoadTask?.cancel()
         artworkLoadTask = Task { [weak self, track, identity] in
-            let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.url, albumTitle: track.album)
+            let request = ArtworkRequest.album(albumId: track.albumId, representativeTrackURL: track.artworkSourceURL, albumTitle: track.album, cueSheetURL: track.cueSegment?.sheetURL)
             let data = await ArtworkResolver.shared.artworkData(for: request)
 
             await MainActor.run { [weak self] in
@@ -1245,7 +1245,8 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
 
     func refreshCurrentTrackArtworkAfterDownload(for audioURL: URL) {
-        guard currentTrack?.url.standardizedFileURL == audioURL.standardizedFileURL else { return }
+        guard currentTrack?.url.standardizedFileURL == audioURL.standardizedFileURL
+            || currentTrack?.cueSegment?.sheetURL.standardizedFileURL == audioURL.standardizedFileURL else { return }
         currentArtworkIdentity = nil
         refreshCurrentTrackArtworkIfNeeded()
     }
@@ -1866,7 +1867,8 @@ final class PlaybackManager: NSObject, ObservableObject {
 
         if restoredEntryId != nil
             || seekToPosition > 0
-            || !resumeAfterRestore {
+            || !resumeAfterRestore
+            || fullTrack.cueSegment != nil {
             // Load paused and defer the seek plus requested play/pause state to the
             // `.paused` transition.
             // this produces (see audioPlayerStateChanged): that signal fires only
@@ -1880,10 +1882,10 @@ final class PlaybackManager: NSObject, ObservableObject {
                 didApplyPosition: false
             )
             currentTime = seekToPosition
-            audioPlayer.play(url: fullTrack.url, entryId: entryId, startPaused: true)
+            audioPlayer.play(track: fullTrack, entryId: entryId, startPaused: true)
         } else {
             currentTime = 0
-            audioPlayer.play(url: fullTrack.url, entryId: entryId, startPaused: false)
+            audioPlayer.play(track: fullTrack, entryId: entryId, startPaused: false)
             Logger.info("Started playback: \(lightweightTrack.title)")
         }
 
@@ -2056,6 +2058,15 @@ final class PlaybackManager: NSObject, ObservableObject {
             audioPlayer.clearNextTrack()
             pendingNext = nil
             pendingNextWasSkipped = false
+            return
+        }
+
+        // A CUE region must be opened with its bounds, never primed as a whole
+        // audio file. Fall back to app-driven advance at the preceding EOF.
+        if next.track.cueSegment != nil {
+            audioPlayer.clearNextTrack()
+            pendingNext = nil
+            pendingNextWasSkipped = true
             return
         }
 
@@ -2436,10 +2447,10 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
                     Logger.warning("Restore seek failed")
                     self.currentTime = 0
                     self.resetProgressResolution(engineProgress: 0)
-                    if pending.shouldResume, let url = self.currentFullTrack?.url {
+                    if pending.shouldResume, let fullTrack = self.currentFullTrack {
                         self.wantsPlaybackActive = true
                         self.audioPlayer.play(
-                            url: url,
+                            track: fullTrack,
                             entryId: pending.entryId,
                             startPaused: false
                         )
@@ -2521,6 +2532,10 @@ extension PlaybackManager: @preconcurrency AudioPlayerDelegate {
 
             switch stopReason {
             case .eof:
+                // A queued EOF may arrive after switching from a whole-file
+                // backend to a CUE region. Credit it above, but never advance
+                // the replacement track's queue or reset its progress.
+                guard finishedEntryIsCurrent else { return }
                 self.restoredPosition = 0
                 if self.audioPlayer.supportsGaplessQueue {
                     // True end of queue only: nothing primed and this finish is for

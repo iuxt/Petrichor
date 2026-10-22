@@ -4,6 +4,13 @@ import Foundation
 protocol DownloadedArtworkWriting: Sendable {
     func save(_ image: Data, for audioURL: URL, album: String, matchedAlbum: String) async throws -> URL
     func saveManual(_ image: Data, for audioURL: URL, overwrite: Bool) async throws -> URL
+    func saveCue(_ image: Data, sheetURL: URL, audioURL: URL, album: String, overwrite: Bool, automatic: Bool) async throws -> URL
+}
+
+extension DownloadedArtworkWriting {
+    func saveCue(_ image: Data, sheetURL: URL, audioURL: URL, album: String, overwrite: Bool, automatic: Bool) async throws -> URL {
+        throw ArtworkDownloadError.unsafeDestination
+    }
 }
 
 actor DownloadedArtworkFileStore: DownloadedArtworkWriting {
@@ -58,6 +65,26 @@ actor DownloadedArtworkFileStore: DownloadedArtworkWriting {
     /// A manual selection is specific to one song. Same-stem artwork takes
     /// priority over folder and album covers without changing those shared files.
     func saveManual(_ image: Data, for audioURL: URL, overwrite: Bool) throws -> URL {
+        try publish(image, anchorURL: audioURL, destination: audioURL.deletingPathExtension().appendingPathExtension("jpg"), overwrite: overwrite)
+    }
+
+    func saveCue(_ image: Data, sheetURL: URL, audioURL: URL, album: String, overwrite: Bool, automatic: Bool) async throws -> URL {
+        guard sheetURL.isFileURL, sheetURL.pathExtension.lowercased() == "cue", audioURL.isFileURL,
+              FileManager.default.fileExists(atPath: audioURL.path), !(automatic && overwrite) else {
+            throw ArtworkDownloadError.unsafeDestination
+        }
+        if automatic {
+            for anchor in [sheetURL, audioURL] {
+                let candidates = try FileManager.default.contentsOfDirectory(at: anchor.deletingLastPathComponent(), includingPropertiesForKeys: nil)
+                if ExternalArtworkResolver.artworkURL(forAudioURL: anchor, candidates: candidates, albumTitle: album) != nil {
+                    throw ArtworkDownloadError.existingArtwork
+                }
+            }
+        }
+        return try publish(image, anchorURL: sheetURL, destination: sheetURL.appendingPathExtension("jpg"), overwrite: overwrite)
+    }
+
+    private func publish(_ image: Data, anchorURL audioURL: URL, destination: URL, overwrite: Bool) throws -> URL {
         try Task.checkCancellation()
         guard audioURL.isFileURL, !image.isEmpty,
               image.count <= AlbumArtFormat.maxArtworkSize else { throw ArtworkDownloadError.unsafeDestination }
@@ -70,7 +97,6 @@ actor DownloadedArtworkFileStore: DownloadedArtworkWriting {
         }
         let manager = FileManager.default
         guard manager.fileExists(atPath: audioURL.path) else { throw CocoaError(.fileNoSuchFile) }
-        let destination = audioURL.deletingPathExtension().appendingPathExtension("jpg")
         if let attributes = try? manager.attributesOfItem(atPath: destination.path) {
             guard attributes[.type] as? FileAttributeType == .typeRegular else {
                 throw ArtworkDownloadError.unsafeDestination

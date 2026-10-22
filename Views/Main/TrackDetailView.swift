@@ -206,7 +206,7 @@ struct TrackDetailView: View {
     private func artworkSection(for fullTrack: FullTrack) -> some View {
         ZStack {
             AsyncArtworkImage(
-                request: ArtworkRequest.album(albumId: fullTrack.albumId, representativeTrackURL: fullTrack.url, albumTitle: fullTrack.album),
+                request: ArtworkRequest.album(albumId: fullTrack.albumId, representativeTrackURL: fullTrack.artworkSourceURL, albumTitle: fullTrack.album, cueSheetURL: fullTrack.cueSegment?.sheetURL),
                 onDataLoaded: { data in
                     resolvedArtworkData = data
                     updateGradientColors()
@@ -443,6 +443,12 @@ struct TrackDetailView: View {
         }
 
         items.append((String(appLocalized: "File Path"), fullTrack.url.path))
+        if let segment = fullTrack.cueSegment {
+            items.append((String(appLocalized: "CUE Sheet"), segment.sheetPath))
+            let range = HelperUtils.formattedShortDuration(segment.start) + " – "
+                + HelperUtils.formattedShortDuration(segment.end)
+            items.append((String(appLocalized: "CUE Track Range"), range))
+        }
 
         if let dateAdded = fullTrack.dateAdded {
             items.append((String(appLocalized: "Date Added"), formatDate(dateAdded)))

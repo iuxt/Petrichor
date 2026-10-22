@@ -76,6 +76,14 @@ enum DatabaseMigrator {
             Logger.info("Rebuilt tracks_fts with trigram tokenizer")
         }
 
+        migrator.registerMigration("v19_cue_segments") { db in
+            if try !db.columns(in: "tracks").contains(where: { $0.name == "cue_segment" }) {
+                try db.alter(table: "tracks") { t in t.add(column: "cue_segment", .text) }
+            }
+            // CUE files now participate in scanning and folder hashes.
+            try db.execute(sql: "UPDATE folders SET shasum_hash = NULL")
+        }
+
         return migrator
     }
 

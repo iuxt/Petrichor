@@ -74,7 +74,8 @@ extension DatabaseManager {
                         albums.total_tracks,
                         albums.release_year,
                         COALESCE(SUM(tracks.duration), 0) as totalDuration,
-                        MIN(tracks.path) as representativeTrackPath,
+                        MIN(COALESCE(json_extract(tracks.cue_segment, '$.albumSourcePath'), json_extract(tracks.cue_segment, '$.sourcePath'), tracks.path)) as representativeTrackPath,
+                        MIN(json_extract(tracks.cue_segment, '$.sheetPath')) as cueSheetPath,
                         COALESCE(
                             (SELECT artists.name
                              FROM album_artists
@@ -101,6 +102,7 @@ extension DatabaseManager {
                     let releaseYear: Int?
                     let totalDuration: Double
                     let representativeTrackPath: String?
+                    let cueSheetPath: String?
                     let artistName: String?
                     let createdAt: Date?
                     
@@ -111,6 +113,7 @@ extension DatabaseManager {
                         releaseYear = row["release_year"]
                         totalDuration = row["totalDuration"] ?? 0
                         representativeTrackPath = row["representativeTrackPath"]
+                        cueSheetPath = row["cueSheetPath"]
                         artistName = row["artistName"]
                         createdAt = row["created_at"]
                     }
@@ -124,6 +127,7 @@ extension DatabaseManager {
                         trackCount: info.totalTracks,
                         albumId: info.id,
                         representativeTrackURL: info.representativeTrackPath.map { URL(fileURLWithPath: $0) },
+                        cueSheetURL: info.cueSheetPath.map { URL(fileURLWithPath: $0) },
                         year: info.releaseYear.map { String($0) } ?? "",
                         duration: info.totalDuration,
                         artistName: info.artistName,

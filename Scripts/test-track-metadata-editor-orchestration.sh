@@ -87,6 +87,8 @@ extension String {
 }
 
 struct Track: Equatable, Sendable {
+    var cueSegment: Int?
+
     let trackId: Int64?
     let url: URL
     var title: String

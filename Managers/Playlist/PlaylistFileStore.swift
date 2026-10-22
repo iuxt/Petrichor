@@ -164,7 +164,7 @@ final class PlaylistFileStore {
 
     func write(tracks: [Track], for playlist: Playlist) throws -> Playlist {
         guard let backing = playlist.fileBacking else { throw PlaylistFileStoreError.missingBackingFile }
-        var content = M3UPlaylistCodec.render(trackURLs: tracks.map(\.url), musicFolder: backing.musicFolderURL,
+        var content = M3UPlaylistCodec.render(trackURLs: tracks.map(\.playlistURL), musicFolder: backing.musicFolderURL,
                                              playlistFileURL: backing.fileURL)
         for entry in backing.unresolvedEntries { content += entry + "\r\n" }
         content = Self.content(content, preservingID: playlist.id)

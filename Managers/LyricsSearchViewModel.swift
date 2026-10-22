@@ -83,7 +83,7 @@ final class LyricsSearchViewModel: ObservableObject {
 
     var selectedCandidate: LyricsSearchCandidate? { candidates.first { $0.id == selection } }
     var overwriteURL: URL? {
-        pendingOverwrite.map { track.url.deletingPathExtension().appendingPathExtension($0.format.rawValue) }
+        pendingOverwrite.map { track.lyricsFileTarget.destination(extension: $0.format.rawValue) }
     }
     var canSearch: Bool {
         !isSearching && !isSaving && ![title, artist].allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -144,7 +144,7 @@ final class LyricsSearchViewModel: ObservableObject {
                     }
                 }
                 guard let self, let lyrics, !Task.isCancelled, self.saveGeneration == generation else { return }
-                let url = try await writer.save(lyrics, for: self.track.url, overwrite: overwrite, automatic: false)
+                let url = try await writer.save(lyrics, target: self.track.lyricsFileTarget, overwrite: overwrite, automatic: false)
                 guard !Task.isCancelled, self.saveGeneration == generation else { return }
                 self.savedURL = url
                 self.pendingOverwrite = nil

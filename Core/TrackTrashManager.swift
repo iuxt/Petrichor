@@ -2,8 +2,11 @@ import Foundation
 
 enum TrackTrashManager {
     @MainActor
-    static func moveLyricsToTrash(for track: Track, source: LyricsSource) async throws {
-        guard let lyricsURL = source.sidecarURL(for: track.url) else {
+    static func moveLyricsToTrash(for track: Track, source: LyricsSource, fileURL: URL? = nil) async throws {
+        let sharedURL = source.sidecarURL(for: track.url)
+        let specificURL = source.sidecarURL(for: track.lyricsFileTarget.lookupURL)
+        guard let lyricsURL = fileURL ?? (track.cueSegment == nil ? sharedURL : nil),
+              lyricsURL == sharedURL || lyricsURL == specificURL else {
             throw CocoaError(.fileNoSuchFile)
         }
         guard let coordinator = AppCoordinator.shared else {
@@ -11,7 +14,7 @@ enum TrackTrashManager {
         }
 
         let audioURL = track.url
-        let accessURL = libraryFolderAccessURL(containing: audioURL, folders: coordinator.libraryManager.folders)
+        let accessURL = libraryFolderAccessURL(containing: lyricsURL, folders: coordinator.libraryManager.folders)
         try await Task.detached(priority: .utility) {
             let didStartAccess = withLibraryFolderAccess(accessURL)
             let didStartAudioAccess = audioURL.startAccessingSecurityScopedResource()
@@ -28,6 +31,10 @@ enum TrackTrashManager {
     }
 
     static func moveTrackToTrash(_ track: Track) async {
+        guard track.cueSegment == nil else {
+            await notify(.warning, String(appLocalized: "CUE tracks share an audio file. Manage the album files in Finder."))
+            return
+        }
         guard let coordinator = AppCoordinator.shared else {
             await notify(.error, String(appLocalized: "Unable to access the library"))
             return
@@ -45,6 +52,10 @@ enum TrackTrashManager {
 
     static func moveTracksToTrash(_ tracks: [Track]) async {
         guard !tracks.isEmpty else { return }
+        guard tracks.allSatisfy({ $0.cueSegment == nil }) else {
+            await notify(.warning, String(appLocalized: "CUE tracks share an audio file. Manage the album files in Finder."))
+            return
+        }
         guard let coordinator = AppCoordinator.shared else {
             await notify(.error, String(appLocalized: "Unable to access the library"))
             return

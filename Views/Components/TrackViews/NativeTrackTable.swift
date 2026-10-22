@@ -193,7 +193,7 @@ struct NativeTrackTable: NSViewRepresentable {
             let before = Array(max(0, visible.location - margin)..<visible.location).reversed()
             let rows = visible.location >= previousVisibleRow ? after + before : before + after
             previousVisibleRow = visible.location
-            let requests = rows.map { ArtworkRequest.thumbnail(parent.tracks[$0].url, albumTitle: parent.tracks[$0].album) }
+            let requests = rows.map { ArtworkRequest.thumbnail(parent.tracks[$0].artworkSourceURL, albumTitle: parent.tracks[$0].album, cueSheetURL: parent.tracks[$0].cueSegment?.sheetURL) }
             let wanted = Set(requests)
             // Preserve overlapping work on small scrolls; cancel only rows that
             // left the bounded window (at most 32 rows on either side).
@@ -240,7 +240,7 @@ struct NativeTrackTable: NSViewRepresentable {
             let track = parent.tracks[row]
             let current = parent.currentTrack.map {
                 if let id = $0.trackId, let other = track.trackId { return id == other }
-                return $0.url == track.url
+                return $0.libraryPath == track.libraryPath
             } ?? false
             let selected = table?.selectedRowIndexes.contains(row) ?? false
             cell.textField?.font = .systemFont(ofSize: 13, weight: current ? (column == "title" ? .bold : .medium) : .regular)
@@ -406,7 +406,7 @@ struct NativeTrackTable: NSViewRepresentable {
         self.expanded = expanded
         textField?.stringValue = track.title
         artwork.isHidden = !expanded
-        if expanded { artwork.configure(request: .thumbnail(track.url, albumTitle: track.album), revision: revision) }
+        if expanded { artwork.configure(request: .thumbnail(track.artworkSourceURL, albumTitle: track.album, cueSheetURL: track.cueSegment?.sheetURL), revision: revision) }
         else { artwork.stopLoading() }
         button.isHidden = !current
         button.image = NSImage(systemSymbolName: current && playing ? "pause.fill" : "play.fill", accessibilityDescription: nil)

@@ -12,7 +12,7 @@ extension PlaylistManager {
             return lhsId == rhsId
         }
 
-        return lhs.url.standardizedFileURL.path == rhs.url.standardizedFileURL.path
+        return lhs.libraryPath == rhs.libraryPath
     }
 
     func createLibraryQueue() {

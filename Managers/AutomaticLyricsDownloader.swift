@@ -58,7 +58,7 @@ final class AutomaticLyricsDownloader: ObservableObject {
         }
         let query = LyricsMatchQuery(title: track.title, artist: track.artist, album: track.album, duration: track.duration)
         let source = settings.source, includeTranslation = settings.includeTranslation
-        let key = [track.url.path, track.title, track.artist, track.album, String(track.duration), source.rawValue, String(includeTranslation)].joined(separator: "\u{0}")
+        let key = [track.libraryPath, track.title, track.artist, track.album, String(track.duration), source.rawValue, String(includeTranslation)].joined(separator: "\u{0}")
         guard key != activeKey else { return }
         task?.cancel()
         activeKey = key
@@ -102,7 +102,7 @@ final class AutomaticLyricsDownloader: ObservableObject {
                 // A manual download or new embedded lyrics may have arrived meanwhile.
                 if try await loadLocal(track) { return }
                 try Task.checkCancellation()
-                let url = try await writer.save(lyrics, for: track.url, overwrite: false, automatic: true)
+                let url = try await writer.save(lyrics, target: track.lyricsFileTarget, overwrite: false, automatic: true)
                 guard let self, !Task.isCancelled, self.activeKey == key else { return }
                 self.recordAttempt(key)
                 self.didSave(track.url)

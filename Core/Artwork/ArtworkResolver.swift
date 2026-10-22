@@ -40,6 +40,16 @@ final class ArtworkResolver {
         guard !Task.isCancelled else { return nil }
         // External covers override embedded artwork, including cached embedded
         // artwork. Reuse one directory listing for all external source lookups.
+        if let sheetURL = request.cueSheetURL {
+            let cover = sheetURL.appendingPathExtension("jpg")
+            if let data = cachedOrFileArtwork(for: request, fileURL: cover) { return data }
+            // Album-named/folder covers next to the CUE apply to all its files,
+            // including audio in subdirectories.
+            let sheetCandidates = artworkCandidates(in: sheetURL.deletingLastPathComponent())
+            if let sharedURL = ExternalArtworkResolver.artworkURL(forAudioURL: sheetURL,
+                    candidates: sheetCandidates, albumTitle: request.albumTitle),
+               let data = cachedOrFileArtwork(for: request, fileURL: sharedURL) { return data }
+        }
         let directory = request.audioURL.deletingLastPathComponent()
         let candidates = artworkCandidates(in: directory)
 

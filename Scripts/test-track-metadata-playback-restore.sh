@@ -64,7 +64,7 @@ require_pattern "$PLAYLIST" 'audioPlayer\?\.applyMetadataEditResult\(track\)' 'P
 require_pattern "$PLAYLIST_PLAYBACK" 'func restoreQueueIndexAfterMetadataEdit\(\s*_ preferredIndex: Int,\s*matching track: Track\s*\)' 'Queue restoration must accept the edited track identity.'
 require_pattern "$PLAYLIST_PLAYBACK" 'currentQueue\.firstIndex' 'Queue restoration must relocate a shuffled track.'
 require_pattern "$PLAYLIST_PLAYBACK" 'queueTrack\.trackId == trackId' 'Queue restoration must prefer stable track identity.'
-require_pattern "$PLAYLIST_PLAYBACK" 'standardizedFileURL' 'Queue restoration must fall back to canonical file identity.'
+require_pattern "$PLAYLIST_PLAYBACK" 'queueTrack\.libraryPath == track\.libraryPath' 'Queue restoration must fall back to canonical library identity, including CUE tracks.'
 require_pattern "$LIBRARY" 'func applyMetadataEditResult' 'Library cache replacement is missing.'
 require_pattern "$LIBRARY" 'func finishMetadataEditRefresh\(\) async' 'The final library refresh must await a duplicate-filtered track reload.'
 require_pattern "$LIBRARY" 'databaseManager\.getAllTracks\(\)' 'The final library refresh must reload duplicate-filtered library membership.'

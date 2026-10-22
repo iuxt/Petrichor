@@ -102,6 +102,7 @@ struct AlbumEntity: Entity {
     let artworkData: Data?
     let albumId: Int64?
     let representativeTrackURL: URL?
+    let cueSheetURL: URL?
     let year: String?
     let duration: Double?
     let artistName: String?
@@ -115,7 +116,7 @@ struct AlbumEntity: Entity {
 
     var artworkRequest: ArtworkRequest? {
         representativeTrackURL.map {
-            ArtworkRequest.album(albumId: albumId, representativeTrackURL: $0, albumTitle: name)
+            ArtworkRequest.album(albumId: albumId, representativeTrackURL: $0, albumTitle: name, cueSheetURL: cueSheetURL)
         }
     }
 
@@ -125,7 +126,8 @@ struct AlbumEntity: Entity {
         self.tracks = tracks
         self.trackCount = tracks.count
         self.albumId = nil
-        self.representativeTrackURL = tracks.first?.url
+        self.representativeTrackURL = tracks.first?.artworkSourceURL
+        self.cueSheetURL = tracks.first?.cueSegment?.sheetURL
         self.year = nil
         self.duration = nil
         self.artistName = nil
@@ -141,6 +143,7 @@ struct AlbumEntity: Entity {
         artworkData: Data? = nil,
         albumId: Int64? = nil,
         representativeTrackURL: URL? = nil,
+        cueSheetURL: URL? = nil,
         year: String? = nil,
         duration: Double? = nil,
         artistName: String? = nil,
@@ -158,6 +161,7 @@ struct AlbumEntity: Entity {
         self.artworkData = artworkData
         self.albumId = albumId
         self.representativeTrackURL = representativeTrackURL
+        self.cueSheetURL = cueSheetURL
         self.year = year
         self.duration = duration
         self.artistName = artistName

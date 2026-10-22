@@ -12,7 +12,7 @@ struct LyricsSearchSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(verbatim: String(appLocalized: "Search Lyrics Online..."))
                 .font(.headline)
-            Text(verbatim: model.track.url.lastPathComponent)
+            Text(verbatim: model.track.cueSegment == nil ? model.track.url.lastPathComponent : model.track.title)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .help(model.track.url.path)
@@ -20,6 +20,11 @@ struct LyricsSearchSheet: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if model.track.cueSegment != nil {
+                Text(String(appLocalized: "Lyrics are saved for this CUE track only. Shared album lyrics are kept."))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
 
             HStack(alignment: .bottom, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {

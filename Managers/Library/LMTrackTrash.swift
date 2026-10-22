@@ -18,7 +18,7 @@ extension LibraryManager {
                 if let existingId = existing.trackId, let removedId = track.trackId {
                     return existingId == removedId
                 }
-                return existing.url == track.url
+                return existing.libraryPath == track.libraryPath
             }
 
             updateSearchResults()

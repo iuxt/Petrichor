@@ -13,7 +13,7 @@ struct LyricsLoader {
         script: LyricScript = .original,
         languageTag: String? = nil
     ) async throws -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript],
-                       availableLanguages: [LyricLanguage], selectedLanguage: LyricLanguage) {
+                       availableLanguages: [LyricLanguage], selectedLanguage: LyricLanguage, fileURL: URL?) {
         var lines: [LyricLine]?
         var source: LyricsSource = .none
         var availableScripts: [LyricScript] = [.original]
@@ -22,8 +22,14 @@ struct LyricsLoader {
 
         // 1. External TTML/KSC/LRC/SRT files
         let audioURL = track.url
-        let external = await Task.detached(priority: .utility) {
-            LyricsSidecarLoader.load(forAudioURL: audioURL, script: script, languageTag: languageTag)
+        let target = track.lyricsFileTarget
+        let segment = track.cueSegment
+        let external = await Task.detached(priority: .utility) { () -> LyricsSidecarLoader.Result? in
+            if segment != nil, let specific = LyricsSidecarLoader.load(
+                forAudioURL: target.lookupURL, script: script, languageTag: languageTag
+            ) { return specific }
+            return LyricsSidecarLoader.load(forAudioURL: audioURL, script: script, languageTag: languageTag,
+                transform: { lines in segment.map { $0.lyrics(from: lines) } ?? lines })
         }.value
         if let external {
             lines = external.lyrics
@@ -39,12 +45,13 @@ struct LyricsLoader {
            let fullTrack = fullTrack,
            let embeddedText = fullTrack.extendedMetadata?.lyrics,
            !embeddedText.isEmpty {
-            lines = parseAnyLyrics(embeddedText)
+            let embedded = parseAnyLyrics(embeddedText)
+            lines = segment.map { $0.lyrics(from: embedded) } ?? embedded
             source = .embedded
         }
 
         // Fallback to empty array
-        return (lines ?? [], source, availableScripts, availableLanguages, selectedLanguage)
+        return (lines ?? [], source, availableScripts, availableLanguages, selectedLanguage, external?.fileURL)
     }
     
     // MARK: - Helpers

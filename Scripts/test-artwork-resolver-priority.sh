@@ -163,6 +163,21 @@ enum MetadataEngine {
             precondition(data == Data("same-stem".utf8), "Saved song artwork must override every other source")
         }
 
+        let cue = root.appendingPathComponent("Album.cue")
+        let cueCover = cue.appendingPathExtension("jpg")
+        try Data("cue-album-cover".utf8).write(to: cueCover)
+        let cueRequests: [ArtworkRequest] = [
+            .album(albumId: 1, representativeTrackURL: audio, albumTitle: "My Album", cueSheetURL: cue),
+            .thumbnail(audio, albumTitle: "My Album", cueSheetURL: cue)
+        ]
+        resolver.invalidateMemoryCache()
+        for request in cueRequests {
+            let cueData = await resolver.artworkData(for: request)
+            precondition(cueData == Data("cue-album-cover".utf8), "Explicit CUE album cover overrides individual file covers")
+        }
+        try FileManager.default.removeItem(at: cueCover)
+        resolver.invalidateMemoryCache()
+
         // A replaced sidecar must invalidate its disk cache, too.
         try Data("replacement-cover".utf8).write(to: sameStem, options: .atomic)
         resolver.invalidateMemoryCache()

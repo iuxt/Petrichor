@@ -9,6 +9,9 @@ import Combine
 extension String { init(appLocalized key: String) { self = key } }
 struct Track: Sendable {
     var url: URL
+    var cueSegment: CueTrackSegment?
+    var libraryPath: String { cueSegment?.libraryPath ?? url.path }
+    var lyricsFileTarget: LyricsFileTarget { LyricsFileTarget(audioURL: url, cueSheetURL: cueSegment?.sheetURL, cueTrackNumber: cueSegment?.number) }
     var title = "Song"
     var artist = "Artist"
     var album = "Album"
@@ -416,11 +419,55 @@ actor FakeWriter: DownloadedLyricsWriting {
         await staleService.resume()
         try? await Task.sleep(nanoseconds: 20_000_000)
         expect(await staleWriter.writes == 0, "Disabling automatic downloads must cancel pending writes")
+        let cueArtworkQuery = LyricsMatchQuery(title: "Song", artist: "Artist", album: "Other", duration: 120)
+        expect(cueArtworkQuery.automaticMatch(in: [candidate], requireAlbum: true) == nil,
+               "CUE automatic artwork must reject a song match from a different album")
+        // CUE downloads use independent sidecars and never modify shared files.
+        let cue = root.appendingPathComponent("Album.cue")
+        let cueBytes = Data("FILE image.flac WAVE".utf8)
+        try cueBytes.write(to: cue)
+        let sharedURL = audio.deletingPathExtension().appendingPathExtension("lrc")
+        let sharedBytes = Data("[03:01.00]Shared album lyrics".utf8)
+        try sharedBytes.write(to: sharedURL)
+        var cueTrack = track
+        cueTrack.cueSegment = CueTrackSegment(sheetPath: cue.path, sourcePath: audio.path, number: 2, start: 180, end: 300)
+        let specificURL = cueTrack.lyricsFileTarget.destination(extension: "lrc")
+        settings.automaticallyDownload = true
+        let cueService = FakeService()
+        let cueAutomatic = AutomaticLyricsDownloader(settings: settings, service: cueService,
+            writer: writer, loadLocal: { _ in false }, didSave: { _ in })
+        cueAutomatic.update(track: cueTrack, isPlaying: true)
+        await wait { FileManager.default.fileExists(atPath: specificURL.path) }
+        expect(specificURL.lastPathComponent == "Album.cue.track02.lrc", "CUE sidecar names are stable and scoped to a track")
+        expect(try Data(contentsOf: sharedURL) == sharedBytes, "Automatic download must preserve shared album lyrics")
+        expect(try Data(contentsOf: cue) == cueBytes && Data(contentsOf: audio) == audioBytes, "CUE and audio are read-only")
+        let firstTarget = LyricsFileTarget(audioURL: audio, cueSheetURL: cue, cueTrackNumber: 1)
+        let firstURL = try await writer.save(DownloadedLyrics(ttml: xml), target: firstTarget, overwrite: false, automatic: true)
+        expect(firstURL.lastPathComponent == "Album.cue.track01.ttml", "AMLL stays original TTML in a separate track file")
+        expect(try String(contentsOf: firstURL, encoding: .utf8) == xml, "Downloaded TTML must remain unchanged")
+        do {
+            _ = try await writer.save(content, target: firstTarget, overwrite: false, automatic: true)
+            fatalError("Automatic download must detect existing CUE TTML across formats")
+        } catch LyricsDownloadError.existingSidecar {}
+        let cueManual = LyricsSearchViewModel(track: cueTrack, settings: settings, service: FakeService(), writer: writer, didSave: { _ in })
+        cueManual.search()
+        await wait { !cueManual.isSearching }
+        cueManual.selection = candidate.id
+        cueManual.save()
+        await wait { !cueManual.isSaving }
+        expect(cueManual.needsOverwriteConfirmation && cueManual.overwriteURL == specificURL,
+               "Manual overwrite confirmation must target only this CUE track")
+        cueManual.save(overwrite: true)
+        await wait { !cueManual.isSaving }
+        expect(cueManual.savedURL == specificURL, "CUE manual lyrics save is supported")
+        expect(try Data(contentsOf: sharedURL) == sharedBytes && Data(contentsOf: firstURL) == Data(xml.utf8), "Other tracks and album lyrics survive manual overwrite")
         print("Lyrics download parsing, matching, file safety and workflow checks passed")
     }
 }
 SWIFT
 xcrun swiftc -parse-as-library \
+    "$ROOT_DIR/Core/Cue/CueSheet.swift" \
+    "$ROOT_DIR/Core/Lyrics/LyricsFileTarget.swift" \
     "$ROOT_DIR/Models/Core/Lyrics.swift" \
     "$ROOT_DIR/Core/Lyrics/TTMLLyricsParser.swift" \
     "$ROOT_DIR/Core/Lyrics/AMLLTTMLService.swift" \

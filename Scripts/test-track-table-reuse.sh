@@ -47,9 +47,13 @@ enum MetadataEngine {
 }
 
 import SwiftUI
+struct CueTrackSegment: Equatable { let sheetURL: URL }
 struct Track: Identifiable, Equatable {
     let id: Int
     let url: URL
+    var cueSegment: CueTrackSegment?
+    var artworkSourceURL: URL { url }
+    var libraryPath: String { url.standardizedFileURL.path }
     var trackId: Int64? { Int64(id) }
     var albumId: Int64? { 1 }
     var album: String { "Album" }

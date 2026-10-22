@@ -206,6 +206,8 @@ public class PlaybackEngine: NSObject {
     // MARK: - Private Properties
 
     private var backend: PlaybackBackend
+    private var usingCueBackend = false
+    private var lastEQGains: [Float] = Array(repeating: 0, count: 10)
 
     // MARK: - Initialization
 
@@ -239,6 +241,7 @@ public class PlaybackEngine: NSObject {
         backend.backendDelegate = nil
         backend.stop()
         backend = Self.makeBackend()
+        usingCueBackend = false
         backend.backendDelegate = self
     }
 
@@ -251,6 +254,34 @@ public class PlaybackEngine: NSObject {
 
     public func play(url: URL, entryId: AudioEntryId, startPaused: Bool = false) {
         backend.play(url: url, entryId: entryId, startPaused: startPaused)
+    }
+
+    /// CUE regions use SFBAudioEngine's frame-bounded decoder on both engine
+    /// settings. Crescendo currently exposes whole-file queue entries only.
+    @MainActor
+    func play(track: FullTrack, entryId: AudioEntryId, startPaused: Bool = false) {
+        let needsCueBackend = track.cueSegment != nil && MediaBackend.current != .sfb
+        if needsCueBackend != usingCueBackend {
+            let savedVolume = backend.volume
+            let savedEQ = backend.isEQEnabled()
+            let savedWidth = backend.isStereoWideningEnabled()
+            let savedPreamp = backend.getPreamp()
+            backend.backendDelegate = nil
+            backend.stop()
+            backend = needsCueBackend ? SFBPlaybackBackend() : Self.makeBackend()
+            usingCueBackend = needsCueBackend
+            backend.backendDelegate = self
+            backend.volume = savedVolume
+            backend.applyEQCustom(gains: lastEQGains)
+            backend.setEQEnabled(savedEQ)
+            backend.setStereoWidening(enabled: savedWidth)
+            backend.setPreamp(savedPreamp)
+        }
+        if let segment = track.cueSegment, let sfb = backend as? SFBPlaybackBackend {
+            sfb.play(segment: segment, entryId: entryId, startPaused: startPaused)
+        } else {
+            play(url: track.url, entryId: entryId, startPaused: startPaused)
+        }
     }
 
     /// Pre-decodes the gapless successor to the current track (gapless backends only).
@@ -313,10 +344,12 @@ public class PlaybackEngine: NSObject {
     }
 
     public func applyEQPreset(_ preset: EqualizerPreset) {
+        lastEQGains = preset.gains
         backend.applyEQPreset(preset)
     }
 
     public func applyEQCustom(gains: [Float]) {
+        if gains.count == 10 { lastEQGains = gains }
         backend.applyEQCustom(gains: gains)
     }
 

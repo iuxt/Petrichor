@@ -231,7 +231,7 @@ extension DatabaseManager {
     }
     
     /// Process a new track with normalized data
-    private func processNewTrack(_ track: FullTrack, metadata: TrackMetadata, in db: Database, cache: ScanLookupCache? = nil) throws {
+    func processNewTrack(_ track: FullTrack, metadata: TrackMetadata, in db: Database, cache: ScanLookupCache? = nil) throws {
         var mutableTrack = track
 
         // Process album first (so we can link the track to it)

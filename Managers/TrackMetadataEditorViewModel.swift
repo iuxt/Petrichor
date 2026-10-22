@@ -278,11 +278,16 @@ final class TrackMetadataEditorViewModel: ObservableObject {
     func load() {
         guard phase == .loading, loadTask == nil else { return }
 
-        let targets = tracks.map(Self.target(for:))
+        let targets = tracks.filter { $0.cueSegment == nil }.map(Self.target(for:))
+        let cueResults = tracks.filter { $0.cueSegment != nil }.map {
+            TrackMetadataBatchResult(target: Self.target(for: $0), outcome: .skipped(
+                String(appLocalized: "CUE tracks share an audio file. Edit the CUE sheet to change track information.")
+            ))
+        }
         let fileService = fileService
         loadTask = Task { [weak self] in
             var loadedSnapshots: [TrackMetadataSnapshot] = []
-            var unavailable: [TrackMetadataBatchResult] = []
+            var unavailable = cueResults
 
             for target in targets {
                 switch await fileService.load(target: target) {

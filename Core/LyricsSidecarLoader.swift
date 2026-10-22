@@ -26,6 +26,7 @@ enum LyricsSidecarLoader {
     struct Result: Sendable, Equatable {
         let lyrics: [LyricLine]
         let source: LyricsSource
+        var fileURL: URL? = nil
         var availableScripts: [LyricScript] = [.original]
         var availableLanguages: [LyricLanguage] = [.original]
         var selectedLanguage: LyricLanguage = .original
@@ -35,7 +36,8 @@ enum LyricsSidecarLoader {
         forAudioURL audioURL: URL,
         fileManager: FileManager = .default,
         script: LyricScript = .original,
-        languageTag: String? = nil
+        languageTag: String? = nil,
+        transform: ([LyricLine]) -> [LyricLine] = { $0 }
     ) -> Result? {
         let baseURL = audioURL.deletingPathExtension()
         let candidates: [(extension: String, source: LyricsSource)] = [
@@ -78,8 +80,9 @@ enum LyricsSidecarLoader {
                 lyrics = []
             }
 
+            lyrics = transform(lyrics)
             if !lyrics.isEmpty {
-                return Result(lyrics: lyrics, source: candidate.source, availableScripts: availableScripts,
+                return Result(lyrics: lyrics, source: candidate.source, fileURL: url, availableScripts: availableScripts,
                               availableLanguages: availableLanguages, selectedLanguage: selectedLanguage)
             }
         }

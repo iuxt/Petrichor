@@ -193,6 +193,44 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
         }
     }
 
+    /// Decode only the requested CUE region. The decoder exposes a track-relative
+    /// timeline and produces EOF at the exact frame boundary, including on seeks.
+    func play(segment: CueTrackSegment, entryId: AudioEntryId, startPaused: Bool) {
+        playGeneration &+= 1
+        let generation = playGeneration
+        currentURL = segment.sourceURL
+        currentEntryId = entryId
+        // Stop the previous decoder while opening a possibly slow source off-main.
+        sfbPlayer.stop()
+        state = .ready
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let region = try CueAudioDecoder.make(segment: segment)
+                DispatchQueue.main.async {
+                    guard let self, self.playGeneration == generation,
+                          self.currentEntryId == entryId else { return }
+                    do {
+                        try self.sfbPlayer.play(region)
+                        if startPaused {
+                            self.sfbPlayer.pause()
+                            self.state = .paused
+                        } else {
+                            self.state = .playing
+                        }
+                    } catch {
+                        self.handlePlaybackError(error, entryId: entryId)
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    guard let self, self.playGeneration == generation,
+                          self.currentEntryId == entryId else { return }
+                    self.handlePlaybackError(error, entryId: entryId)
+                }
+            }
+        }
+    }
+
     /// Pause playback
     func pause() {
         guard state == .playing else { return }
@@ -217,7 +255,7 @@ final class SFBPlaybackBackend: NSObject, PlaybackBackend {
 
     /// Stop playback
     func stop() {
-        guard state != .stopped else { return }
+        guard state != .stopped || currentEntryId != nil else { return }
 
         playGeneration &+= 1
         let wasPlaying = state == .playing

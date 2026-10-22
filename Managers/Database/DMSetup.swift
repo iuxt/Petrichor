@@ -166,6 +166,7 @@ extension DatabaseManager {
             t.column("folder_id", .integer).notNull().references("folders", onDelete: .cascade)
             t.column("album_id", .integer).references("albums", onDelete: .setNull)
             t.column("path", .text).notNull().unique()
+            t.column("cue_segment", .text)
             t.column("filename", .text).notNull()
             t.column("filename_stem", .text).notNull().defaults(to: "")
             t.column("title", .text)

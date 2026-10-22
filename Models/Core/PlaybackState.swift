@@ -51,12 +51,12 @@ struct PlaybackState: Codable {
         repeatMode: RepeatMode
     ) {
         self.version = Self.currentVersion
-        self.currentTrackPath = currentTrack?.url.path
+        self.currentTrackPath = currentTrack?.libraryPath
         self.currentTrackId = currentTrack?.trackId
         self.playbackPosition = playbackPosition
         self.trackDuration = currentTrack?.duration ?? 0
 
-        self.queueTrackPaths = queue.map { $0.url.path }
+        self.queueTrackPaths = queue.map { $0.libraryPath }
         self.queueTrackIds = queue.compactMap { $0.trackId }
         self.currentQueueIndex = currentQueueIndex
 
@@ -126,7 +126,7 @@ struct PlaybackState: Codable {
         if let id = currentTrackId, let index = tracks.firstIndex(where: { $0.trackId == id }) {
             return index
         }
-        if let path = currentTrackPath, let index = tracks.firstIndex(where: { $0.url.path == path }) {
+        if let path = currentTrackPath, let index = tracks.firstIndex(where: { $0.libraryPath == path }) {
             return index
         }
         return min(max(0, currentQueueIndex), tracks.count - 1)

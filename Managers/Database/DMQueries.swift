@@ -93,7 +93,7 @@ extension DatabaseManager {
         do {
             return try await dbQueue.read { db in
                 try FullTrack
-                    .filter(FullTrack.Columns.path == url.path)
+                    .filter(sql: "path = ? OR json_extract(cue_segment, '$.sourcePath') = ?", arguments: [url.path, url.path])
                     .fetchOne(db)
             }
         } catch {
@@ -569,7 +569,7 @@ extension DatabaseManager {
             // The LIKE is a coarse descendant pre-filter; the parent-path match is exact.
             var tracks = try dbQueue.read { db in
                 try Track.lightweightRequest()
-                    .filter(sql: "path LIKE ? ESCAPE '\\'", arguments: [descendantLikePattern(for: folderPath)])
+                    .filter(sql: "COALESCE(json_extract(cue_segment, '$.sourcePath'), path) LIKE ? ESCAPE '\\'", arguments: [descendantLikePattern(for: folderPath)])
                     .order(Track.Columns.title)
                     .fetchAll(db)
             }
@@ -589,8 +589,8 @@ extension DatabaseManager {
         do {
             let paths = try dbQueue.read { db in
                 try applyDuplicateFilter(Track.all())
-                    .filter(sql: "path LIKE ? ESCAPE '\\'", arguments: [descendantLikePattern(for: folderPath)])
-                    .select(Track.Columns.path)
+                    .filter(sql: "COALESCE(json_extract(cue_segment, '$.sourcePath'), path) LIKE ? ESCAPE '\\'", arguments: [descendantLikePattern(for: folderPath)])
+                    .select(sql: "COALESCE(json_extract(cue_segment, '$.sourcePath'), path)")
                     .asRequest(of: String.self)
                     .fetchAll(db)
             }
@@ -706,7 +706,7 @@ extension DatabaseManager {
         do {
             return try dbQueue.read { db in
                 let paths = try applyDuplicateFilter(Track.all())
-                    .select(Track.Columns.path)
+                    .select(sql: "COALESCE(json_extract(cue_segment, '$.sourcePath'), path)")
                     .asRequest(of: String.self)
                     .fetchAll(db)
 

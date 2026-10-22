@@ -5,6 +5,10 @@ struct FullTrack: Identifiable, Equatable, Hashable, FetchableRecord, Persistabl
     let id = UUID()
     var trackId: Int64?
     let url: URL
+    var cueSegment: CueTrackSegment?
+    var libraryPath: String { cueSegment?.libraryPath ?? url.standardizedFileURL.path }
+    var playlistURL: URL { URL(fileURLWithPath: libraryPath) }
+    var artworkSourceURL: URL { cueSegment?.albumSourceURL ?? url }
     
     // Core metadata
     var title: String
@@ -97,6 +101,7 @@ struct FullTrack: Identifiable, Equatable, Hashable, FetchableRecord, Persistabl
         static let trackId = Column("id")
         static let folderId = Column("folder_id")
         static let path = Column("path")
+        static let cueSegment = Column("cue_segment")
         static let filename = Column("filename")
         static let filenameStem = Column("filename_stem")
         static let title = Column("title")
@@ -146,7 +151,8 @@ struct FullTrack: Identifiable, Equatable, Hashable, FetchableRecord, Persistabl
     init(row: Row) throws {
         // Extract path and create URL
         let path: String = row[Columns.path]
-        self.url = URL(fileURLWithPath: path)
+        cueSegment = CueTrackSegment.decode(row[Columns.cueSegment])
+        self.url = cueSegment?.sourceURL ?? URL(fileURLWithPath: path)
         self.format = row[Columns.format]
         
         // Core properties
@@ -210,7 +216,8 @@ struct FullTrack: Identifiable, Equatable, Hashable, FetchableRecord, Persistabl
     func encode(to container: inout PersistenceContainer) throws {
         container[Columns.trackId] = trackId
         container[Columns.folderId] = folderId
-        container[Columns.path] = url.path
+        container[Columns.path] = libraryPath
+        container[Columns.cueSegment] = cueSegment?.json
         container[Columns.filename] = url.lastPathComponent
         container[Columns.filenameStem] = FilenameStem.fromURL(url)
         container[Columns.title] = title

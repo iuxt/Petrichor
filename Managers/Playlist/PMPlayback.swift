@@ -143,7 +143,7 @@ extension PlaylistManager {
             if let queueTrackId = queueTrack.trackId, let removedTrackId = track.trackId {
                 return queueTrackId == removedTrackId
             }
-            return queueTrack.url == track.url
+            return queueTrack.libraryPath == track.libraryPath
         }
 
         let removalIndex: Int
@@ -208,8 +208,7 @@ extension PlaylistManager {
                queueTrack.trackId == trackId {
                 return true
             }
-            return queueTrack.url.standardizedFileURL ==
-                track.url.standardizedFileURL
+            return queueTrack.libraryPath == track.libraryPath
         }
 
         if currentQueue.indices.contains(preferredIndex),

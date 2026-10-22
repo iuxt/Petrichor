@@ -43,20 +43,21 @@ struct ArtworkRequest: Hashable, Sendable {
     let identity: String
     let audioURL: URL
     let albumTitle: String?
+    var cueSheetURL: URL? = nil
 
     static let thumbnailPixelSize = 80
 
-    static func thumbnail(_ url: URL, albumTitle: String?) -> ArtworkRequest {
+    static func thumbnail(_ url: URL, albumTitle: String?, cueSheetURL: URL? = nil) -> ArtworkRequest {
         ArtworkRequest(kind: .trackThumbnail, identity: url.standardizedFileURL.path,
-                       audioURL: url, albumTitle: albumTitle)
+                       audioURL: url, albumTitle: albumTitle, cueSheetURL: cueSheetURL)
     }
 
     static func track(_ url: URL) -> ArtworkRequest {
         ArtworkRequest(kind: .track, identity: url.standardizedFileURL.path, audioURL: url, albumTitle: nil)
     }
 
-    static func album(albumId: Int64?, representativeTrackURL: URL, albumTitle: String? = nil) -> ArtworkRequest {
+    static func album(albumId: Int64?, representativeTrackURL: URL, albumTitle: String? = nil, cueSheetURL: URL? = nil) -> ArtworkRequest {
         let albumIdentity = albumId.map { "album:\($0)" } ?? "album:\(representativeTrackURL.standardizedFileURL.path)"
-        return ArtworkRequest(kind: .album, identity: albumIdentity, audioURL: representativeTrackURL, albumTitle: albumTitle)
+        return ArtworkRequest(kind: .album, identity: albumIdentity, audioURL: representativeTrackURL, albumTitle: albumTitle, cueSheetURL: cueSheetURL)
     }
 }

@@ -249,9 +249,10 @@ struct LyricsMatchQuery: Sendable {
             artist != "Unknown Artist" && duration.isFinite && duration > 0
     }
 
-    func automaticMatch(in candidates: [OnlineTagCandidate]) -> OnlineTagCandidate? {
+    func automaticMatch(in candidates: [OnlineTagCandidate], requireAlbum: Bool = false) -> OnlineTagCandidate? {
         guard isComplete else { return nil }
         let matches = candidates.filter { candidate in
+            if requireAlbum, normalized(album).isEmpty || normalized(candidate.album) != normalized(album) { return false }
             guard normalized(candidate.title) == normalized(title),
                   artists(candidate.artist) == artists(artist),
                   let length = candidate.duration else { return false }

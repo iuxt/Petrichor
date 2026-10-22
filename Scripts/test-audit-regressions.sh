@@ -5,7 +5,7 @@ test_dir=$(mktemp -d)
 trap 'rm -rf "$test_dir"' EXIT
 cat > "$test_dir/QueueStubs.swift" <<'SWIFT'
 import Foundation
-struct Track { let id: UUID; let trackId: Int64?; let url: URL; var title: String; var artist = "Artist"; var album = "Album"; var duration = 180.0 }
+struct Track { var libraryPath: String { url.standardizedFileURL.path }; let id: UUID; let trackId: Int64?; let url: URL; var title: String; var artist = "Artist"; var album = "Album"; var duration = 180.0 }
 struct Playlist { var tracks: [Track] }
 class LibraryManager { var tracks: [Track] = [] }
 class PlaybackManager { var currentTrack: Track?; var currentTime = 0.0; func playTrack(_ track: Track) { currentTrack = track }; func stop() {}; func seekTo(time: Double) {}; func updateNowPlayingInfo() {} }
@@ -52,7 +52,7 @@ import Foundation
 SWIFT
 cat > "$test_dir/FileStubs.swift" <<'SWIFT'
 import Foundation
-struct Track { var trackId: Int64?; var url: URL }
+struct Track { var trackId: Int64?; var url: URL; var playlistURL: URL { url } }
 struct Folder { var url: URL }
 struct PlaylistFileBacking: Hashable {
     let musicFolderURL: URL
@@ -122,12 +122,12 @@ swiftc "$test_dir/FileStubs.swift" Core/M3UPlaylistCodec.swift Managers/Playlist
 # Exercise production scan code, model equality, and relocation SQL.
 python3 - "$test_dir" <<'PYTHON'
 from pathlib import Path
-import sys, re, sqlite3
+import sys, re, sqlite3, json
 out = Path(sys.argv[1])
 source = Path('Managers/Database/DMFolders.swift').read_text()
 method = source[source.index('    private func enumerateFolderContents('):source.index('    /// Remove tracks from database')].replace('private func', 'func', 1)
 (out / 'Scan.swift').write_text('''import Foundation
-struct FolderEnumerationResult { let musicFiles: [URL]; let modificationDates: [URL: Date]; let unsupportedFiles: [(url: URL, extension: String)] }
+struct FolderEnumerationResult { let musicFiles: [URL]; let cueFiles: [URL]; let modificationDates: [URL: Date]; let unsupportedFiles: [(url: URL, extension: String)] }
 enum DatabaseError: Error { case scanFailed(String) }
 enum AudioFormat { static func isNotSupported(_ ext: String) -> Bool { false } }
 enum Logger { static func info(_ value: String) {} }
@@ -152,7 +152,7 @@ print("Incomplete scan regression passed")
 track = Path('Models/Core/Track.swift').read_text()
 fields = track[track.index('    let id = UUID()'):track.index('    // MARK: - Localized Display')]
 equality = track[track.index('    static func =='):track.index('// MARK: - Audio Format')]
-(out / 'TrackEquality.swift').write_text('import Foundation\nstruct Track: Equatable, Hashable {\n' + fields + equality + '''
+(out / 'TrackEquality.swift').write_text('import Foundation\nstruct CueTrackSegment: Equatable { let libraryPath: String; var sheetURL: URL { URL(fileURLWithPath: libraryPath) }; var number: Int { 1 }; var albumSourceURL: URL { sheetURL } }\nstruct LyricsFileTarget { init(audioURL: URL, cueSheetURL: URL?, cueTrackNumber: Int?) {} }\nstruct Track: Equatable, Hashable {\n' + fields + equality + '''
 let old = Track(trackId: 1, url: URL(fileURLWithPath: "/music/a.mp3"), title: "Before", artist: "Artist", album: "Album", duration: 30, format: "mp3", composer: "", genre: "", year: "")
 var updated = old
 updated.title = "After"
@@ -163,14 +163,21 @@ print("Metadata value equality regression passed")
 relocation = source[source.index('func relocateFolders('):source.index('    func addFolders(')]
 statements = re.findall(r'db.execute\(sql: """(.*?)"""', relocation, re.S)
 db = sqlite3.connect(':memory:')
-db.executescript('CREATE TABLE tracks(id INTEGER, folder_id INTEGER, path TEXT, play_count INTEGER); CREATE TABLE pinned_items(item_type TEXT, filter_value TEXT);')
+db.executescript('CREATE TABLE tracks(id INTEGER, folder_id INTEGER, path TEXT, play_count INTEGER, cue_segment TEXT); CREATE TABLE pinned_items(item_type TEXT, filter_value TEXT);')
 old, new = '/音乐/旧目录', '/音乐/新目录'
-db.executemany('INSERT INTO tracks VALUES(?,?,?,?)', [(1, 5, old+'/a.mp3', 7),(2, 6, old+'2/b.mp3', 8),(3, 5, '/external/link.mp3', 9)])
+db.executemany('INSERT INTO tracks(id,folder_id,path,play_count) VALUES(?,?,?,?)', [(1, 5, old+'/a.mp3', 7),(2, 6, old+'2/b.mp3', 8),(3, 5, '/external/link.mp3', 9)])
 db.executemany('INSERT INTO pinned_items VALUES(?,?)', [('folder',old),('folder',old+'/sub'),('folder',old+'2')])
 prefix = old+'/'
+cue = {'sheetPath': old+'/专辑.cue', 'sourcePath': old+'/整轨.flac', 'number': 2, 'start': 150, 'end': 300}
+db.execute('INSERT INTO tracks VALUES(?,?,?,?,?)', (4,5,old+'/专辑.cue#track-2',11,json.dumps(cue)))
 db.execute(statements[0], (new,old,5,prefix,prefix))
-db.execute(statements[1], (new,old,old,prefix,prefix))
-assert db.execute('SELECT * FROM tracks ORDER BY id').fetchall() == [(1,5,new+'/a.mp3',7),(2,6,old+'2/b.mp3',8),(3,5,'/external/link.mp3',9)]
+for key in ['sheetPath', 'sourcePath', 'albumSourcePath']:
+    db.execute(statements[1].replace(chr(92)+'(key)', key), (new,old,5,prefix,prefix))
+db.execute(statements[2], (new,old,old,prefix,prefix))
+assert db.execute('SELECT id,folder_id,path,play_count FROM tracks ORDER BY id').fetchall() == [(1,5,new+'/a.mp3',7),(2,6,old+'2/b.mp3',8),(3,5,'/external/link.mp3',9),(4,5,new+'/专辑.cue#track-2',11)]
+rebased = json.loads(db.execute('SELECT cue_segment FROM tracks WHERE id=4').fetchone()[0])
+assert rebased['sheetPath'] == new+'/专辑.cue' and rebased['sourcePath'] == new+'/整轨.flac'
+assert rebased['start'] == 150 and rebased['end'] == 300
 assert db.execute('SELECT filter_value FROM pinned_items').fetchall() == [(new,),(new+'/sub',),(old+'2',)]
 print('Folder relocation preserves IDs, history, unrelated paths, and pins')
 PYTHON

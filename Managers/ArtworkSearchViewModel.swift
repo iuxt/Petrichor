@@ -61,7 +61,7 @@ final class ArtworkSearchViewModel: ObservableObject {
         let track = track
         localTask = Task { [weak self] in
             let request = ArtworkRequest.album(albumId: track.albumId,
-                                               representativeTrackURL: track.url, albumTitle: track.album)
+                                               representativeTrackURL: track.artworkSourceURL, albumTitle: track.album, cueSheetURL: track.cueSegment?.sheetURL)
             let existing = await ArtworkResolver.shared.artworkData(for: request) != nil
             guard let self, !Task.isCancelled else { return }
             self.hasExistingArtwork = existing
@@ -105,6 +105,7 @@ final class ArtworkSearchViewModel: ObservableObject {
         errorMessage = nil
         needsOverwriteConfirmation = false
         let generation = generation, writer = writer, audioURL = track.url
+        let cueSegment = track.cueSegment, album = track.album
         saveTask = Task { [weak self] in
             defer {
                 if let self, self.generation == generation {
@@ -113,12 +114,18 @@ final class ArtworkSearchViewModel: ObservableObject {
                 }
             }
             do {
-                let url = try await writer.saveManual(image, for: audioURL, overwrite: overwrite)
+                let url: URL
+                if let segment = cueSegment {
+                    url = try await writer.saveCue(image, sheetURL: segment.sheetURL, audioURL: segment.albumSourceURL,
+                                                   album: album, overwrite: overwrite, automatic: false)
+                } else {
+                    url = try await writer.saveManual(image, for: audioURL, overwrite: overwrite)
+                }
                 guard let self, !Task.isCancelled, self.generation == generation else { return }
                 ArtworkResolver.shared.invalidateMemoryCache()
                 await TrackThumbnailCache.shared.removeAll()
-                AppCoordinator.shared?.playbackManager.refreshCurrentTrackArtworkAfterDownload(for: audioURL)
-                NotificationCenter.default.post(name: .downloadedArtworkDidChange, object: audioURL)
+                AppCoordinator.shared?.playbackManager.refreshCurrentTrackArtworkAfterDownload(for: self.track.cueSegment?.sheetURL ?? audioURL)
+                NotificationCenter.default.post(name: .downloadedArtworkDidChange, object: self.track.cueSegment?.sheetURL ?? audioURL)
                 self.savedURL = url
                 NotificationManager.shared.addMessage(.info, String.localizedStringWithFormat(
                     String(appLocalized: "Artwork downloaded for %1$@: %2$@"),

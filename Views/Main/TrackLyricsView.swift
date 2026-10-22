@@ -94,6 +94,7 @@ private struct LyricsTimingRequest: Identifiable, Sendable {
     let fileURL: URL
     let source: LyricsSource
     let accessURL: URL?
+    var isSharedCueLyrics = false
 }
 
 private struct LyricsTimingAdjustmentSheet: View {
@@ -120,6 +121,12 @@ private struct LyricsTimingAdjustmentSheet: View {
             Text("Positive values delay the lyrics. Changes are previewed during playback and written to the lyric file only when you save.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if request.isSharedCueLyrics {
+                Text(String(appLocalized: "This lyrics file is shared by the CUE album. Changes affect every track using it."))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             HStack(spacing: 16) {
                 Text("Timing offset")
@@ -228,6 +235,7 @@ struct TrackLyricsContent: View {
         let track: Track
         let source: LyricsSource
         let fileURL: URL
+        let isShared: Bool
     }
 
     /// Optional font family for lyric lines. A nil value uses the system font.
@@ -249,6 +257,7 @@ struct TrackLyricsContent: View {
 
     @State private var lyricLines: [LyricLine] = []
     @State private var lyricsSource: LyricsSource = .none
+    @State private var loadedLyricsFileURL: URL?
     @State private var availableLanguages: [LyricLanguage] = [.original]
     @State private var selectedLanguage: LyricLanguage = .original
     @State private var lyricsTrackID: UUID?
@@ -268,7 +277,12 @@ struct TrackLyricsContent: View {
 
     private var currentLyricsFileURL: URL? {
         guard let currentTrack, lyricsTrackID == currentTrack.id else { return nil }
-        return lyricsSource.sidecarURL(for: currentTrack.url)
+        return loadedLyricsFileURL
+    }
+
+    private var isSharedCueLyrics: Bool {
+        guard let currentTrack, currentTrack.cueSegment != nil, let fileURL = currentLyricsFileURL else { return false }
+        return fileURL != lyricsSource.sidecarURL(for: currentTrack.lyricsFileTarget.lookupURL)
     }
 
     var body: some View {
@@ -326,7 +340,8 @@ struct TrackLyricsContent: View {
                 guard let track = currentTrack, let fileURL = currentLyricsFileURL else { return }
                 timingRequest = LyricsTimingRequest(trackID: track.id, audioURL: track.url,
                                                     fileURL: fileURL, source: lyricsSource,
-                                                    accessURL: timingAccessURL(for: track.url))
+                                                    accessURL: timingAccessURL(for: fileURL),
+                                                    isSharedCueLyrics: isSharedCueLyrics)
             }
             .disabled(lyricLines.isEmpty || currentLyricsFileURL == nil)
 
@@ -339,7 +354,7 @@ struct TrackLyricsContent: View {
             Divider()
             Button(String(appLocalized: "Delete Current Lyrics..."), systemImage: "trash", role: .destructive) {
                 guard let track = currentTrack, let fileURL = currentLyricsFileURL else { return }
-                deletionRequest = LyricsDeletionRequest(track: track, source: lyricsSource, fileURL: fileURL)
+                deletionRequest = LyricsDeletionRequest(track: track, source: lyricsSource, fileURL: fileURL, isShared: isSharedCueLyrics)
             }
             .disabled(currentLyricsFileURL == nil)
         }
@@ -368,7 +383,7 @@ struct TrackLyricsContent: View {
                 deletionRequest = nil
                 Task {
                     do {
-                        try await TrackTrashManager.moveLyricsToTrash(for: request.track, source: request.source)
+                        try await TrackTrashManager.moveLyricsToTrash(for: request.track, source: request.source, fileURL: request.fileURL)
                         LyricsStore.shared.invalidate(for: request.track.url)
                         NotificationCenter.default.post(name: .downloadedLyricsDidChange, object: request.track.url)
                         NotificationManager.shared.addMessage(.info, String(appLocalized: "Lyrics moved to Trash"))
@@ -381,7 +396,8 @@ struct TrackLyricsContent: View {
             }
             Button(String(appLocalized: "Cancel"), role: .cancel) { deletionRequest = nil }
         } message: {
-            Text(verbatim: deletionRequest?.fileURL.lastPathComponent ?? "")
+            Text(verbatim: (deletionRequest?.fileURL.lastPathComponent ?? "") +
+                 (deletionRequest?.isShared == true ? "\n" + String(appLocalized: "This lyrics file is shared by the CUE album. Changes affect every track using it.") : ""))
         }
         .onReceive(NotificationCenter.default.publisher(for: .downloadedLyricsDidChange)) { notification in
             guard let url = notification.object as? URL,
@@ -476,6 +492,7 @@ struct TrackLyricsContent: View {
         guard let track = currentTrack else {
             lyricLines = []
             lyricsSource = .none
+            loadedLyricsFileURL = nil
             availableLanguages = [.original]
             selectedLanguage = .original
             lyricsTrackID = nil
@@ -491,6 +508,7 @@ struct TrackLyricsContent: View {
         if let cached = LyricsStore.shared.cachedLyrics(for: loadedTrackId) {
             lyricLines = cached.lines
             lyricsSource = cached.source
+            loadedLyricsFileURL = cached.fileURL
             availableLanguages = cached.availableLanguages
             selectedLanguage = cached.selectedLanguage
             lyricsTrackID = loadedTrackId
@@ -504,6 +522,7 @@ struct TrackLyricsContent: View {
         isLoading = true
         lyricLines = []
         lyricsSource = .none
+        loadedLyricsFileURL = nil
         availableLanguages = [.original]
         selectedLanguage = .original
         lyricsTrackID = nil
@@ -524,6 +543,7 @@ struct TrackLyricsContent: View {
                     guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     lyricLines = result.lines
                     lyricsSource = result.source
+                    loadedLyricsFileURL = result.fileURL
                     availableLanguages = result.availableLanguages
                     selectedLanguage = result.selectedLanguage
                     lyricsTrackID = loadedTrackId
@@ -537,6 +557,7 @@ struct TrackLyricsContent: View {
                     guard currentTrack?.id == loadedTrackId, loadGeneration == generation else { return }
                     lyricLines = []
                     lyricsSource = .none
+                    loadedLyricsFileURL = nil
                     availableLanguages = [.original]
                     selectedLanguage = .original
                     lyricsTrackID = nil

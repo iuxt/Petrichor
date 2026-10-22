@@ -12,6 +12,7 @@ final class LyricsStore {
         let trackId: UUID
         let lines: [LyricLine]
         let source: LyricsSource
+        var fileURL: URL? = nil
         let hasTimed: Bool
         let isKaraoke: Bool
         let availableScripts: [LyricScript]
@@ -129,6 +130,7 @@ final class LyricsStore {
                 trackId: trackId,
                 lines: result.lyrics,
                 source: result.source,
+                fileURL: result.fileURL,
                 hasTimed: hasTimed,
                 isKaraoke: result.lyrics.contains { $0.timingSegments?.isEmpty == false },
                 availableScripts: result.availableScripts,

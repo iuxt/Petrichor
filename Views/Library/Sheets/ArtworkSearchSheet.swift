@@ -104,7 +104,7 @@ struct ArtworkSearchSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     if model.hasExistingArtwork {
-                        Text(verbatim: String(appLocalized: "Saving another cover will use it for this song. Shared folder artwork is kept."))
+                        Text(verbatim: String(appLocalized: model.track.cueSegment == nil ? "Saving another cover will use it for this song. Shared folder artwork is kept." : "This cover applies to every track in the CUE album. Existing audio files and shared folder artwork are kept."))
                             .foregroundStyle(.secondary)
                     }
                     if let error = model.errorMessage {
@@ -119,7 +119,7 @@ struct ArtworkSearchSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(verbatim: String(appLocalized: "The selected cover is saved as a same-name JPEG beside this song. It takes priority over embedded and shared folder artwork; the audio file is unchanged."))
+            Text(verbatim: String(appLocalized: model.track.cueSegment == nil ? "The selected cover is saved as a same-name JPEG beside this song. It takes priority over embedded and shared folder artwork; the audio file is unchanged." : "This cover applies to every track in the CUE album. Existing audio files and shared folder artwork are kept."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -140,12 +140,12 @@ struct ArtworkSearchSheet: View {
         .interactiveDismissDisabled(model.isSaving)
         .task { model.checkLocalArtwork() }
         .onDisappear { model.cancel() }
-        .alert(String(appLocalized: "Use the downloaded artwork for this song?"),
+        .alert(String(appLocalized: model.track.cueSegment == nil ? "Use the downloaded artwork for this song?" : "Use the downloaded artwork for this CUE album?"),
                isPresented: $model.needsOverwriteConfirmation) {
             Button(String(appLocalized: "Cancel"), role: .cancel) {}
             Button(String(appLocalized: "Replace"), role: .destructive) { model.save(overwrite: true) }
         } message: {
-            Text(verbatim: String(appLocalized: "The selected cover will take priority for this song. A same-name JPEG file may be replaced; shared folder artwork and the audio file are kept."))
+            Text(verbatim: String(appLocalized: model.track.cueSegment == nil ? "The selected cover will take priority for this song. A same-name JPEG file may be replaced; shared folder artwork and the audio file are kept." : "This cover applies to every track in the CUE album. Existing audio files and shared folder artwork are kept."))
         }
     }
 }

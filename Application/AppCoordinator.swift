@@ -266,7 +266,7 @@ class AppCoordinator: ObservableObject {
         // Create a path to track map as fallback
         let trackPathMap: [String: Track] = Dictionary(
             relevantTracks.map { track in
-                (track.url.path, track)
+                (track.libraryPath, track)
             }
         ) { first, _ in first }
         

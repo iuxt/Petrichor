@@ -19,13 +19,15 @@ enum TrackContextMenu {
         
         // Add info item
         items.append(createShowInfoItem(for: track))
-        items.append(createEditInfoItem(for: [track]))
+        if track.cueSegment == nil {
+            items.append(createEditInfoItem(for: [track]))
+        }
         items.append(createSearchLyricsItem(for: track))
         items.append(createSearchArtworkItem(for: track))
         
         items.append(createRevealInFinderItem(for: track))
 
-        items.append(createMoveToTrashItem(for: track))
+        if track.cueSegment == nil { items.append(createMoveToTrashItem(for: track)) }
         
         items.append(.divider)
         
@@ -74,11 +76,11 @@ enum TrackContextMenu {
 
         items.append(.divider)
 
-        items.append(createEditInfoItem(for: tracks))
+        if tracks.allSatisfy({ $0.cueSegment == nil }) { items.append(createEditInfoItem(for: tracks)) }
 
         items.append(.divider)
 
-        items.append(createBulkMoveToTrashItem(for: tracks))
+        if tracks.allSatisfy({ $0.cueSegment == nil }) { items.append(createBulkMoveToTrashItem(for: tracks)) }
 
         items.append(.divider)
 
@@ -99,13 +101,15 @@ enum TrackContextMenu {
         
         // Add info item
         items.append(createShowInfoItem(for: track))
-        items.append(createEditInfoItem(for: [track]))
+        if track.cueSegment == nil {
+            items.append(createEditInfoItem(for: [track]))
+        }
         items.append(createSearchLyricsItem(for: track))
         items.append(createSearchArtworkItem(for: track))
         
         items.append(createRevealInFinderItem(for: track))
 
-        items.append(createMoveToTrashItem(for: track))
+        if track.cueSegment == nil { items.append(createMoveToTrashItem(for: track)) }
         
         items.append(.divider)
         

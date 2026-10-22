@@ -55,12 +55,13 @@ final class AutomaticArtworkDownloader {
         let provider = settings.artworkSource
         let query = LyricsMatchQuery(title: track.title, artist: track.artist,
                                      album: track.album, duration: track.duration)
-        let key = [track.url.path, track.title, track.artist, track.album,
-                   String(track.duration), provider.rawValue].joined(separator: "\u{0}")
+        let keyParts = track.cueSegment.map { [$0.sheetPath, track.album, track.albumArtist ?? "", provider.rawValue] }
+            ?? [track.url.path, track.title, track.artist, track.album, String(track.duration), provider.rawValue]
+        let key = keyParts.joined(separator: "\u{0}")
         guard key != activeKey else { return }
         task?.cancel()
+        guard query.isComplete else { activeKey = nil; return }
         activeKey = key
-        guard query.isComplete else { return }
         if let last = attempts[key], Date().timeIntervalSince(last) < 300 { return }
 
         let search = search
@@ -68,19 +69,20 @@ final class AutomaticArtworkDownloader {
             do {
                 try await Task.sleep(nanoseconds: 500_000_000)
                 let request = ArtworkRequest.album(albumId: track.albumId,
-                                                   representativeTrackURL: track.url,
-                                                   albumTitle: track.album)
+                                                   representativeTrackURL: track.artworkSourceURL,
+                                                   albumTitle: track.album, cueSheetURL: track.cueSegment?.sheetURL)
                 if await ArtworkResolver.shared.artworkData(for: request) != nil { return }
                 try Task.checkCancellation()
                 let candidates = try await search.search(provider: provider, title: track.title, artist: track.artist)
                 try Task.checkCancellation()
-                guard let candidate = query.automaticMatch(in: candidates) else {
+                guard let candidate = query.automaticMatch(in: candidates, requireAlbum: track.cueSegment != nil) else {
                     self?.recordAttempt(key)
                     self?.notifyFailure(for: track.url, reason: String(appLocalized: "No confident song match was found."))
                     return
                 }
-                let savedURL = try await self?.saveIfMissing(candidate, audioURL: track.url,
-                                                              album: track.album, playbackManager: playbackManager)
+                let savedURL = try await self?.saveIfMissing(candidate, audioURL: track.artworkSourceURL,
+                                                              album: track.album, playbackManager: playbackManager,
+                                                              cueSheetURL: track.cueSegment?.sheetURL)
                 guard let self, !Task.isCancelled, self.activeKey == key else { return }
                 self.recordAttempt(key)
                 if let savedURL { self.notifySaved(savedURL, for: track.url) }
@@ -113,19 +115,25 @@ final class AutomaticArtworkDownloader {
     }
 
     private func saveIfMissing(_ candidate: OnlineTagCandidate, audioURL: URL,
-                               album: String, playbackManager: PlaybackManager?) async throws -> URL? {
-        let request = ArtworkRequest.album(albumId: nil, representativeTrackURL: audioURL, albumTitle: album)
+                               album: String, playbackManager: PlaybackManager?, cueSheetURL: URL? = nil) async throws -> URL? {
+        let request = ArtworkRequest.album(albumId: nil, representativeTrackURL: audioURL, albumTitle: album, cueSheetURL: cueSheetURL)
         if await ArtworkResolver.shared.artworkData(for: request) != nil { return nil }
         try Task.checkCancellation()
         let image = try await service.download(for: candidate)
         try Task.checkCancellation()
         if await ArtworkResolver.shared.artworkData(for: request) != nil { return nil }
         try Task.checkCancellation()
-        let savedURL = try await writer.save(image, for: audioURL, album: album, matchedAlbum: candidate.album)
+        let savedURL: URL
+        if let cueSheetURL {
+            savedURL = try await writer.saveCue(image, sheetURL: cueSheetURL, audioURL: audioURL,
+                                                album: album, overwrite: false, automatic: true)
+        } else {
+            savedURL = try await writer.save(image, for: audioURL, album: album, matchedAlbum: candidate.album)
+        }
         ArtworkResolver.shared.invalidateMemoryCache()
         await TrackThumbnailCache.shared.removeAll()
-        playbackManager?.refreshCurrentTrackArtworkAfterDownload(for: audioURL)
-        NotificationCenter.default.post(name: .downloadedArtworkDidChange, object: audioURL)
+        playbackManager?.refreshCurrentTrackArtworkAfterDownload(for: cueSheetURL ?? audioURL)
+        NotificationCenter.default.post(name: .downloadedArtworkDidChange, object: cueSheetURL ?? audioURL)
         return savedURL
     }
 

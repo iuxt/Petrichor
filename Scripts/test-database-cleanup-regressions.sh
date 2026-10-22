@@ -39,6 +39,7 @@ struct Track: Codable, FetchableRecord, PersistableRecord {
  var path: String; var duplicateKey: String; var qualityScore: Int
  var isDuplicate: Bool; var primaryTrackId: Int64?; var duplicateGroupId: String?
  var url: URL { URL(fileURLWithPath: path) }
+ var libraryPath: String { path }
  enum CodingKeys: String, CodingKey {
   case trackId = "id", folderId = "folder_id", albumId = "album_id", path
   case duplicateKey = "duplicate_key", qualityScore = "quality_score"

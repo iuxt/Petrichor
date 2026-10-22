@@ -83,6 +83,7 @@ actor GlobalScanState {
 /// Result of a single-pass folder enumeration
 struct FolderEnumerationResult {
     let musicFiles: [URL]
+    let cueFiles: [URL]
     let modificationDates: [URL: Date]  // audio file URL -> contentModificationDate (captured during enumeration)
     let unsupportedFiles: [(url: URL, extension: String)]
 }
@@ -101,6 +102,14 @@ extension DatabaseManager {
                     UPDATE tracks SET path = ? || substr(path, length(?) + 1)
                     WHERE folder_id = ? AND substr(path, 1, length(?)) = ?
                     """, arguments: [newPath, oldPath, folderID, prefix, prefix])
+                for key in ["sheetPath", "sourcePath", "albumSourcePath"] {
+                    try db.execute(sql: """
+                        UPDATE tracks SET cue_segment = json_set(cue_segment, '$.\(key)',
+                            ? || substr(json_extract(cue_segment, '$.\(key)'), length(?) + 1))
+                        WHERE folder_id = ? AND cue_segment IS NOT NULL
+                        AND substr(json_extract(cue_segment, '$.\(key)'), 1, length(?)) = ?
+                        """, arguments: [newPath, oldPath, folderID, prefix, prefix])
+                }
                 try db.execute(sql: """
                     UPDATE pinned_items SET filter_value = ? || substr(filter_value, length(?) + 1)
                     WHERE item_type = 'folder' AND
@@ -489,7 +498,7 @@ extension DatabaseManager {
             from: folder.url,
             supportedExtensions: supportedExtensions
         )
-        let musicFiles = enumeration.musicFiles
+        var musicFiles = enumeration.musicFiles
 
         // Grow the progress total now that we know this folder's real file count,
         // instead of pre-counting via a second full directory walk.
@@ -505,23 +514,36 @@ extension DatabaseManager {
             let fullTracks = try FullTrack
                 .filter(FullTrack.Columns.folderId == folderId)
                 .fetchAll(db)
-            return Dictionary(uniqueKeysWithValues: fullTracks.map { ($0.url.standardizedFileURL.path, $0) })
+            return Dictionary(uniqueKeysWithValues: fullTracks.map { ($0.libraryPath, $0) })
         }
+
+        let cueTracks = await prepareCueTracks(
+            sheets: enumeration.cueFiles, audioURLs: musicFiles,
+            folderId: folderId, existing: existingFullTracksByPath
+        )
+        // Commit usable sheets before suppressing their whole-file entries.
+        try await saveCueTracks(cueTracks)
+        let claimedPaths = Set(cueTracks.map { $0.0.url.path })
+        musicFiles.removeAll { claimedPaths.contains($0.path) }
+        let foundPaths = Set(musicFiles + cueTracks.map { $0.0.playlistURL })
+        await scanState.incrementProcessed(by: claimedPaths.count)
+        await globalScanState?.incrementProcessed(by: claimedPaths.count)
+        await globalScanState?.incrementTracksAdded(by: cueTracks.filter { $0.0.trackId == nil }.count)
 
         // Remove tracks that no longer exist (skip on fresh scan when folder has no tracks)
         if !existingFullTracksByPath.isEmpty {
             try await removeDeletedTracks(
                 folderId: folderId,
-                foundPaths: Set(musicFiles),
+                foundPaths: foundPaths,
                 folderName: folder.name,
-                hasRemainingFiles: !musicFiles.isEmpty,
+                hasRemainingFiles: !foundPaths.isEmpty,
                 globalScanState: globalScanState
             )
         }
 
         // If no music files found, we're done
         if musicFiles.isEmpty {
-            try await updateFolderTrackCount(folder)
+            try await finalizeScan(folderId: folderId, folder: folder, precomputedHash: precomputedHash, scanState: scanState)
             return
         }
 
@@ -570,6 +592,7 @@ extension DatabaseManager {
         }
 
         var musicFiles: [URL] = []
+        var cueFiles: [URL] = []
         var modificationDates: [URL: Date] = [:]
         var unsupportedFiles: [(url: URL, extension: String)] = []
         // De-duplicate by resolved path so a symlinked file and its target (or two
@@ -600,6 +623,8 @@ extension DatabaseManager {
                 if let modDate = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
                     modificationDates[resolvedURL] = modDate
                 }
+            } else if fileExtension == "cue" {
+                cueFiles.append(resolvedURL)
             } else if AudioFormat.isNotSupported(fileExtension) {
                 unsupportedFiles.append((url: resolvedURL, extension: fileExtension))
                 Logger.info("Skipped unsupported audio file: \(resolvedURL.lastPathComponent) (.\(fileExtension))")
@@ -614,6 +639,7 @@ extension DatabaseManager {
 
         return FolderEnumerationResult(
             musicFiles: musicFiles,
+            cueFiles: cueFiles,
             modificationDates: modificationDates,
             unsupportedFiles: unsupportedFiles
         )
@@ -634,7 +660,7 @@ extension DatabaseManager {
                 .fetchAll(db)
         }
         let foundPathStrings = Set(foundPaths.map { $0.standardizedFileURL.path })
-        let tracksToRemove = existingTracks.filter { !foundPathStrings.contains($0.url.standardizedFileURL.path) }
+        let tracksToRemove = existingTracks.filter { !foundPathStrings.contains($0.libraryPath) }
         let trackIdsToRemove = tracksToRemove.compactMap { $0.trackId }
         
         guard !trackIdsToRemove.isEmpty else { return }

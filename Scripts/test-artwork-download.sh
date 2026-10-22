@@ -103,6 +103,36 @@ func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(m
             fatalError("Manual artwork must not replace a symlink")
         } catch ArtworkDownloadError.unsafeDestination { }
         expect(try Data(contentsOf: other) == Data("other".utf8), "Manual artwork must not follow symlinks")
+        let cueRoot = root.appendingPathComponent("cue-album")
+        let sourceDirectory = cueRoot.appendingPathComponent("audio")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        let cue = cueRoot.appendingPathComponent("Album.cue")
+        let cueAudio = sourceDirectory.appendingPathComponent("disc.flac")
+        let cueBytes = Data("CUE unchanged".utf8), audioBytes = Data("audio unchanged".utf8)
+        try cueBytes.write(to: cue)
+        try audioBytes.write(to: cueAudio)
+        let cueCover = try await store.saveCue(image, sheetURL: cue, audioURL: cueAudio, album: "Album", overwrite: false, automatic: true)
+        expect(cueCover == cue.appendingPathExtension("jpg"), "CUE cover belongs beside the sheet, including multi-file albums")
+        do {
+            _ = try await store.saveCue(replacement, sheetURL: cue, audioURL: cueAudio, album: "Album", overwrite: false, automatic: true)
+            fatalError("Automatic CUE cover must not overwrite")
+        } catch ArtworkDownloadError.existingArtwork {}
+        _ = try await store.saveCue(replacement, sheetURL: cue, audioURL: cueAudio, album: "Album", overwrite: true, automatic: false)
+        expect(try Data(contentsOf: cueCover) == replacement, "Explicit album cover replacement is supported")
+        expect(try Data(contentsOf: cue) == cueBytes && Data(contentsOf: cueAudio) == audioBytes, "Artwork never edits the CUE or audio")
+        try FileManager.default.removeItem(at: cueCover)
+        let sharedCover = cueRoot.appendingPathComponent("folder.jpg")
+        try image.write(to: sharedCover)
+        do {
+            _ = try await store.saveCue(replacement, sheetURL: cue, audioURL: cueAudio, album: "Album", overwrite: false, automatic: true)
+            fatalError("Automatic CUE artwork must respect existing folder covers")
+        } catch ArtworkDownloadError.existingArtwork {}
+        try FileManager.default.createSymbolicLink(at: cueCover, withDestinationURL: sharedCover)
+        do {
+            _ = try await store.saveCue(replacement, sheetURL: cue, audioURL: cueAudio, album: "Album", overwrite: true, automatic: false)
+            fatalError("Manual CUE artwork must not replace symlinks")
+        } catch ArtworkDownloadError.unsafeDestination {}
+        expect(try Data(contentsOf: sharedCover) == image, "Shared folder cover survives CUE replacement attempts")
         print("Artwork endpoint and sidecar storage checks passed")
     }
 }

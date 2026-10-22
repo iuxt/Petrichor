@@ -51,10 +51,10 @@ actor ControlledLoader {
 enum LyricsLoader {
     static let controlled = ControlledLoader()
     static func loadLyrics(for track: Track, using db: DatabaseQueue, script: LyricScript = .original, languageTag: String? = nil) async throws
-        -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript], availableLanguages: [LyricLanguage], selectedLanguage: LyricLanguage) {
+        -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript], availableLanguages: [LyricLanguage], selectedLanguage: LyricLanguage, fileURL: URL?) {
         let text = await controlled.load(script: script, languageTag: languageTag)
         return ([LyricLine(text: text, startTime: 1, endTime: nil, timingSegments: text == "downloaded" ? [1] : nil)], .lrc,
-                [.original, .simplified], [LyricLanguage(languageTag: "zh-hant"), LyricLanguage(languageTag: "zh-hans")], LyricLanguage(languageTag: languageTag))
+                [.original, .simplified], [LyricLanguage(languageTag: "zh-hant"), LyricLanguage(languageTag: "zh-hans")], LyricLanguage(languageTag: languageTag), nil)
     }
 }
 func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(message) } }

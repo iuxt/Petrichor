@@ -7,6 +7,13 @@ struct Track: Identifiable, Equatable, Hashable, FetchableRecord, PersistableRec
     let id = UUID()
     var trackId: Int64?
     let url: URL
+    var cueSegment: CueTrackSegment?
+    var libraryPath: String { cueSegment?.libraryPath ?? url.standardizedFileURL.path }
+    var playlistURL: URL { URL(fileURLWithPath: libraryPath) }
+    var artworkSourceURL: URL { cueSegment?.albumSourceURL ?? url }
+    var lyricsFileTarget: LyricsFileTarget {
+        LyricsFileTarget(audioURL: url, cueSheetURL: cueSegment?.sheetURL, cueTrackNumber: cueSegment?.number)
+    }
     
     // Core metadata for display
     var title: String
@@ -97,6 +104,7 @@ struct Track: Identifiable, Equatable, Hashable, FetchableRecord, PersistableRec
         static let trackId = Column("id")
         static let folderId = Column("folder_id")
         static let path = Column("path")
+        static let cueSegment = Column("cue_segment")
         static let filename = Column("filename")
         static let filenameStem = Column("filename_stem")
         static let title = Column("title")
@@ -127,7 +135,8 @@ struct Track: Identifiable, Equatable, Hashable, FetchableRecord, PersistableRec
     init(row: Row) throws {
         // Extract path and create URL
         let path: String = row[Columns.path]
-        self.url = URL(fileURLWithPath: path)
+        cueSegment = CueTrackSegment.decode(row[Columns.cueSegment])
+        self.url = cueSegment?.sourceURL ?? URL(fileURLWithPath: path)
         self.format = row[Columns.format]
         
         // Core properties
@@ -170,7 +179,8 @@ struct Track: Identifiable, Equatable, Hashable, FetchableRecord, PersistableRec
         // Only encode the lightweight fields when saving
         container[Columns.trackId] = trackId
         container[Columns.folderId] = folderId
-        container[Columns.path] = url.path
+        container[Columns.path] = libraryPath
+        container[Columns.cueSegment] = cueSegment?.json
         container[Columns.filename] = url.lastPathComponent
         container[Columns.filenameStem] = FilenameStem.fromURL(url)
         container[Columns.title] = title
@@ -202,7 +212,7 @@ struct Track: Identifiable, Equatable, Hashable, FetchableRecord, PersistableRec
         // SwiftUI onChange and native table reuse must see metadata-only edits.
         lhs.id == rhs.id && lhs.trackId == rhs.trackId && lhs.url == rhs.url &&
         lhs.title == rhs.title && lhs.artist == rhs.artist && lhs.album == rhs.album &&
-        lhs.duration == rhs.duration && lhs.format == rhs.format &&
+        lhs.duration == rhs.duration && lhs.format == rhs.format && lhs.cueSegment == rhs.cueSegment &&
         lhs.folderId == rhs.folderId && lhs.lossless == rhs.lossless &&
         lhs.codec == rhs.codec && lhs.bitrate == rhs.bitrate &&
         lhs.sampleRate == rhs.sampleRate && lhs.channels == rhs.channels &&
@@ -247,6 +257,7 @@ extension Track {
             Columns.trackId,
             Columns.folderId,
             Columns.path,
+            Columns.cueSegment,
             Columns.title,
             Columns.artist,
             Columns.album,

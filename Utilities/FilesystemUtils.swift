@@ -3,7 +3,7 @@ import AVFoundation
 import CryptoKit
 
 enum FilesystemUtils {
-    /// Computes a SHA256 hash for a folder based on its audio/artwork file paths, modification dates, and sizes.
+    /// Computes a SHA256 hash for a folder based on its audio, CUE and artwork file paths, modification dates, and sizes.
     /// Uses a single FileManager.enumerator pass instead of spawning shell processes.
     /// - Parameter folderURL: Folder to compute hash for
     /// - Returns: Hex-encoded SHA256 hash string, or nil on failure
@@ -40,7 +40,7 @@ enum FilesystemUtils {
             let isAudio = supportedAudioExtensions.contains(ext)
             let isArtwork = artworkExtensions.contains(ext)
 
-            guard isAudio || isArtwork else { continue }
+            guard isAudio || isArtwork || ext == "cue" else { continue }
 
             // Resolve symlinks so the hash reflects the real file (matching the scan),
             // and de-duplicate so multiple links to one file don't skew the hash.

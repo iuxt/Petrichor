@@ -37,15 +37,16 @@ struct AsyncArtworkImage<Placeholder: View>: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .downloadedArtworkDidChange)) { notice in
             guard let savedAudioURL = notice.object as? URL, let request,
-                  request.audioURL.deletingLastPathComponent().standardizedFileURL ==
-                    savedAudioURL.deletingLastPathComponent().standardizedFileURL else { return }
+                  request.cueSheetURL?.standardizedFileURL == savedAudioURL.standardizedFileURL
+                    || request.audioURL.deletingLastPathComponent().standardizedFileURL ==
+                        savedAudioURL.deletingLastPathComponent().standardizedFileURL else { return }
             artworkRevision += 1
         }
     }
 
     private var taskID: String {
         guard let request else { return "nil" }
-        return "\(request.kind.rawValue)-\(request.identity)-\(request.audioURL.path)-\(artworkRevision)"
+        return "\(request.kind.rawValue)-\(request.identity)-\(request.audioURL.path)-\(request.cueSheetURL?.path ?? "")-\(artworkRevision)"
     }
 
     @MainActor
