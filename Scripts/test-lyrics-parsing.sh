@@ -47,6 +47,18 @@ precondition(badWordTiming.first?.text == "lateearly" && badWordTiming.first?.ti
              "Invalid word timing should keep readable line lyrics")
 print("Enhanced LRC word timing OK")
 
+// Global offsets apply to all lines, regardless of metadata position/case.
+let delayed = LyricLine.parseLRC(from: "[00:10.00]First\n[00:20.00]Second\n[OFFSET: +5000]")
+precondition(delayed.map(\.startTime) == [15, 25] && delayed[0].endTime == 25)
+let advanced = LyricLine.parseLRC(from: "[offset:-1500]\n[00:01.00]First\n[00:02.00]Second")
+precondition(advanced.map(\.startTime) == [-0.5, 0.5], "Preserve lines that straddle the song's start")
+let shiftedWords = LyricLine.parseLRC(from: "[offset:5000]\n[00:01.000]<00:01.000>你<00:01.800>好<00:03.000>")
+precondition(shiftedWords[0].startTime == 6)
+precondition(shiftedWords[0].timingSegments == enhanced[0].timingSegments, "Global offset must not change relative word timing")
+let malformedOffset = LyricLine.parseLRC(from: "[offset:bad]\n[00:01.00]First")
+precondition(malformedOffset[0].startTime == 1)
+print("Local LRC global offsets and word timing OK")
+
 // --- SRT: with sequence number (classic) ---
 let srtWithIndex = """
 1

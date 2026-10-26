@@ -31,7 +31,7 @@ final class NowPlayingManager {
 
         // Set the artwork. updateNowPlayingInfo runs on every play/pause/seek and
         // ~1/sec while playing, so cache the MPMediaItemArtwork per track and only
-        // decode the image when the track changes (decoding it each call is the
+        // decode the image when the track or artwork changes (decoding it each call is the
         // expensive part and makes AirPlay receivers redraw).
         if let artwork = artwork(for: track) {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
@@ -54,24 +54,28 @@ final class NowPlayingManager {
 
     private var cachedArtwork: MPMediaItemArtwork?
     private var cachedArtworkURL: URL?
+    private var cachedArtworkData: Data?
 
     private func artwork(for track: Track) -> MPMediaItemArtwork? {
         guard let artworkData = track.artworkData else {
             cachedArtwork = nil
             cachedArtworkURL = nil
+            cachedArtworkData = nil
             return nil
         }
-        if cachedArtworkURL == track.url, let cached = cachedArtwork {
+        if cachedArtworkURL == track.url, cachedArtworkData == artworkData, let cached = cachedArtwork {
             return cached
         }
         guard let image = NSImage(data: artworkData) else {
             cachedArtwork = nil
             cachedArtworkURL = nil
+            cachedArtworkData = nil
             return nil
         }
         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         cachedArtwork = artwork
         cachedArtworkURL = track.url
+        cachedArtworkData = artworkData
         return artwork
     }
 

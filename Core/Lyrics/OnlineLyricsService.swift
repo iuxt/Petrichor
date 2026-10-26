@@ -202,17 +202,8 @@ actor OnlineLyricsService: OnlineLyricsServing {
 
     private static func timedLines(_ text: String) -> [LyricLine] {
         let decoded = decodeEntities(text)
-        // Respect an LRC's global offset while converting it to a normalized sidecar.
-        let pattern = #"\[offset:\s*([+-]?\d+)\s*\]"#
-        var offset = 0.0
-        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-           let match = regex.firstMatch(in: decoded, range: NSRange(decoded.startIndex..., in: decoded)),
-           let range = Range(match.range(at: 1), in: decoded),
-           let milliseconds = Double(decoded[range]), milliseconds.isFinite {
-            offset = milliseconds / 1000
-        }
         return LyricLine.parseLRC(from: decoded).compactMap { line in
-            let time = line.startTime + offset
+            let time = line.startTime
             guard time.isFinite, time >= 0, time < 86_400 else { return nil }
             return LyricLine(text: line.text, startTime: time)
         }

@@ -109,48 +109,23 @@ enum TrackTrashManager {
         advanceAfterMove: Bool
     ) async -> TrashMoveResult {
         let libraryManager = coordinator.libraryManager
-        let fileManager = FileManager.default
         let audioURL = track.url
-        let accessURL = libraryFolderAccessURL(containing: audioURL, folders: libraryManager.folders)
-        let didStartAccess = withLibraryFolderAccess(accessURL)
-        defer {
-            if didStartAccess {
-                accessURL?.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        guard fileManager.fileExists(atPath: audioURL.path) else {
-            return TrashMoveResult(
-                track: track,
-                audioMoved: false,
-                audioError: nil,
-                failedSidecars: [],
-                libraryRemoved: false,
-                libraryError: nil,
-                fileMissing: true
-            )
-        }
-
-        let sidecars = TrackTrashSidecars.sidecarURLs(forAudioURL: audioURL)
+        let folders = libraryManager.folders
         let snapshot = captureSnapshot
             ? coordinator.playbackManager.prepareCurrentTrackForTrashMove(track)
             : nil
 
-        do {
-            try moveItemToTrash(audioURL, fileManager: fileManager)
-        } catch {
-            Logger.error("Failed to move track to Trash: \(audioURL.path), error: \(error)")
+        let files = await Task.detached(priority: .utility) {
+            moveTrackFilesToTrash(audioURL: audioURL, folders: folders)
+        }.value
+        guard files.audioMoved else {
             if captureSnapshot {
                 coordinator.playbackManager.restoreCurrentTrackAfterFailedTrashMove(snapshot)
             }
             return TrashMoveResult(
-                track: track,
-                audioMoved: false,
-                audioError: error,
-                failedSidecars: [],
-                libraryRemoved: false,
-                libraryError: nil,
-                fileMissing: false
+                track: track, audioMoved: false, audioError: files.audioError,
+                failedSidecars: [], libraryRemoved: false, libraryError: nil,
+                fileMissing: files.fileMissing
             )
         }
 
@@ -159,23 +134,13 @@ enum TrackTrashManager {
         }
         coordinator.playlistManager.removeTrashedTrackFromQueue(track)
 
-        var failedSidecars: [URL] = []
-        for url in sidecars {
-            do {
-                try moveItemToTrash(url, fileManager: fileManager)
-            } catch {
-                failedSidecars.append(url)
-                Logger.warning("Failed to move sidecar to Trash: \(url.path), error: \(error)")
-            }
-        }
-
         do {
             try await libraryManager.removeTrackFromLibrary(track)
             return TrashMoveResult(
                 track: track,
                 audioMoved: true,
                 audioError: nil,
-                failedSidecars: failedSidecars,
+                failedSidecars: files.failedSidecars,
                 libraryRemoved: true,
                 libraryError: nil,
                 fileMissing: false
@@ -186,12 +151,52 @@ enum TrackTrashManager {
                 track: track,
                 audioMoved: true,
                 audioError: nil,
-                failedSidecars: failedSidecars,
+                failedSidecars: files.failedSidecars,
                 libraryRemoved: false,
                 libraryError: error,
                 fileMissing: false
             )
         }
+    }
+
+    private struct TrashFileMoveResult: Sendable {
+        var audioMoved = false
+        var audioError: Error?
+        var failedSidecars: [URL] = []
+        var fileMissing = false
+    }
+
+    /// Runs off the main actor, including bookmark resolution, enumeration, and
+    /// the potentially slow cross-volume move into the local Trash fallback.
+    private static func moveTrackFilesToTrash(audioURL: URL, folders: [Folder]) -> TrashFileMoveResult {
+        let fileManager = FileManager.default
+        let accessURL = libraryFolderAccessURL(containing: audioURL, folders: folders)
+        let didStartAccess = withLibraryFolderAccess(accessURL)
+        defer {
+            if didStartAccess { accessURL?.stopAccessingSecurityScopedResource() }
+        }
+        guard fileManager.fileExists(atPath: audioURL.path) else {
+            return TrashFileMoveResult(fileMissing: true)
+        }
+        let sidecars = TrackTrashSidecars.sidecarURLs(forAudioURL: audioURL)
+        var result = TrashFileMoveResult()
+        do {
+            try moveItemToTrash(audioURL, fileManager: fileManager)
+            result.audioMoved = true
+        } catch {
+            result.audioError = error
+            Logger.error("Failed to move track to Trash: \(audioURL.path), error: \(error)")
+            return result
+        }
+        for url in sidecars {
+            do {
+                try moveItemToTrash(url, fileManager: fileManager)
+            } catch {
+                result.failedSidecars.append(url)
+                Logger.warning("Failed to move sidecar to Trash: \(url.path), error: \(error)")
+            }
+        }
+        return result
     }
 
     private static func sortTracksForBatchTrash(

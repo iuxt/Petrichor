@@ -260,7 +260,7 @@ struct LibraryTabView: View {
             Text("Optimize library database")
             infoButton(
                 isPresented: $showOptimizeInfo,
-                text: "Removes references to library data that no longer exists on disk and compacts the database to reclaim space."
+                text: "Cleans up unreferenced database records and compacts the database. Offline library folders are preserved."
             )
 
             Spacer()

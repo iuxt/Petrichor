@@ -68,6 +68,22 @@ guard !sharedSidecars.contains("cover.jpg") else {
     exit(1)
 }
 
+// Alternate encodings share every supported lyric sidecar. Keep them until
+// the last same-stem audio file is removed, including case variants.
+let alternate = root.appendingPathComponent("Shared.MP3")
+touch(alternate)
+for ext in TrackTrashSidecars.lyricExtensions { touch(root.appendingPathComponent("Shared.\(ext)")) }
+precondition(TrackTrashSidecars.sidecarURLs(forAudioURL: shared).isEmpty)
+try FileManager.default.removeItem(at: shared)
+let finalVariant = Set(TrackTrashSidecars.sidecarURLs(forAudioURL: alternate).map(\.pathExtension))
+precondition(finalVariant == Set(TrackTrashSidecars.lyricExtensions))
+let caseVariant = root.appendingPathComponent("shared.flac")
+touch(caseVariant)
+precondition(TrackTrashSidecars.sidecarURLs(forAudioURL: alternate).isEmpty)
+// An unrelated neighbor preserves album art, but not this track's own lyrics.
+try FileManager.default.removeItem(at: caseVariant)
+precondition(!TrackTrashSidecars.sidecarURLs(forAudioURL: alternate).contains { $0.lastPathComponent == "cover.jpg" })
+
 let fallbackOne = TrackTrashFallback.fallbackURL(for: lonely, trashDirectory: trashRoot)
 guard fallbackOne.path.hasSuffix("Trash/Petrichor/Lonely.flac") else {
     fputs("Unexpected fallback path: \(fallbackOne.path)\n", stderr)
@@ -137,7 +153,7 @@ queue_manager = Path("Managers/Playlist/PMPlayback.swift").read_text()
 
 prepare_call = "playbackManager.prepareCurrentTrackForTrashMove(track)"
 advance_call = "playbackManager.handleTrackMovedToTrash(track)"
-trash_call = "moveItemToTrash(audioURL"
+trash_call = "moveTrackFilesToTrash(audioURL"
 restore_call = "playbackManager.restoreCurrentTrackAfterFailedTrashMove"
 
 for needle, message in [

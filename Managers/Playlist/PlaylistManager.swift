@@ -53,7 +53,9 @@ final class PlaylistManager: ObservableObject {
     /// Smart playlists whose tracks are currently being loaded, to collapse concurrent
     /// duplicate loads (e.g. PlaylistDetailView firing onAppear + onChange together).
     /// Mutated only on the main actor.
-    internal var loadingSmartPlaylistIDs: Set<UUID> = []
+    internal var smartPlaylistLoads: [UUID: (criteria: SmartPlaylistCriteria?, token: UUID)] = [:]
+
+    internal var smartPlaylistPersistenceTasks: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
 
     // MARK: - Dependencies
     internal weak var audioPlayer: PlaybackManager?

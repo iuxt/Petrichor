@@ -15,46 +15,32 @@ enum TrackTrashSidecars {
         fileManager: FileManager = .default
     ) -> [URL] {
         let directory = audioURL.deletingLastPathComponent()
+        // If enumeration fails, ownership is unknown: preserve all sidecars.
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: []
+        ) else { return [] }
+        let removedPath = audioURL.standardizedFileURL.path
+        let remainingAudio = contents.filter { url in
+            url.standardizedFileURL.path != removedPath
+                && supportedAudioExtensions.contains(url.pathExtension.lowercased())
+                && isRegularFile(url, fileManager: fileManager)
+        }
+        let stem = audioURL.deletingPathExtension().lastPathComponent
+        // Conservatively preserve case variants too, including on case-insensitive volumes.
+        let sharesLyrics = remainingAudio.contains {
+            $0.deletingPathExtension().lastPathComponent.caseInsensitiveCompare(stem) == .orderedSame
+        }
         var urls: [URL] = []
-
-        for ext in lyricExtensions {
-            let lyricURL = audioURL.deletingPathExtension().appendingPathExtension(ext)
-            if fileManager.fileExists(atPath: lyricURL.path) {
-                urls.append(lyricURL)
+        if !sharesLyrics {
+            for ext in lyricExtensions {
+                let lyricURL = audioURL.deletingPathExtension().appendingPathExtension(ext)
+                if fileManager.fileExists(atPath: lyricURL.path) { urls.append(lyricURL) }
             }
         }
-
-        guard shouldTrashDirectoryArtwork(
-            afterRemovingAudioURL: audioURL,
-            in: directory,
-            fileManager: fileManager
-        ) else {
-            return urls
+        if remainingAudio.isEmpty {
+            urls.append(contentsOf: artworkURLs(in: directory, fileManager: fileManager))
         }
-
-        urls.append(contentsOf: artworkURLs(in: directory, fileManager: fileManager))
         return urls
-    }
-
-    private static func shouldTrashDirectoryArtwork(
-        afterRemovingAudioURL audioURL: URL,
-        in directory: URL,
-        fileManager: FileManager
-    ) -> Bool {
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return false
-        }
-
-        let removedPath = audioURL.standardizedFileURL.path
-        return !contents.contains { url in
-            guard isRegularFile(url, fileManager: fileManager) else { return false }
-            guard supportedAudioExtensions.contains(url.pathExtension.lowercased()) else { return false }
-            return url.standardizedFileURL.path != removedPath
-        }
     }
 
     private static func artworkURLs(in directory: URL, fileManager: FileManager) -> [URL] {

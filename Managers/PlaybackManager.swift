@@ -180,6 +180,7 @@ final class PlaybackManager: NSObject, ObservableObject {
         let position: Double
         let wasPlaying: Bool
         let restoredPosition: Double
+        let suspensionGeneration: UInt64
     }
     
     // MARK: - Dependencies
@@ -510,15 +511,16 @@ final class PlaybackManager: NSObject, ObservableObject {
         guard isCurrentTrack(track), let currentTrack else { return nil }
         cancelMetadataRestoreForPlaybackChange()
 
+        invalidatePlaybackRequests()
         let snapshot = TrashMoveSnapshot(
             track: currentTrack,
             fullTrack: currentFullTrack,
             position: currentTime,
             wasPlaying: isPlaying,
-            restoredPosition: restoredPosition
+            restoredPosition: restoredPosition,
+            suspensionGeneration: playbackRequestGeneration
         )
 
-        invalidatePlaybackRequests()
         wantsPlaybackActive = false
         pendingPlaybackRestore = nil
         audioPlayer.clearNextTrack()
@@ -898,7 +900,9 @@ final class PlaybackManager: NSObject, ObservableObject {
 
     @MainActor
     func restoreCurrentTrackAfterFailedTrashMove(_ snapshot: TrashMoveSnapshot?) {
-        guard let snapshot else { return }
+        // A file move now yields to the UI. Do not undo playback selected by the
+        // user while the filesystem operation was running.
+        guard let snapshot, snapshot.suspensionGeneration == playbackRequestGeneration else { return }
         cancelMetadataRestoreForPlaybackChange()
 
         pendingPlaybackRestore = nil

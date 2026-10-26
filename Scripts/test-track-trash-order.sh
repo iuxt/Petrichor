@@ -4,7 +4,7 @@ set -euo pipefail
 source_file="Core/TrackTrashManager.swift"
 
 prepare_line="$(rg -n 'prepareCurrentTrackForTrashMove' "$source_file" | head -n 1 | cut -d: -f1 || true)"
-move_line="$(rg -n 'try moveItemToTrash\(audioURL' "$source_file" | head -n 1 | cut -d: -f1 || true)"
+move_line="$(rg -n 'moveTrackFilesToTrash\(audioURL:' "$source_file" | head -n 1 | cut -d: -f1 || true)"
 commit_line="$(rg -n 'handleTrackMovedToTrash' "$source_file" | head -n 1 | cut -d: -f1 || true)"
 restore_line="$(rg -n 'restoreCurrentTrackAfterFailedTrashMove' "$source_file" | head -n 1 | cut -d: -f1 || true)"
 

@@ -155,70 +155,10 @@ extension LibraryManager {
     }
 
     func optimizeDatabase(notifyUser: Bool = false) {
+        // A missing path may be an unmounted disk, an offline share, or revoked access.
+        // Only explicit folder removal may delete its tracks and listening history.
         let sizeBefore = databaseManager.getDatabaseSize() ?? 0
-        var foldersToRemove: [Folder] = []
-            
-        for folder in folders where !fileManager.fileExists(atPath: folder.url.path) {
-            foldersToRemove.append(folder)
-        }
-        
-        if foldersToRemove.isEmpty {
-            Logger.info("No missing folders found during optimization")
-            
-            if notifyUser {
-                performDatabaseOptimization(sizeBefore: sizeBefore, context: "optimization")
-            }
-            return
-        }
-        
-        Logger.info("Found \(foldersToRemove.count) missing folders to optimize")
-        Task { @MainActor in
-            NotificationManager.shared.startActivity(String(appLocalized: "Optimizing database..."))
-        }
-        
-        let group = DispatchGroup()
-        var removedFolders: [String] = []
-        var failedRemovals: [String] = []
-        
-        for folder in foldersToRemove {
-            group.enter()
-            databaseManager.removeFolder(folder) { result in
-                switch result {
-                case .success:
-                    Logger.info("Successfully removed missing folder: \(folder.name)")
-                    removedFolders.append(folder.name)
-                case .failure(let error):
-                    Logger.error("Failed to remove missing folder \(folder.name): \(error)")
-                    failedRemovals.append(folder.name)
-                }
-                group.leave()
-            }
-        }
-        
-        group.notify(queue: .main) { [weak self] in
-            guard let self = self else { return }
-
-            Task { @MainActor in
-                NotificationManager.shared.stopActivity()
-
-                if !removedFolders.isEmpty {
-                    let message = removedFolders.count == 1
-                        ? String(appLocalized: "Folder '\(removedFolders[0])' was removed as it no longer exists")
-                        : String(appLocalized: "\(removedFolders.count) folders were removed as they no longer exist")
-                    NotificationManager.shared.addMessage(.info, message)
-                }
-
-                if !failedRemovals.isEmpty {
-                    let message = String(appLocalized: "Failed to remove \(failedRemovals.count) missing folders")
-                    NotificationManager.shared.addMessage(.error, message)
-                }
-            }
-
-            self.performDatabaseOptimization(sizeBefore: sizeBefore, context: "optimization after folder cleanup")
-            self.refreshLibraryCategories()
-            self.loadMusicLibrary()
-            self.refreshDiscoverTracks()
-        }
+        performDatabaseOptimization(sizeBefore: sizeBefore, context: "optimization")
     }
 
     func refreshBookmarkForFolder(_ folder: Folder) async {

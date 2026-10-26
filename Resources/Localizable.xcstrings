@@ -7192,12 +7192,12 @@
         }
       }
     },
-    "Removes references to library data that no longer exists on disk and compacts the database to reclaim space.": {
+    "Cleans up unreferenced database records and compacts the database. Offline library folders are preserved.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "移除磁盘上已不存在的资料库数据引用，并压缩数据库以回收空间。"
+            "value": "清理无引用的数据库记录并压缩数据库，保留离线的资料库文件夹。"
           }
         }
       }

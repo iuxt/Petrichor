@@ -47,8 +47,9 @@ extension PlaylistManager {
             regular: playlists.filter { $0.type == .regular }
         )
 
+        let persistence = scheduleSmartPlaylistPersistence(newPlaylist, criteria: criteria)
         Task {
-            await persistSmartPlaylist(newPlaylist, criteria: criteria)
+            await persistence.value
             await MainActor.run {
                 NotificationCenter.default.post(
                     name: .navigateToPlaylists,
@@ -82,9 +83,28 @@ extension PlaylistManager {
         playlists[index].tracks = []
 
         let updated = playlists[index]
-        Task {
-            await persistSmartPlaylist(updated, criteria: criteria)
+        scheduleSmartPlaylistPersistence(updated, criteria: criteria)
+    }
+
+    /// Keep record/snapshot writes ordered when a second edit arrives during an
+    /// evaluation. Otherwise an older frozen snapshot can overwrite the new rules.
+    @discardableResult
+    private func scheduleSmartPlaylistPersistence(_ playlist: Playlist, criteria: SmartPlaylistCriteria) -> Task<Void, Never> {
+        let previous = smartPlaylistPersistenceTasks[playlist.id]?.task
+        let token = UUID()
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            defer {
+                if self.smartPlaylistPersistenceTasks[playlist.id]?.token == token {
+                    self.smartPlaylistPersistenceTasks.removeValue(forKey: playlist.id)
+                }
+            }
+            guard self.isCurrentSmartPlaylist(playlist) else { return }
+            await self.persistSmartPlaylist(playlist, criteria: criteria)
         }
+        smartPlaylistPersistenceTasks[playlist.id] = (token, task)
+        return task
     }
 
     /// Persist a smart playlist record and (re)materialize its contents.
@@ -100,12 +120,13 @@ extension PlaylistManager {
             try await dbManager.savePlaylistAsync(playlist)
 
             if !criteria.autoUpdate {
-                let evaluated = (try? await dbManager.getTracksForSmartPlaylist(playlist)) ?? []
+                let evaluated = try await dbManager.getTracksForSmartPlaylist(playlist)
+                guard isCurrentSmartPlaylist(playlist) else { return }
                 try await dbManager.saveSmartPlaylistSnapshot(playlistId: playlist.id, tracks: evaluated)
             }
 
             // Load contents into memory (criteria for auto, snapshot for frozen).
-            await loadSmartPlaylistTracks(playlist)
+            await loadSmartPlaylistTracks(playlist, forceReload: true)
         } catch {
             Logger.error("Failed to persist smart playlist '\(playlist.name)': \(error)")
         }
@@ -114,42 +135,45 @@ extension PlaylistManager {
     // MARK: - Loading
 
     /// Load tracks for a single smart playlist on-demand.
-    func loadSmartPlaylistTracks(_ playlist: Playlist) async {
+    func loadSmartPlaylistTracks(_ playlist: Playlist, forceReload: Bool = false) async {
         guard playlist.type == .smart,
-              let libraryManager = libraryManager else { return }
+              let libraryManager,
+              isCurrentSmartPlaylist(playlist) else { return }
 
-        // In-flight guard: if a load for this playlist is already running, skip. Otherwise
-        // two near-simultaneous callers both see empty tracks and run the full query twice.
-        let shouldLoad = await MainActor.run { () -> Bool in
-            guard !self.loadingSmartPlaylistIDs.contains(playlist.id) else { return false }
-            self.loadingSmartPlaylistIDs.insert(playlist.id)
-            return true
+        // Coalesce identical requests, but allow edited rules to supersede an old query.
+        if !forceReload, let load = smartPlaylistLoads[playlist.id],
+           load.criteria == playlist.smartCriteria { return }
+        let token = UUID()
+        smartPlaylistLoads[playlist.id] = (playlist.smartCriteria, token)
+        defer {
+            if smartPlaylistLoads[playlist.id]?.token == token {
+                smartPlaylistLoads.removeValue(forKey: playlist.id)
+            }
         }
-        guard shouldLoad else { return }
 
-        let autoUpdate = playlist.smartCriteria?.autoUpdate ?? true
         let tracks: [Track]
-
-        if autoUpdate {
+        if playlist.smartCriteria?.autoUpdate ?? true {
             do {
                 tracks = try await libraryManager.databaseManager.getTracksForSmartPlaylist(playlist)
             } catch {
                 Logger.error("Failed to load tracks for smart playlist '\(playlist.name)': \(error)")
-                await MainActor.run { _ = self.loadingSmartPlaylistIDs.remove(playlist.id) }
                 return
             }
         } else {
-            // Frozen: read the persisted one-time snapshot.
             tracks = libraryManager.databaseManager.loadTracksForPlaylist(playlist.id)
         }
 
-        await MainActor.run {
-            if let index = self.playlists.firstIndex(where: { $0.id == playlist.id }) {
-                self.playlists[index].tracks = tracks
-                self.playlists[index].trackCount = tracks.count
-                Logger.info("Loaded \(tracks.count) tracks for smart playlist '\(playlist.name)'")
-            }
-            self.loadingSmartPlaylistIDs.remove(playlist.id)
+        guard smartPlaylistLoads[playlist.id]?.token == token,
+              isCurrentSmartPlaylist(playlist),
+              let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
+        playlists[index].tracks = tracks
+        playlists[index].trackCount = tracks.count
+        Logger.info("Loaded \(tracks.count) tracks for smart playlist '\(playlist.name)'")
+    }
+
+    private func isCurrentSmartPlaylist(_ playlist: Playlist) -> Bool {
+        playlists.contains {
+            $0.id == playlist.id && $0.type == .smart && $0.smartCriteria == playlist.smartCriteria
         }
     }
 
@@ -183,7 +207,9 @@ extension PlaylistManager {
                 let counts = await dbManager.getSmartPlaylistTrackCounts(cold)
                 await MainActor.run {
                     for (id, count) in counts {
-                        if let index = self.playlists.firstIndex(where: { $0.id == id }) {
+                        if let original = cold.first(where: { $0.id == id }),
+                           self.isCurrentSmartPlaylist(original),
+                           let index = self.playlists.firstIndex(where: { $0.id == id }) {
                             self.playlists[index].trackCount = count
                         }
                     }
@@ -192,13 +218,7 @@ extension PlaylistManager {
 
             // Hot: full refresh (each query only loads normalized tables if its rules need them).
             for playlist in hot {
-                let refreshed = (try? await dbManager.getTracksForSmartPlaylist(playlist)) ?? []
-                await MainActor.run {
-                    if let index = self.playlists.firstIndex(where: { $0.id == playlist.id }) {
-                        self.playlists[index].tracks = refreshed
-                        self.playlists[index].trackCount = refreshed.count
-                    }
-                }
+                await loadSmartPlaylistTracks(playlist, forceReload: true)
             }
         }
     }

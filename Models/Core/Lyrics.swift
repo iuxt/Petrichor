@@ -173,8 +173,20 @@ extension LyricLine {
         }
     }
 
+    /// Shared by local, embedded, and downloaded LRC. Keep word offsets relative
+    /// to the original line timestamp; the global offset shifts the whole line.
+    static func lrcGlobalOffset(in text: String) -> TimeInterval {
+        let pattern = #"\[offset:\s*([+-]?\d+)\s*\]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text),
+              let milliseconds = Double(text[range]), milliseconds.isFinite else { return 0 }
+        return milliseconds / 1000
+    }
+
     /// Parse the lyrics from the LRC files
     static func parseLRC(from lrcString: String) -> Lyrics {
+        let offset = lrcGlobalOffset(in: lrcString)
         let lines = normalizingNewlines(lrcString).components(separatedBy: "\n")
         var lyrics: [LyricLine] = []
 
@@ -216,9 +228,11 @@ extension LyricLine {
                 .trimmingCharacters(in: .whitespaces)
             
             for timestamp in timestamps {
+                let adjustedTime = timestamp + offset
+                guard adjustedTime.isFinite else { continue }
                 lyrics.append(LyricLine(
                     text: text,
-                    startTime: timestamp,
+                    startTime: adjustedTime,
                     timingSegments: enhancedLRCSegments(body, lineStart: timestamp, regex: wordRegex)
                 ))
             }
