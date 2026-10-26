@@ -6,7 +6,7 @@ from pathlib import Path
 
 source = Path("Managers/PlaybackManager.swift").read_text()
 
-if "private var wantsPlaybackActive" not in source:
+if "@Published private(set) var wantsPlaybackActive" not in source:
     raise SystemExit("PlaybackManager must track whether the latest transport intent wants active playback.")
 
 toggle_start = source.index("func togglePlayPause()")

@@ -75,6 +75,25 @@ do {
     preconditionFailure("Absolute paths must not escape granted folder")
 } catch {}
 try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+let realSource = root.appendingPathComponent("actual.flac")
+let linkedSource = root.appendingPathComponent("alias.flac")
+try Data().write(to: realSource)
+try FileManager.default.createSymbolicLink(at: linkedSource, withDestinationURL: realSource)
+let linkedSheet = try CueSheet.parse("FILE alias.flac WAVE\nTRACK 01 AUDIO\nINDEX 01 00:00:00")
+expect(try linkedSheet.resolveSources(relativeTo: cueURL, audioURLs: [realSource]) == [realSource],
+       "CUE symlinks must match the scanner's resolved audio paths")
+do {
+    _ = try linkedSheet.resolveSources(relativeTo: cueURL, audioURLs: [albumSource])
+    preconditionFailure("A symlink must not admit an audio source absent from enumeration")
+} catch {}
+let realDirectory = root.appendingPathComponent("audio")
+try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: true)
+try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked-audio"), withDestinationURL: realDirectory)
+let convertedSource = realDirectory.appendingPathComponent("converted.flac")
+try Data().write(to: convertedSource)
+let linkedDirectorySheet = try CueSheet.parse("FILE linked-audio/converted.wav WAVE\nTRACK 01 AUDIO\nINDEX 01 00:00:00")
+expect(try linkedDirectorySheet.resolveSources(relativeTo: cueURL, audioURLs: [convertedSource]) == [convertedSource],
+       "Extension correction must still work under a symlinked directory")
 for encoding: String.Encoding in [.utf8, .utf16, String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))] {
     try content.data(using: encoding)!.write(to: cueURL)
     let decoded = try CueSheet.read(from: cueURL)

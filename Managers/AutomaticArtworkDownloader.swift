@@ -24,11 +24,11 @@ final class AutomaticArtworkDownloader {
     }
 
     func connect(playbackManager: PlaybackManager) {
-        playbackManager.$currentTrack.combineLatest(playbackManager.$isPlaying)
+        playbackManager.$currentTrack.combineLatest(playbackManager.$isPlaying, playbackManager.$wantsPlaybackActive)
             .receive(on: RunLoop.main)
-            .sink { [weak self, weak playbackManager] track, playing in
+            .sink { [weak self, weak playbackManager] track, playing, requested in
                 guard let playbackManager else { return }
-                self?.update(track: track, isPlaying: playing, playbackManager: playbackManager)
+                self?.update(track: track, isPlaying: playing, playbackRequested: requested, playbackManager: playbackManager)
             }
             .store(in: &subscriptions)
         settings.objectWillChange
@@ -37,7 +37,8 @@ final class AutomaticArtworkDownloader {
                 Task { @MainActor [weak self, weak playbackManager] in
                     guard let playbackManager else { return }
                     self?.update(track: playbackManager.currentTrack,
-                                 isPlaying: playbackManager.isPlaying, playbackManager: playbackManager)
+                                 isPlaying: playbackManager.isPlaying,
+                                 playbackRequested: playbackManager.wantsPlaybackActive, playbackManager: playbackManager)
                 }
             }
             .store(in: &subscriptions)
@@ -45,8 +46,8 @@ final class AutomaticArtworkDownloader {
 
     deinit { task?.cancel() }
 
-    private func update(track: Track?, isPlaying: Bool, playbackManager: PlaybackManager) {
-        guard settings.automaticallyDownloadArtwork, isPlaying, let track else {
+    private func update(track: Track?, isPlaying: Bool, playbackRequested: Bool, playbackManager: PlaybackManager) {
+        guard settings.automaticallyDownloadArtwork, playbackRequested, let track else {
             task?.cancel()
             task = nil
             activeKey = nil
@@ -58,9 +59,12 @@ final class AutomaticArtworkDownloader {
         let keyParts = track.cueSegment.map { [$0.sheetPath, track.album, track.albumArtist ?? "", provider.rawValue] }
             ?? [track.url.path, track.title, track.artist, track.album, String(track.duration), provider.rawValue]
         let key = keyParts.joined(separator: "\u{0}")
-        guard key != activeKey else { return }
+        // Keep an existing album request across CUE loading/paused transitions.
+        // Explicit pause/stop intent cancels above, even if isPlaying was already false.
+        if key == activeKey, isPlaying || track.cueSegment != nil { return }
         task?.cancel()
-        guard query.isComplete else { activeKey = nil; return }
+        task = nil
+        guard isPlaying, query.isComplete else { activeKey = nil; return }
         activeKey = key
         if let last = attempts[key], Date().timeIntervalSince(last) < 300 { return }
 

@@ -170,7 +170,14 @@ struct CueSheet {
         try entries.map { entry in
             let path = entry.file.replacingOccurrences(of: "\\", with: "/")
             guard !path.hasPrefix("/"), !path.contains(":") else { throw ParseError.invalidSheet }
-            let candidate = sheetURL.deletingLastPathComponent().appendingPathComponent(path).standardizedFileURL
+            // Enumeration stores resolved paths. Resolve CUE aliases the same way,
+            // but still require the target to belong to the enumerated audio set.
+            let referencedURL = sheetURL.deletingLastPathComponent().appendingPathComponent(path)
+            // Resolve the parent separately: a stale .wav filename may not exist,
+            // in which case resolving the full URL leaves directory aliases intact.
+            let candidate = referencedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+                .appendingPathComponent(referencedURL.lastPathComponent)
+                .resolvingSymlinksInPath().standardizedFileURL
             if let exact = audioURLs.first(where: { $0.path == candidate.path }) { return exact }
             let caseMatches = audioURLs.filter { $0.path.caseInsensitiveCompare(candidate.path) == .orderedSame }
             if caseMatches.count == 1 { return caseMatches[0] }

@@ -38,6 +38,7 @@ struct Track {
 @MainActor final class PlaybackManager: ObservableObject {
     @Published var currentTrack: Track?
     @Published var isPlaying = false
+    @Published var wantsPlaybackActive = false
     var refreshed: [URL] = []
     func refreshCurrentTrackArtworkAfterDownload(for url: URL) { refreshed.append(url) }
 }
@@ -75,12 +76,14 @@ actor Search: OnlineTagSearching {
 }
 actor Images: OnlineArtworkServing {
     var count = 0
+    var cancelledDownloads = 0
     var suspended = true
     var continuation: CheckedContinuation<Void, Never>?
     var image = Data("cover".utf8)
     func download(for candidate: OnlineTagCandidate) async throws -> Data {
         count += 1
         if suspended { await withCheckedContinuation { continuation = $0 } }
+        if Task.isCancelled { cancelledDownloads += 1 }
         return image
     }
     func resume() { suspended = false; continuation?.resume(); continuation = nil }
@@ -110,12 +113,17 @@ actor Images: OnlineArtworkServing {
         let playback = AppCoordinator.shared!.playbackManager
         let automatic = AutomaticArtworkDownloader(settings: settings, search: search, service: images)
         automatic.connect(playbackManager: playback)
+        playback.wantsPlaybackActive = true
         playback.currentTrack = first; playback.isPlaying = true
         pump()
         precondition(await search.count == 0, "Artwork opt-in stays off by default")
         settings.automaticallyDownloadArtwork = true
         await wait { await images.count == 1 }
         playback.currentTrack = second
+        // CUE playback opens asynchronously, then loads paused before resuming.
+        playback.isPlaying = false
+        pump()
+        playback.isPlaying = true
         pump()
         await images.resume()
         let cover = cue.appendingPathExtension("jpg")
@@ -137,7 +145,48 @@ actor Images: OnlineArtworkServing {
         precondition(manual.savedURL == cover && Data(contentsOf: cover) == Data("replacement".utf8))
         precondition(try Data(contentsOf: a) == Data("a".utf8) && Data(contentsOf: b) == Data("b".utf8) && Data(contentsOf: cue) == Data("cue".utf8))
         precondition(!FileManager.default.fileExists(atPath: b.deletingPathExtension().appendingPathExtension("jpg").path))
-        print("CUE artwork workflows: opt-in, in-flight album deduplication, multi-file notifications and manual replacement passed")
+        try FileManager.default.removeItem(at: cover)
+
+        // Cancellation must also react to user intent when the engine is already
+        // paused for loading and consequently emits no new isPlaying transition.
+        func verifyCancellation(_ reason: String) async {
+            let settings = LyricsDownloadSettings(), search = Search(), images = Images()
+            let playback = PlaybackManager()
+            let automatic = AutomaticArtworkDownloader(settings: settings, search: search, service: images)
+            defer { withExtendedLifetime(automatic) {} }
+            automatic.connect(playbackManager: playback)
+            settings.automaticallyDownloadArtwork = true
+            playback.wantsPlaybackActive = true
+            playback.currentTrack = first
+            playback.isPlaying = true
+            await wait { await images.count == 1 }
+            playback.currentTrack = second
+            playback.isPlaying = false
+            pump()
+            switch reason {
+            case "pause": playback.wantsPlaybackActive = false
+            case "stop":
+                playback.wantsPlaybackActive = false
+                playback.currentTrack = nil
+            case "opt-out": settings.automaticallyDownloadArtwork = false
+            case "provider": settings.artworkSource = .qqMusic
+            default: playback.currentTrack = Track(url: a, title: "Other album", cueSegment: nil)
+            }
+            // Settings updates schedule a task on the main actor.
+            pump()
+            await Task.yield()
+            pump()
+            await images.resume()
+            await wait { await images.cancelledDownloads == 1 }
+            precondition(!FileManager.default.fileExists(atPath: cover.path),
+                         "Cancelled \(reason) request must not publish artwork")
+            let searches = await search.count
+            precondition(searches == 1, "Loading must not start a replacement request")
+        }
+        for reason in ["pause", "stop", "opt-out", "provider", "album"] {
+            await verifyCancellation(reason)
+        }
+        print("CUE artwork workflows: opt-in, loading transitions, cancellation, multi-file notifications and manual replacement passed")
     }
 }
 SWIFT

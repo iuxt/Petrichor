@@ -45,6 +45,9 @@ final class PlaybackManager: NSObject, ObservableObject {
     }
     @Published var restoredUITrack: Track?
 
+    /// Playback intent remains active while an asynchronous track load is paused.
+    @Published private(set) var wantsPlaybackActive = false
+
     // MARK: - Computed Properties
 
     /// Alias for currentTime for backwards compatibility
@@ -70,7 +73,6 @@ final class PlaybackManager: NSObject, ObservableObject {
     private var artworkLoadTask: Task<Void, Never>?
     private var currentArtworkIdentity: String?
     private var playbackRequestGeneration: UInt64 = 0
-    private var wantsPlaybackActive = false
     private let playPauseToggleThrottleInterval: TimeInterval = 0.25
     private var lastPlayPauseToggleTime: TimeInterval = 0
 
