@@ -122,7 +122,7 @@ extension DatabaseManager {
             "album_artist", "composer", "genre", "year"
         ]
         let orClause = searchableColumns
-            .map { "t.\($0) LIKE ? ESCAPE '\\'" }
+            .map { "\(Self.searchableTrackColumnSQL($0, prefix: "t.")) LIKE ? ESCAPE '\\'" }
             .joined(separator: " OR ")
         let matchClause = Array(repeating: "(\(orClause))", count: tokens.count).joined(separator: " AND ")
 
@@ -165,6 +165,22 @@ extension DatabaseManager {
     }
 
     // MARK: - Helper Methods
+
+    /// Treat missing-metadata sentinels as empty search text. In particular, "know"
+    /// must not match every track whose composer or genre is stored as "Unknown …".
+    /// Share this expression between FTS indexing and the short-token LIKE fallback.
+    static func searchableTrackColumnSQL(_ column: String, prefix: String = "") -> String {
+        let value = "\(prefix)\(column)"
+        switch column {
+        case "artist": return "NULLIF(\(value), 'Unknown Artist')"
+        case "album": return "NULLIF(\(value), 'Unknown Album')"
+        case "album_artist": return "NULLIF(NULLIF(\(value), 'Unknown Album Artist'), 'Unknown Artist')"
+        case "composer": return "NULLIF(\(value), 'Unknown Composer')"
+        case "genre": return "NULLIF(\(value), 'Unknown Genre')"
+        case "year": return "NULLIF(\(value), 'Unknown Year')"
+        default: return value
+        }
+    }
 
     /// Builds an FTS5 query expression for the trigram tokenizer. Each whitespace-split
     /// token is wrapped as a phrase (so any FTS5 special chars inside are literalized)

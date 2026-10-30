@@ -359,7 +359,20 @@ extension DatabaseManager {
     }
 
     // MARK: - FTS5 Triggers
+    /// Refresh existing indexes and triggers without changing the stored metadata.
+    static func rebuildFTSSearchIndex(in db: Database) throws {
+        try db.execute(sql: "DROP TRIGGER IF EXISTS tracks_fts_insert")
+        try db.execute(sql: "DROP TRIGGER IF EXISTS tracks_fts_update")
+        try db.execute(sql: "DROP TRIGGER IF EXISTS tracks_fts_delete")
+        try db.execute(sql: "DELETE FROM tracks_fts")
+        try createFTSTriggers(in: db)
+        try populateFTSTable(in: db)
+    }
+
     private static func createFTSTriggers(in db: Database) throws {
+        let columns = ["title", "filename_stem", "artist", "album", "album_artist", "composer", "genre", "year"]
+        let newValues = columns.map { searchableTrackColumnSQL($0, prefix: "NEW.") }.joined(separator: ", ")
+        let assignments = columns.map { "\($0) = \(searchableTrackColumnSQL($0, prefix: "NEW."))" }.joined(separator: ", ")
         // Trigger for new tracks
         try db.execute(sql: """
             CREATE TRIGGER IF NOT EXISTS tracks_fts_insert
@@ -368,7 +381,7 @@ extension DatabaseManager {
                 INSERT INTO tracks_fts(
                     rowid, track_id, title, filename_stem, artist, album, album_artist, composer, genre, year
                 ) VALUES (
-                    NEW.id, NEW.id, NEW.title, NEW.filename_stem, NEW.artist, NEW.album, NEW.album_artist, NEW.composer, NEW.genre, NEW.year
+                    NEW.id, NEW.id, \(newValues)
                 );
             END
         """)
@@ -381,14 +394,7 @@ extension DatabaseManager {
             AFTER UPDATE OF title, filename_stem, artist, album, album_artist, composer, genre, year ON tracks
             BEGIN
                 UPDATE tracks_fts SET
-                    title = NEW.title,
-                    filename_stem = NEW.filename_stem,
-                    artist = NEW.artist,
-                    album = NEW.album,
-                    album_artist = NEW.album_artist,
-                    composer = NEW.composer,
-                    genre = NEW.genre,
-                    year = NEW.year
+                    \(assignments)
                 WHERE rowid = NEW.id;
             END
         """)
@@ -416,12 +422,14 @@ extension DatabaseManager {
         }
         
         // Only populate if empty
+        let columns = ["title", "filename_stem", "artist", "album", "album_artist", "composer", "genre", "year"]
+        let values = columns.map { searchableTrackColumnSQL($0) }.joined(separator: ", ")
         try db.execute(sql: """
             INSERT INTO tracks_fts(
                 rowid, track_id, title, filename_stem, artist, album, album_artist, composer, genre, year
             )
             SELECT
-                id, id, title, filename_stem, artist, album, album_artist, composer, genre, year
+                id, id, \(values)
             FROM tracks
         """)
         

@@ -84,6 +84,12 @@ enum DatabaseMigrator {
             try db.execute(sql: "UPDATE folders SET shasum_hash = NULL")
         }
 
+        // Older indexes included display placeholders such as "Unknown Composer",
+        // causing ordinary substring searches (e.g. "know") to match unrelated tracks.
+        migrator.registerMigration("v20_fts_exclude_unknown_metadata") { db in
+            try DatabaseManager.rebuildFTSSearchIndex(in: db)
+        }
+
         return migrator
     }
 
