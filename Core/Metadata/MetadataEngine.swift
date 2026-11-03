@@ -4,6 +4,8 @@ import Foundation
 
 struct TrackMetadata {
     let url: URL
+    // A failed read must not be mistaken for a successful read of empty tags.
+    var readSucceeded = false
     var title: String?
     var artist: String?
     var album: String?

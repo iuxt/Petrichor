@@ -143,6 +143,8 @@ extension DatabaseManager {
                 """
             )
             deletedCounts["pinned_items"] = Int(db.changesCount)
+
+            try self.updateEntityStats(in: db)
             
             // Log cleanup results
             var totalDeleted = 0
@@ -268,5 +270,7 @@ extension DatabaseManager {
                 .deleteAll(db)
             Logger.info("Removed \(count) orphaned genres")
         }
+        // Duplicate promotion can make a different album/artist visible too.
+        try updateEntityStats(in: db)
     }
 }

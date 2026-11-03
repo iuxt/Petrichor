@@ -42,9 +42,7 @@ enum TrackTrashManager {
 
         let result = await moveTrackCore(
             track,
-            coordinator: coordinator,
-            captureSnapshot: true,
-            advanceAfterMove: true
+            coordinator: coordinator
         )
 
         await notifySingleResult(result)
@@ -71,17 +69,13 @@ enum TrackTrashManager {
         // once, to the next track outside the selection. This avoids the
         // play/stop churn that would happen if it were deleted in the middle.
         let sorted = sortTracksForBatchTrash(tracks, currentTrackId: currentTrackId)
-        let lastIndex = sorted.count - 1
 
         var results: [TrashMoveResult] = []
         results.reserveCapacity(sorted.count)
-        for (index, track) in sorted.enumerated() {
-            let isLast = index == lastIndex
+        for track in sorted {
             let result = await moveTrackCore(
                 track,
-                coordinator: coordinator,
-                captureSnapshot: isLast,
-                advanceAfterMove: isLast
+                coordinator: coordinator
             )
             results.append(result)
         }
@@ -104,24 +98,20 @@ enum TrackTrashManager {
     @MainActor
     private static func moveTrackCore(
         _ track: Track,
-        coordinator: AppCoordinator,
-        captureSnapshot: Bool,
-        advanceAfterMove: Bool
+        coordinator: AppCoordinator
     ) async -> TrashMoveResult {
         let libraryManager = coordinator.libraryManager
         let audioURL = track.url
         let folders = libraryManager.folders
-        let snapshot = captureSnapshot
-            ? coordinator.playbackManager.prepareCurrentTrackForTrashMove(track)
-            : nil
+        // Each move yields to the UI. Playback may change even when this was
+        // not the playing track when the batch was originally sorted.
+        let snapshot = coordinator.playbackManager.prepareCurrentTrackForTrashMove(track)
 
         let files = await Task.detached(priority: .utility) {
             moveTrackFilesToTrash(audioURL: audioURL, folders: folders)
         }.value
         guard files.audioMoved else {
-            if captureSnapshot {
-                coordinator.playbackManager.restoreCurrentTrackAfterFailedTrashMove(snapshot)
-            }
+            coordinator.playbackManager.restoreCurrentTrackAfterFailedTrashMove(snapshot)
             return TrashMoveResult(
                 track: track, audioMoved: false, audioError: files.audioError,
                 failedSidecars: [], libraryRemoved: false, libraryError: nil,
@@ -129,9 +119,7 @@ enum TrackTrashManager {
             )
         }
 
-        if advanceAfterMove {
-            coordinator.playbackManager.handleTrackMovedToTrash(track)
-        }
+        coordinator.playbackManager.handleTrackMovedToTrash(track)
         coordinator.playlistManager.removeTrashedTrackFromQueue(track)
 
         do {

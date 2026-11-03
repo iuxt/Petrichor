@@ -31,6 +31,7 @@ struct SFBMetadataReader: MetadataReader {
 
         // Extract metadata
         Self.extractMetadata(from: audioFile.metadata, into: &metadata)
+        metadata.readSucceeded = true
 
         // Artwork is intentionally not extracted here. It is resolved on demand
         // by ArtworkResolver at playback time via extractEmbeddedArtwork, so the

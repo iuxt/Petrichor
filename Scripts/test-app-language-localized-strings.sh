@@ -140,7 +140,7 @@ from pathlib import Path
 strings = json.loads(Path("Resources/Localizable.xcstrings").read_text())["strings"]
 required_library_help = {
     "Hold the ⌘ key while clicking Refresh for a forced deep re-scan of all metadata.": "单击“刷新”时按住 ⌘ 键，可强制深度重新扫描所有元数据。",
-    "Removes references to library data that no longer exists on disk and compacts the database to reclaim space.": "移除磁盘上已不存在的资料库数据引用，并压缩数据库以回收空间。",
+    "Cleans up unreferenced database records and compacts the database. Offline library folders are preserved.": "清理无引用的数据库记录并压缩数据库，保留离线的资料库文件夹。",
     "Stores generated cover files outside the database. Petrichor trims this cache automatically when it grows past its size limit.": "将生成的封面文件存储在数据库外。当缓存超过大小限制时，Petrichor 会自动清理。",
     "Removes all folders, tracks, playlists, and pinned items. Use the checkbox in the confirmation dialog to optionally reset app preferences.": "移除所有文件夹、曲目、播放列表和固定项目。可在确认对话框中勾选复选框，以同时重置应用偏好设置。",
 }

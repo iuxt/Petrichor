@@ -221,8 +221,7 @@ enum TrackTrashManager {
  @MainActor static func main() async {
   let coordinator = AppCoordinator()
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { TrackTrashManager.gate.signal() }
-  let result = await TrackTrashManager.moveTrackCore(Track(), coordinator: coordinator,
-    captureSnapshot: true, advanceAfterMove: true)
+  let result = await TrackTrashManager.moveTrackCore(Track(), coordinator: coordinator)
   precondition(result.audioMoved && result.libraryRemoved)
   precondition(coordinator.playbackManager.prepared && coordinator.playbackManager.advanced)
   precondition(coordinator.libraryManager.removed)

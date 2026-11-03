@@ -68,7 +68,7 @@ extension DatabaseManager {
                 skipped: 0
             )
             
-            for (_, trackResult) in results {
+            for (url, trackResult) in results {
                 switch trackResult {
                 case let .new(track, metadata):
                     processResults.new.append((track, metadata))
@@ -76,6 +76,9 @@ extension DatabaseManager {
                     processResults.update.append((track, metadata))
                 case .skipped:
                     processResults.skipped += 1
+                case .failed(let error):
+                    processResults.skipped += 1
+                    await scanState?.addFailedFiles([(url: url, error: error)])
                 }
             }
             
@@ -97,6 +100,7 @@ extension DatabaseManager {
                         Logger.error("Failed to update track \(track.title): \(error)")
                     }
                 }
+                try self.refreshScannedAlbumMetadata(in: db, cache: cache)
             }
             
             // Update progress after each chunk
@@ -171,13 +175,16 @@ extension DatabaseManager {
                 // mtime, so the modification-date skip below would never heal it.
                 if hardRefresh || HelperUtils.needsMetadataHealing(existingFullTrack.duration) {
                     let metadata = await MetadataEngine.extractMetadata(from: fileURL)
+                    guard metadata.readSucceeded else {
+                        return (fileURL, .failed(DatabaseError.scanFailed("Cannot read metadata: \(fileURL.path)")))
+                    }
 
                     var updatedTrack = existingFullTrack
                     let hasChanges = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
 
-                    // Hard refresh always persists the re-read; healing only
-                    // persists when the re-parse recovered usable values.
-                    if hardRefresh || hasChanges {
+                    // Failed reads retain the old metadata and modification date,
+                    // allowing a later scan to retry instead of caching a failure.
+                    if hasChanges {
                         return (fileURL, .update(updatedTrack, metadata))
                     }
                     return (fileURL, .skipped)
@@ -200,6 +207,9 @@ extension DatabaseManager {
                     if timeDifference > 1.0 {
                         // File modified, extract fresh metadata
                         let metadata = await MetadataEngine.extractMetadata(from: fileURL)
+                        guard metadata.readSucceeded else {
+                            return (fileURL, .failed(DatabaseError.scanFailed("Cannot read metadata: \(fileURL.path)")))
+                        }
 
                         var updatedTrack = existingFullTrack
                         let hasChanges = updateTrackIfNeeded(&updatedTrack, with: metadata, at: fileURL)
@@ -218,6 +228,9 @@ extension DatabaseManager {
             
             // New track - extract metadata
             let metadata = await MetadataEngine.extractMetadata(from: fileURL)
+            guard metadata.readSucceeded else {
+                return (fileURL, .failed(DatabaseError.scanFailed("Cannot read metadata: \(fileURL.path)")))
+            }
             
             var fullTrack = FullTrack(url: fileURL)
             fullTrack.folderId = folderId
@@ -254,6 +267,8 @@ extension DatabaseManager {
         // Process normalized relationships
         try processTrackArtists(mutableTrack, in: db, cache: cache)
         try processTrackGenres(mutableTrack, in: db, cache: cache)
+
+        if let albumID = mutableTrack.albumId { cache?.affectedAlbumIDs.insert(albumID) }
         
         // Log interesting metadata
         #if DEBUG
@@ -270,10 +285,18 @@ extension DatabaseManager {
         var mutableTrack = track
 
         // Update album association
+        mutableTrack.albumId = nil
         try processTrackAlbum(&mutableTrack, in: db, cache: cache)
 
-        // Update the track
-        try mutableTrack.update(db)
+        // A scan may have captured this record before playback updated its history.
+        // Only write file-derived values; history and duplicate state have their
+        // own writers and must retain the current database values.
+        let preservedColumns: Set<String> = [
+            "id", "date_added", "play_count", "last_played_date",
+            "is_duplicate", "primary_track_id", "duplicate_group_id"
+        ]
+        let columns = try mutableTrack.databaseDictionary.keys.filter { !preservedColumns.contains($0) }
+        try mutableTrack.update(db, columns: columns)
 
         guard let trackId = mutableTrack.trackId else {
             throw DatabaseError.invalidTrackId
@@ -293,6 +316,7 @@ extension DatabaseManager {
         // Re-process normalized relationships
         try processTrackArtists(mutableTrack, in: db, cache: cache)
         try processTrackGenres(mutableTrack, in: db, cache: cache)
+        cache?.affectedAlbumIDs.formUnion([track.albumId, mutableTrack.albumId].compactMap { $0 })
         
     }
     

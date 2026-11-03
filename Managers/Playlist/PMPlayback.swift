@@ -97,6 +97,22 @@ extension PlaylistManager {
 
     // MARK: - Track Navigation
 
+    /// Search each other queue entry at most once. Repeat-one must not keep
+    /// selecting the same missing file. File checks run on the caller's worker.
+    nonisolated static func nextAvailableQueueIndex(
+        in queue: [Track], after index: Int, repeatMode: RepeatMode,
+        fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+    ) -> Int? {
+        guard queue.indices.contains(index), queue.count > 1 else { return nil }
+        for offset in 1..<queue.count {
+            let candidate = index + offset
+            if repeatMode == .off && candidate >= queue.count { break }
+            let next = candidate % queue.count
+            if fileExists(queue[next].url) { return next }
+        }
+        return nil
+    }
+
     /// Resolves the index of the next track per the current repeat mode, or nil at
     /// end-of-queue under `.off`. Shuffle is already reflected in `currentQueue`'s
     /// order. The single source of truth for "what plays next", shared by

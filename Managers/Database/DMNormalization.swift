@@ -14,6 +14,7 @@ class ScanLookupCache {
     var artists: [String: Artist] = [:]        // normalizedName -> Artist
     var albums: [String: Album] = [:]          // compositeKey -> Album
     var genres: [String: Genre] = [:]          // name -> Genre
+    var affectedAlbumIDs = Set<Int64>()
 
     static func albumKey(_ normalizedTitle: String, _ normalizedArtist: String?) -> String {
         "\(normalizedTitle)|\(normalizedArtist ?? "")"
@@ -21,6 +22,13 @@ class ScanLookupCache {
 }
 
 extension DatabaseManager {
+    /// Rebuild once per scan batch so removed album tags cannot leave stale
+    /// primary artists or release dates attached to a surviving album.
+    func refreshScannedAlbumMetadata(in db: Database, cache: ScanLookupCache) throws {
+        try rebuildAlbumMetadata(albumIDs: cache.affectedAlbumIDs, in: db)
+        try rebuildAlbumArtists(albumIDs: cache.affectedAlbumIDs, in: db)
+    }
+
     // MARK: - Artist Management
 
     /// Find or create an artist by name

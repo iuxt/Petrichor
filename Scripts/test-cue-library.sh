@@ -22,6 +22,7 @@ struct ExtendedMetadata { var lyrics: String? }
 extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
 enum HelperUtils { static func sanitizedDuration(_ value: Double) -> Double { value.isFinite ? max(0, value) : 0 } }
 enum Logger { static func warning(_ message: String) {} }
+enum DatabaseError: Error { case scanFailed(String) }
 struct FullTrack {
 '''+fields+'}\n'+metadata+'''
 class DatabaseManager {
@@ -48,6 +49,7 @@ import Foundation
         metadata.title = "Whole image"
         metadata.artist = "Embedded artist"
         metadata.album = "Embedded album"
+        metadata.readSucceeded = true
         metadata.duration = 300
         metadata.sampleRate = 44100
         metadata.codec = "FLAC"
@@ -68,11 +70,12 @@ import Foundation
         """
         try content.write(to: cue, atomically: true, encoding: .utf8)
         let database = DatabaseManager()
-        let imported = await database.prepareCueTracks(sheets: [cue], audioURLs: [source], folderId: 7, existing: [:]).map(\.0)
+        let imported = try await database.prepareCueTracks(sheets: [cue], audioURLs: [source], folderId: 7, existing: [:]).map(\.0)
         precondition(imported.count == 2)
         precondition(MetadataEngine.reads == 1, "Read a shared audio source once per scan")
         precondition(imported.map(\.title) == ["First", "Second"])
         precondition(imported.allSatisfy { $0.album == "Album" && $0.albumArtist == "Album artist" && $0.year == "2025" && $0.folderId == 7 })
+        precondition(imported.allSatisfy { $0.releaseDate == "2025" })
         precondition(imported.map(\.artist) == ["Album artist", "Guest"])
         precondition(imported.map(\.duration) == [150, 150])
         precondition(imported.map(\.trackNumber) == [1, 2])
@@ -83,23 +86,33 @@ import Foundation
         old.playCount = 9
         old.dateAdded = Date(timeIntervalSince1970: 1000)
         try content.replacingOccurrences(of: "Second", with: "Renamed").write(to: cue, atomically: true, encoding: .utf8)
-        let refreshed = await database.prepareCueTracks(sheets: [cue], audioURLs: [source], folderId: 7, existing: [old.libraryPath: old]).map(\.0)
+        let refreshed = try await database.prepareCueTracks(sheets: [cue], audioURLs: [source], folderId: 7, existing: [old.libraryPath: old]).map(\.0)
         precondition(refreshed[1].title == "Renamed" && refreshed[1].trackId == 42 && refreshed[1].playCount == 9 && refreshed[1].dateAdded == old.dateAdded)
+        // A transient source failure must abort before scan reconciliation can
+        // delete existing virtual IDs and their listening history.
+        var unreadable = metadata
+        unreadable.readSucceeded = false
+        MetadataEngine.values[source.path] = unreadable
+        do {
+            _ = try await database.prepareCueTracks(sheets: [cue], audioURLs: [source], folderId: 7, existing: [old.libraryPath: old])
+            preconditionFailure("Failed CUE metadata reads must abort the scan")
+        } catch is DatabaseError { }
+        MetadataEngine.values[source.path] = metadata
         let replacement = root.appendingPathComponent("replacement.wav")
         MetadataEngine.values[replacement.path] = metadata
         try content.replacingOccurrences(of: "image.flac", with: "replacement.wav").write(to: cue, atomically: true, encoding: .utf8)
-        let changed = await database.prepareCueTracks(sheets: [cue], audioURLs: [replacement], folderId: 7, existing: [old.libraryPath: old]).map(\.0)
+        let changed = try await database.prepareCueTracks(sheets: [cue], audioURLs: [replacement], folderId: 7, existing: [old.libraryPath: old]).map(\.0)
         precondition(changed[1].trackId == 42 && changed[1].url == replacement && changed[1].format == "wav")
         try content.write(to: cue, atomically: true, encoding: .utf8)
-        let missing = await database.prepareCueTracks(sheets: [cue], audioURLs: [], folderId: 7, existing: [:])
+        let missing = try await database.prepareCueTracks(sheets: [cue], audioURLs: [], folderId: 7, existing: [:])
         precondition(missing.isEmpty, "Missing source cannot claim/hide audio")
         try content.replacingOccurrences(of: "02:30:00", with: "06:00:00").write(to: cue, atomically: true, encoding: .utf8)
-        let invalid = await database.prepareCueTracks(sheets: [cue], audioURLs: [source], folderId: 7, existing: [:])
+        let invalid = try await database.prepareCueTracks(sheets: [cue], audioURLs: [source], folderId: 7, existing: [:])
         precondition(invalid.isEmpty, "Reject the whole sheet if any boundary exceeds source duration")
         try content.write(to: cue, atomically: true, encoding: .utf8)
         let other = root.appendingPathComponent("Other.cue")
         try content.write(to: other, atomically: true, encoding: .utf8)
-        let duplicate = await database.prepareCueTracks(sheets: [other, cue], audioURLs: [source], folderId: 7, existing: [:])
+        let duplicate = try await database.prepareCueTracks(sheets: [other, cue], audioURLs: [source], folderId: 7, existing: [:])
         precondition(duplicate.count == 2, "Competing sheets must not duplicate the album")
         let b = root.appendingPathComponent("b.flac")
         var secondMetadata = metadata
@@ -113,7 +126,7 @@ import Foundation
         TRACK 02 AUDIO
         INDEX 01 00:00:00
         """.write(to: cue, atomically: true, encoding: .utf8)
-        let multi = await database.prepareCueTracks(sheets: [cue], audioURLs: [source, b], folderId: 7, existing: [:]).map(\.0)
+        let multi = try await database.prepareCueTracks(sheets: [cue], audioURLs: [source, b], folderId: 7, existing: [:]).map(\.0)
         precondition(multi.map(\.duration) == [240, 120], "FILE offsets are local; each last track ends at its own source EOF")
         precondition(multi.allSatisfy { $0.album == "Album" && $0.albumArtist == "Embedded artist" }, "Missing sheet metadata still produces one album")
         print("CUE library metadata, bounds, history, file changes, conflicts and multi-file checks passed")

@@ -228,7 +228,7 @@ extension DatabaseManager {
             .fetchAll(db)
     }
 
-    private func rebuildAlbumMetadata(
+    func rebuildAlbumMetadata(
         albumIDs: Set<Int64>,
         in db: Database
     ) throws {
@@ -264,7 +264,7 @@ extension DatabaseManager {
         }
     }
 
-    private func rebuildAlbumArtists(
+    func rebuildAlbumArtists(
         albumIDs: Set<Int64>,
         in db: Database
     ) throws {

@@ -80,6 +80,8 @@ final class DatabaseManager {
   try! dbQueue.read { db in try Track.filter(Track.Columns.folderId == id).filter(Track.Columns.isDuplicate == false).fetchAll(db) }
  }
 '''
+for signature in ['func updateEntityStats(', 'func updateArtistStats(', 'func updateAlbumStats(']:
+    models+=method('Managers/Database/DMNormalization.swift',signature)
 models+=method('Managers/Database/DMTrackMetadataEditing.swift','func refreshDuplicateGroups(')
 models+=method('Managers/Database/DMFolders.swift','private func removeDeletedTracks(')
 models+=method('Managers/Database/DMPlaylists.swift','func deletePlaylist(')
@@ -98,26 +100,26 @@ func expect(_ condition: @autoclosure () throws -> Bool) rethrows {
   let manager = try DatabaseManager()
   try await manager.dbQueue.write { db in
    try db.execute(sql: """
-    CREATE TABLE artists(id INTEGER PRIMARY KEY);
-    CREATE TABLE albums(id INTEGER PRIMARY KEY);
+    CREATE TABLE artists(id INTEGER PRIMARY KEY, total_tracks INTEGER DEFAULT 0, total_albums INTEGER DEFAULT 0, updated_at DATETIME);
+    CREATE TABLE albums(id INTEGER PRIMARY KEY, total_tracks INTEGER DEFAULT 0, updated_at DATETIME);
     CREATE TABLE genres(id INTEGER PRIMARY KEY);
     CREATE TABLE playlists(id TEXT PRIMARY KEY);
     CREATE TABLE tracks(id INTEGER PRIMARY KEY, folder_id INTEGER, album_id INTEGER REFERENCES albums(id),
      path TEXT, duplicate_key TEXT, quality_score INTEGER, is_duplicate BOOLEAN,
      primary_track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL, duplicate_group_id TEXT);
-    CREATE TABLE track_artists(track_id INTEGER REFERENCES tracks(id) ON DELETE CASCADE, artist_id INTEGER REFERENCES artists(id) ON DELETE CASCADE);
+    CREATE TABLE track_artists(track_id INTEGER REFERENCES tracks(id) ON DELETE CASCADE, artist_id INTEGER REFERENCES artists(id) ON DELETE CASCADE, role TEXT DEFAULT 'artist');
     CREATE TABLE album_artists(album_id INTEGER REFERENCES albums(id) ON DELETE CASCADE, artist_id INTEGER REFERENCES artists(id) ON DELETE CASCADE);
     CREATE TABLE track_genres(track_id INTEGER REFERENCES tracks(id) ON DELETE CASCADE, genre_id INTEGER REFERENCES genres(id) ON DELETE CASCADE);
     CREATE TABLE playlist_tracks(track_id INTEGER REFERENCES tracks(id) ON DELETE CASCADE);
     CREATE TABLE pinned_items(id INTEGER PRIMARY KEY, artist_id INTEGER, album_id INTEGER, playlist_id TEXT);
     INSERT INTO pinned_items VALUES(1,NULL,NULL,'file-backed'),(2,999,NULL,NULL);
-    INSERT INTO artists VALUES(1),(2),(3);
-    INSERT INTO albums VALUES(10),(20),(30);
+    INSERT INTO artists(id) VALUES(1),(2),(3);
+    INSERT INTO albums(id) VALUES(10),(20),(30);
     INSERT INTO tracks VALUES(1,1,10,'/music/primary.flac','song',100,0,NULL,'group'),
      (2,1,20,'/music/copy.mp3','song',80,1,1,'group'),
      (3,1,20,'/music/third.mp3','song',50,1,1,'group'),
      (4,1,30,'/music/gone.mp3','gone',10,1,NULL,'gone');
-    INSERT INTO track_artists VALUES(1,1),(2,2),(3,2),(4,3);
+    INSERT INTO track_artists(track_id,artist_id) VALUES(1,1),(2,2),(3,2),(4,3);
     INSERT INTO album_artists VALUES(10,1),(20,1),(30,3);
     """)
   }
@@ -144,6 +146,9 @@ func expect(_ condition: @autoclosure () throws -> Bool) rethrows {
    precondition(!survivor.isDuplicate && survivor.primaryTrackId == nil)
    precondition(duplicate.isDuplicate && duplicate.primaryTrackId == 2)
    precondition(survivor.duplicateGroupId == duplicate.duplicateGroupId)
+   try expect(Int.fetchOne(db, sql: "SELECT total_tracks FROM albums WHERE id=20") == 1)
+   try expect(Int.fetchOne(db, sql: "SELECT total_tracks FROM artists WHERE id=2") == 1)
+   try expect(Int.fetchOne(db, sql: "SELECT total_albums FROM artists WHERE id=1") == 1)
    try expect(Int.fetchOne(db, sql: "SELECT COUNT(*) FROM album_artists WHERE album_id=20 AND artist_id=1") == 1)
   }
   try await manager.cleanupAfterTrackRemoval([2])

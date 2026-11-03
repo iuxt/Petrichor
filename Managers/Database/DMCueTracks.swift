@@ -7,7 +7,7 @@ extension DatabaseManager {
     func prepareCueTracks(
         sheets: [URL], audioURLs: [URL], folderId: Int64,
         existing: [String: FullTrack]
-    ) async -> [(FullTrack, TrackMetadata)] {
+    ) async throws -> [(FullTrack, TrackMetadata)] {
         var result: [(FullTrack, TrackMetadata)] = []
         var claimedSources = Set<String>()
         var metadataByPath: [String: TrackMetadata] = [:]
@@ -20,6 +20,11 @@ extension DatabaseManager {
                 }
                 for source in Set(sources) where metadataByPath[source.path] == nil {
                     metadataByPath[source.path] = await MetadataEngine.extractMetadata(from: source)
+                    guard metadataByPath[source.path]?.readSucceeded == true else {
+                        // Abort before reconciliation: a transient read failure
+                        // must not replace existing virtual tracks with a whole file.
+                        throw DatabaseError.scanFailed("Cannot read metadata: \(source.path)")
+                    }
                 }
                 var prepared: [(FullTrack, TrackMetadata)] = []
                 // Use one album artist for the whole sheet, including compilations.
@@ -60,6 +65,7 @@ extension DatabaseManager {
                     track.composer = entry.songwriter ?? sheet.songwriter ?? track.composer
                     track.genre = sheet.genre ?? track.genre
                     track.year = sheet.year ?? track.year
+                    track.releaseDate = sheet.year ?? track.releaseDate
                     track.discNumber = sheet.discNumber ?? track.discNumber
                     track.trackNumber = entry.number
                     track.totalTracks = sheet.entries.count
@@ -73,6 +79,8 @@ extension DatabaseManager {
                 }
                 result += prepared
                 claimedSources.formUnion(sources.map(\.path))
+            } catch let error as DatabaseError {
+                throw error
             } catch {
                 Logger.warning("Ignoring unusable CUE sheet \(sheetURL.lastPathComponent): \(error)")
             }
@@ -90,6 +98,7 @@ extension DatabaseManager {
                     try self.processUpdatedTrack(track, in: db, cache: cache)
                 }
             }
+            try self.refreshScannedAlbumMetadata(in: db, cache: cache)
         }
     }
 }

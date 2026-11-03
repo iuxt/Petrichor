@@ -148,6 +148,7 @@ enum TrackProcessResult {
     case new(FullTrack, TrackMetadata)
     case update(FullTrack, TrackMetadata)
     case skipped
+    case failed(Error)
 }
 
 enum DatabaseError: Error {

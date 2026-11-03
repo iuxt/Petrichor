@@ -517,10 +517,16 @@ extension DatabaseManager {
             return Dictionary(uniqueKeysWithValues: fullTracks.map { ($0.libraryPath, $0) })
         }
 
-        let cueTracks = await prepareCueTracks(
-            sheets: enumeration.cueFiles, audioURLs: musicFiles,
-            folderId: folderId, existing: existingFullTracksByPath
-        )
+        let cueTracks: [(FullTrack, TrackMetadata)]
+        do {
+            cueTracks = try await prepareCueTracks(
+                sheets: enumeration.cueFiles, audioURLs: musicFiles,
+                folderId: folderId, existing: existingFullTracksByPath
+            )
+        } catch {
+            try await invalidateFolderScanHash(folderId)
+            throw error
+        }
         // Commit usable sheets before suppressing their whole-file entries.
         try await saveCueTracks(cueTracks)
         let claimedPaths = Set(cueTracks.map { $0.0.url.path })
@@ -553,7 +559,9 @@ extension DatabaseManager {
             folderId: folderId,
             modificationDates: enumeration.modificationDates,
             folderName: folder.name,
-            hardRefresh: hardRefresh,
+            // A missing hash also marks an incomplete scan. Retry metadata even
+            // when a failed hard refresh left the file's mtime unchanged.
+            hardRefresh: hardRefresh || folder.shasumHash == nil,
             existingFullTracksByPath: existingFullTracksByPath,
             scanState: scanState,
             globalScanState: globalScanState
@@ -765,13 +773,18 @@ extension DatabaseManager {
         precomputedHash: String? = nil,
         scanState: ScanState
     ) async throws {
-        // Update folder metadata
-        try await updateFolderMetadata(folderId, precomputedHash: precomputedHash)
-        
         // Get final counts
         let processedCount = await scanState.getProcessedCount()
         let failedFiles = await scanState.getFailedFiles()
         let skippedFiles = await scanState.getSkippedFiles()
+
+        if failedFiles.isEmpty {
+            try await updateFolderMetadata(folderId, precomputedHash: precomputedHash)
+        } else {
+            // An unchanged file may become readable later (e.g. a cloud file or
+            // temporary read error). Never cache this incomplete scan as current.
+            try await invalidateFolderScanHash(folderId)
+        }
         
         // Report failed files
         if !failedFiles.isEmpty {
@@ -807,5 +820,12 @@ extension DatabaseManager {
             \(failedFiles.count) failed, \(skippedFiles.count) skipped
             """
         )
+    }
+
+    private func invalidateFolderScanHash(_ folderId: Int64) async throws {
+        _ = try await dbQueue.write { db in
+            try Folder.filter(Folder.Columns.id == folderId)
+                .updateAll(db, Folder.Columns.shasumHash.set(to: nil))
+        }
     }
 }

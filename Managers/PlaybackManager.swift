@@ -301,11 +301,22 @@ final class PlaybackManager: NSObject, ObservableObject {
                 )
             }
 
-            if playlistManager.currentQueue.count > 1 {
-                Logger.info(
-                    "File not found, skipping to next track in queue"
-                )
-                playlistManager.playNextTrack()
+            let generation = beginPlaybackRequest()
+            let queue = playlistManager.currentQueue
+            let index = playlistManager.currentQueueIndex
+            let repeatMode = playlistManager.repeatMode
+            Task { [weak self] in
+                let next = await Task.detached(priority: .userInitiated) {
+                    PlaylistManager.nextAvailableQueueIndex(in: queue, after: index, repeatMode: repeatMode)
+                }.value
+                guard let self, self.isCurrentPlaybackRequest(generation),
+                      self.playlistManager.currentQueueIndex == index,
+                      self.playlistManager.currentQueue.map(\.libraryPath) == queue.map(\.libraryPath) else { return }
+                if let next {
+                    self.playlistManager.playFromQueue(at: next)
+                } else {
+                    self.stop()
+                }
             }
             return
         }
@@ -902,7 +913,8 @@ final class PlaybackManager: NSObject, ObservableObject {
     func restoreCurrentTrackAfterFailedTrashMove(_ snapshot: TrashMoveSnapshot?) {
         // A file move now yields to the UI. Do not undo playback selected by the
         // user while the filesystem operation was running.
-        guard let snapshot, snapshot.suspensionGeneration == playbackRequestGeneration else { return }
+        guard let snapshot, snapshot.suspensionGeneration == playbackRequestGeneration,
+              isCurrentTrack(snapshot.track), currentEntryId == nil else { return }
         cancelMetadataRestoreForPlaybackChange()
 
         pendingPlaybackRestore = nil
