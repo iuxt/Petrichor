@@ -47,6 +47,12 @@ jobs:
           {
             printf 'Petrichor %s\n\n' "$GITHUB_REF_NAME"
             printf 'This release artifact is unsigned and not notarized.\n\n'
+            printf '## 安装与首次打开\n\n'
+            printf '将 Petrichor 拖入“应用程序”目录。如果提示“Petrichor 已损坏，无法打开”或无法验证开发者，确认下载来源可信后，在“终端”中运行：\n\n'
+            printf '```bash\n'
+            printf 'sudo xattr -r -d com.apple.quarantine /Applications/Petrichor.app\n'
+            printf '```\n\n'
+            printf '按提示输入 Mac 管理员密码（输入时不会显示字符），完成后重新打开 Petrichor。此命令会移除该应用的下载隔离属性；如果安装在其他位置，请替换命令中的应用路径。\n\n'
             printf 'SHA256 checksums:\n\n'
             printf '```text\n'
             cat build/*.sha256
