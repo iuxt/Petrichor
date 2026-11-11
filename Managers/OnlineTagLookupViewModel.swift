@@ -3,8 +3,9 @@ import Foundation
 
 @MainActor
 final class OnlineTagLookupViewModel: ObservableObject {
-    @Published var title: String { didSet { invalidateSearch() } }
-    @Published var artist: String { didSet { invalidateSearch() } }
+    // Moving focus from a text field to the results can write back unchanged text.
+    @Published var title: String { didSet { if title != oldValue { invalidateSearch() } } }
+    @Published var artist: String { didSet { if artist != oldValue { invalidateSearch() } } }
     @Published var provider: OnlineTagProvider = .netease { didSet { if provider != oldValue { invalidateSearch() } } }
     @Published var selection: String?
     @Published private(set) var candidates: [OnlineTagCandidate] = []

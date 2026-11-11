@@ -135,9 +135,30 @@ actor Images: OnlineArtworkServing {
         manual.checkLocalArtwork()
         await wait { !manual.isCheckingArtwork }
         precondition(manual.hasExistingArtwork)
-        manual.search(); await wait { !manual.isSearching }
+        manual.search()
+        manual.title = manual.title
+        manual.artist = manual.artist
+        manual.source = manual.source
+        precondition(manual.isSearching, "Unchanged control commits must not cancel artwork search")
+        await wait { !manual.isSearching }
+        let candidates = manual.candidates
+        manual.title = manual.title
+        manual.artist = manual.artist
+        precondition(manual.candidates == candidates && manual.hasSearched,
+                     "Moving focus to artwork results must preserve the list")
         manual.selection = manual.candidates.first!.id
+        manual.title = manual.title
+        manual.artist = manual.artist
+        manual.selection = manual.selection
+        precondition(manual.candidates == candidates && manual.selectedCandidate == candidates.first && manual.isLoadingPreview,
+                     "Selecting the first artwork result must preserve the list and pending preview")
         await wait { manual.previewData != nil }
+        let preview = manual.previewData
+        manual.title = manual.title
+        manual.artist = manual.artist
+        manual.selection = manual.selection
+        precondition(manual.previewData == preview && !manual.isLoadingPreview && manual.selectedCandidate == candidates.first,
+                     "Unchanged control commits must preserve the loaded artwork preview")
         manual.save()
         precondition(manual.needsOverwriteConfirmation)
         manual.save(overwrite: true)

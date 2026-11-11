@@ -141,12 +141,28 @@ struct Harness {
         model.search()
         await settle { await controlled.count == 1 }
         expect(model.isSearching && !model.canSearch, "Show busy state and prevent duplicate requests")
+        // Text fields can write back unchanged text when focus moves to the results.
+        let firstTitle = model.title
+        let firstArtist = model.artist
+        model.title = firstTitle
+        model.artist = firstArtist
+        expect(model.isSearching && !model.canSearch, "Unchanged query writebacks must not cancel an in-flight search")
         model.title = "Second"
         expect(!model.isSearching && model.candidates.isEmpty, "Editing query invalidates previous search")
         model.search()
         await settle { await controlled.count == 2 }
         await controlled.complete("Second", provider: .netease, with: .success(results))
         await settle { !model.isSearching }
+        let secondTitle = model.title
+        let secondArtist = model.artist
+        model.title = secondTitle
+        model.artist = secondArtist
+        expect(model.candidates == results && model.hasSearched, "Focus changes before selection must preserve results")
+        model.selection = results[0].id
+        model.title = secondTitle
+        model.artist = secondArtist
+        expect(model.candidates == results && model.hasSearched && model.selectedCandidate == results[0],
+               "Focus changes after selecting the first result must preserve results and preview")
         await controlled.complete("First", provider: .netease, with: .success(results))
         try? await Task.sleep(nanoseconds: 10_000_000)
         expect(model.candidates == results, "Old response must not overwrite new results")
@@ -170,6 +186,10 @@ struct Harness {
         qqModel.search()
         await settle { !qqModel.isSearching }
         expect(qqModel.candidates.map(\.id) == [qqCandidate.id], "Tag search must use the selected provider")
+        qqModel.selection = qqCandidate.id
+        qqModel.artist = "Changed artist"
+        expect(qqModel.candidates.isEmpty && qqModel.selection == nil && !qqModel.hasSearched,
+               "An actual artist edit must still invalidate results and selection")
         print("Online tag lookup checks passed")
     }
 }
