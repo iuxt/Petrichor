@@ -20,20 +20,20 @@ enum TrackSortField: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .trackNumber: return "Track number (#)"
-        case .discNumber: return "Disc number"
-        case .title: return "Title"
-        case .artist: return "Artist"
-        case .album: return "Album"
-        case .genre: return "Genre"
-        case .year: return "Year"
-        case .composer: return "Composer"
-        case .filename: return "Filename"
-        case .duration: return "Duration"
-        case .dateAdded: return "Date added"
-        case .playCount: return "Play count"
-        case .lastPlayedDate: return "Last played"
-        case .custom: return "Custom"
+        case .trackNumber: return String(appLocalized: "Track number (#)")
+        case .discNumber: return String(appLocalized: "Disc number")
+        case .title: return String(appLocalized: "Title")
+        case .artist: return String(appLocalized: "Artist")
+        case .album: return String(appLocalized: "Album")
+        case .genre: return String(appLocalized: "Genre")
+        case .year: return String(appLocalized: "Year")
+        case .composer: return String(appLocalized: "Composer")
+        case .filename: return String(appLocalized: "Filename")
+        case .duration: return String(appLocalized: "Duration")
+        case .dateAdded: return String(appLocalized: "Date added")
+        case .playCount: return String(appLocalized: "Play count")
+        case .lastPlayedDate: return String(appLocalized: "Last played")
+        case .custom: return String(appLocalized: "Custom")
         }
     }
 
@@ -114,25 +114,58 @@ enum TrackSortField: String, CaseIterable {
     }
 }
 
+/// Track/disc positions describe an album sequence, rather than an order across albums.
+/// Folders and playlists keep these options for users arranging their own files/lists.
+enum TrackSortContext: Equatable {
+    case library
+    case album
+    case folder
+    case playlist
+
+    func allows(_ field: TrackSortField) -> Bool {
+        self != .library || (field != .trackNumber && field != .discNumber)
+    }
+
+    var sortFields: [TrackSortField] {
+        TrackSortField.sortFields.filter { allows($0) }
+    }
+
+    func normalized(_ order: [KeyPathComparator<Track>]) -> [KeyPathComparator<Track>] {
+        guard !order.isEmpty, order.allSatisfy({ allows(TrackSortField.detect(from: [$0])) }) else {
+            return [TrackSortField.title.getComparator(ascending: true)]
+        }
+        return order
+    }
+}
+
 // MARK: - TrackTableOptionsDropdown
 
 struct TrackTableOptionsDropdown: View {
     @Binding var sortOrder: [KeyPathComparator<Track>]
     @Binding var tableRowSize: TableRowSize
     private let playlistID: UUID?
+    private let sortContext: TrackSortContext
     private let showCustomSort: Bool
     @State private var isCustomSort = false
+    @AppStorage(NativeTrackTable.columnCustomizationKey)
+    private var columnCustomizationData = Data()
+
+    private var columnCustomization: TableColumnCustomization<Track> {
+        NativeTrackTable.columnCustomization(from: columnCustomizationData)
+    }
 
     init(
         sortOrder: Binding<[KeyPathComparator<Track>]>,
         tableRowSize: Binding<TableRowSize>,
         playlistID: UUID? = nil,
-        showCustomSort: Bool = false
+        showCustomSort: Bool = false,
+        sortContext: TrackSortContext = .library
     ) {
         self._sortOrder = sortOrder
         self._tableRowSize = tableRowSize
         self.playlistID = playlistID
         self.showCustomSort = showCustomSort
+        self.sortContext = sortContext
     }
 
     private var currentSortField: TrackSortField {
@@ -147,13 +180,13 @@ struct TrackTableOptionsDropdown: View {
     }
 
     private var canChangeSortOrder: Bool {
-        !isCustomSort && TrackSortField.sortFields.contains(currentSortField)
+        !isCustomSort && sortContext.sortFields.contains(currentSortField)
     }
 
     var body: some View {
         Menu {
             Section("Sort by") {
-                ForEach(TrackSortField.sortFields, id: \.self) { field in
+                ForEach(sortContext.sortFields, id: \.self) { field in
                     Toggle(field.displayName, isOn: Binding(
                         get: { currentSortField == field },
                         set: { _ in setSortField(field) }
@@ -187,6 +220,26 @@ struct TrackTableOptionsDropdown: View {
 
             Divider()
 
+            Menu(String(appLocalized: "Show Columns")) {
+                let customization = columnCustomization
+                let visibleCount = NativeTrackTable.columns.filter { $0.isVisible(in: customization) }.count
+                ForEach(NativeTrackTable.columns, id: \.id) { column in
+                    Toggle(column.displayName, isOn: Binding(
+                        get: { column.isVisible(in: columnCustomization) },
+                        set: { setColumnVisibility(column.id, visible: $0) }
+                    ))
+                    .disabled(column.isVisible(in: customization) && visibleCount <= 1)
+                }
+
+                Divider()
+
+                Button(String(appLocalized: "Restore Default Columns")) {
+                    columnCustomizationData = Data()
+                }
+            }
+
+            Divider()
+
             Section("Row size") {
                 ForEach([TableRowSize.expanded, TableRowSize.compact], id: \.self) { size in
                     Toggle(size.displayName, isOn: Binding(
@@ -214,6 +267,10 @@ struct TrackTableOptionsDropdown: View {
             syncCustomSortState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .trackTableSortChanged)) { notification in
+            if let context = notification.userInfo?["sortContext"] as? TrackSortContext,
+               context != sortContext { return }
+            if let id = notification.userInfo?["sortPlaylistID"] as? String,
+               id != (playlistID?.uuidString ?? "") { return }
             if notification.userInfo?["fromTable"] as? Bool == true,
                let newSortOrder = notification.userInfo?["sortOrder"] as? [KeyPathComparator<Track>] {
                 sortOrder = newSortOrder
@@ -227,6 +284,10 @@ struct TrackTableOptionsDropdown: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .trackTableRowSizeChanged)) { notification in
+            if let context = notification.userInfo?["sortContext"] as? TrackSortContext,
+               context != sortContext { return }
+            if let id = notification.userInfo?["sortPlaylistID"] as? String,
+               id != (playlistID?.uuidString ?? "") { return }
             if notification.userInfo?["fromTable"] as? Bool == true,
                let newRowSize = notification.userInfo?["rowSize"] as? TableRowSize {
                 tableRowSize = newRowSize
@@ -235,6 +296,16 @@ struct TrackTableOptionsDropdown: View {
     }
 
     // MARK: - Helper Methods
+
+    private func setColumnVisibility(_ id: String, visible: Bool) {
+        var customization = columnCustomization
+        NativeTrackTable.setColumnVisibility(id, visible: visible, in: &customization)
+        do {
+            columnCustomizationData = try JSONEncoder().encode(customization)
+        } catch {
+            Logger.warning("Failed to encode TableColumnCustomization: \(error)")
+        }
+    }
 
     private func syncCustomSortState() {
         if let playlistID = playlistID {
@@ -245,6 +316,7 @@ struct TrackTableOptionsDropdown: View {
     }
 
     private func setSortField(_ field: TrackSortField) {
+        guard sortContext.allows(field) else { return }
         let isCustom = field == .custom
         isCustomSort = isCustom
 
@@ -259,6 +331,8 @@ struct TrackTableOptionsDropdown: View {
             name: .trackTableSortChanged,
             object: nil,
             userInfo: [
+                "sortContext": sortContext,
+                "sortPlaylistID": playlistID?.uuidString ?? "",
                 "sortOrder": [newComparator],
                 "userDefaultsKey": userDefaultsKey,
                 "isCustomSort": isCustom
@@ -279,6 +353,8 @@ struct TrackTableOptionsDropdown: View {
             name: .trackTableSortChanged,
             object: nil,
             userInfo: [
+                "sortContext": sortContext,
+                "sortPlaylistID": playlistID?.uuidString ?? "",
                 "sortOrder": [newComparator],
                 "userDefaultsKey": userDefaultsKey,
                 "isCustomSort": false

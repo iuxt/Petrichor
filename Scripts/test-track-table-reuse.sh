@@ -81,9 +81,6 @@ struct Track: Identifiable, Equatable {
     var dateAdded: Date? { nil }
     var playCount: Int { 0 }
     var sortableLastPlayedDate: Date { .distantPast }
-    var sortableTrackNumber: Int { id }
-    var sortableDiscNumber: Int { 1 }
-    var sortableDateAdded: Date { .distantPast }
     var displayArtist: String { artist }
     var displayAlbum: String { album }
     var displayGenre: String { genre }
@@ -91,12 +88,40 @@ struct Track: Identifiable, Equatable {
     var displayComposer: String { composer }
 
 }
-enum TableRowSize: String { case expanded, compact; var rowHeight: CGFloat { self == .expanded ? 56 : 28 } }
+enum TableRowSize: String { case expanded, compact; var displayName: String { rawValue }; var rowHeight: CGFloat { self == .expanded ? 56 : 28 } }
 enum ViewDefaults { static let listArtworkSize: CGFloat = 40 }
 enum Icons { static let musicNote = "music.note"; static let playFill = "play.fill"; static let pauseFill = "pause.fill" }
 
 extension String { init(appLocalized: String) { self = appLocalized } }
 enum HelperUtils { static func formattedDuration(_ value: Double) -> String { "3:00" } }
+struct Playlist { let id: UUID }
+final class PlaybackManager: ObservableObject {
+    var currentTrack: Track?
+    var isPlaying = false
+    func togglePlayPause() {}
+}
+final class PlaylistManager: ObservableObject {
+    enum QueueSource { case library, folder, playlist }
+    var playlists: [Playlist] = []
+    var currentPlaylist: Playlist?
+    var currentQueueSource: QueueSource = .library
+    var isShuffleEnabled = false
+    func showCreatePlaylistModal(with tracks: [Track]) {}
+    func playTrackByAppendingToQueue(_ track: Track) {}
+    func playTrack(_ track: Track, fromTracks: [Track]) {}
+}
+extension View { func hoverEffect(activeBackgroundColor: Color) -> some View { self } }
+extension Notification.Name {
+    static let trackTableSortChanged = Notification.Name("trackTableSortChanged")
+    static let trackTableRowSizeChanged = Notification.Name("trackTableRowSizeChanged")
+    static let trackSelectionChanged = Notification.Name("trackSelectionChanged")
+    static let libraryDataDidChange = Notification.Name("libraryDataDidChange")
+    static let downloadedArtworkDidChange = Notification.Name("downloadedArtworkDidChange")
+    static let playEntityTracks = Notification.Name("playEntityTracks")
+    static let playPlaylistTracks = Notification.Name("playPlaylistTracks")
+    static let createPlaylistFromSelection = Notification.Name("createPlaylistFromSelection")
+}
+
 import SwiftUI
 
 // MARK: - Sort Field Enum
@@ -112,8 +137,6 @@ method = source[source.index('    static func =='):source.index('    // MARK: - 
 with open(sys.argv[1], 'a') as output:
     output.write('\nextension Track {\n' + method + '\n}\n')
 PYTHON
-# Use the actual sort mapping, without its unrelated dropdown UI.
-sed '/\/\/ MARK: - TrackTableOptionsDropdown/,$d' Views/Components/TrackViews/TrackTableOptionsDropdown.swift >> "$test_dir/Stubs.swift"
 cat > "$test_dir/UI.swift" <<'SWIFT'
 import AppKit
 import SwiftUI
@@ -130,6 +153,24 @@ struct ScrollTest: View {
             customization: $customization, rowSize: .expanded, currentTrack: nil,
             isPlaying: false, artworkRevision: 0, onPlay: { _ in ActionProbe.activations += 1 }, onDoubleClick: { _ in ActionProbe.activations += 1 },
             menuItems: { _ in [.button(title: "Play", action: {}), .button(title: "Track Info", action: {})] })
+    }
+}
+
+struct ColumnPreferencesTest: View {
+    let tracks: [Track]
+    @State var sort = [KeyPathComparator(\Track.title)]
+    @State var rowSize: TableRowSize = .compact
+    var body: some View {
+        VStack {
+            TrackTableOptionsDropdown(sortOrder: $sort, tableRowSize: $rowSize)
+            TrackTableView(
+                tracks: tracks, playlistID: nil, entityID: nil, queueSource: .library,
+                onPlayTrack: { _ in }, contextMenuItems: { _, _ in [] },
+                sortOrder: $sort, tableRowSize: $rowSize
+            )
+        }
+        .environmentObject(PlaybackManager())
+        .environmentObject(PlaylistManager())
     }
 }
 
@@ -219,6 +260,20 @@ struct ScrollTest: View {
             precondition(!table.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier("artist"))!.isHidden)
             table.sortDescriptors = [NSSortDescriptor(key: "title", ascending: false)]
             precondition(!TrackSortField.isAscending(from: coordinator.parent.sortOrder))
+            // Position columns stay visible/customizable but cannot sort mixed lists.
+            let trackColumn = table.tableColumn(withIdentifier: .init("trackNumber"))!
+            let discColumn = table.tableColumn(withIdentifier: .init("discNumber"))!
+            precondition(trackColumn.sortDescriptorPrototype == nil && discColumn.sortDescriptorPrototype == nil)
+            let mixedOrder = coordinator.parent.sortOrder
+            table.sortDescriptors = [NSSortDescriptor(key: "trackNumber", ascending: true)]
+            precondition(coordinator.parent.sortOrder == mixedOrder, "mixed-list headers must reject position sorting")
+            var albumTable = coordinator.parent
+            albumTable.sortContext = .album
+            coordinator.update(albumTable)
+            precondition(trackColumn.sortDescriptorPrototype != nil && discColumn.sortDescriptorPrototype != nil)
+            albumTable.sortContext = .library
+            coordinator.update(albumTable)
+            precondition(trackColumn.sortDescriptorPrototype == nil && discColumn.sortDescriptorPrototype == nil)
             let sorted = delays.sorted()
             print("UI scrolling: samples=\(sorted.count), p95 main-loop interval=\(sorted[sorted.count * 95 / 100] * 1000)ms, max=\(sorted.last! * 1000)ms")
             let point = table.convert(NSPoint(x: 100, y: table.rect(ofRow: 3999).midY), to: nil)
@@ -246,6 +301,52 @@ struct ScrollTest: View {
                          "Native cells must repaint metadata changes even when track IDs and ordering are unchanged")
             print("Native metadata refresh regression passed")
             heartbeat?.invalidate()
+            // Use the production toolbar and table together, with an isolated preference domain.
+            let suite = "Petrichor-column-test-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            window.contentView = NSHostingView(rootView: ColumnPreferencesTest(tracks: Array(tracks.prefix(2)))
+                .defaultAppStorage(defaults))
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let preferencesTable = findTable(window.contentView!)!
+            let preferencesCoordinator = preferencesTable.delegate as! NativeTrackTable.Coordinator
+            precondition(preferencesTable.tableColumn(withIdentifier: .init("filename"))!.isHidden)
+            var columns = NativeTrackTable.columnCustomization(from: Data())
+            NativeTrackTable.setColumnVisibility("filename", visible: true, in: &columns)
+            NativeTrackTable.setColumnVisibility("artist", visible: false, in: &columns)
+            defaults.set(try! JSONEncoder().encode(columns), forKey: NativeTrackTable.columnCustomizationKey)
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            precondition(!preferencesTable.tableColumn(withIdentifier: .init("filename"))!.isHidden,
+                         "shared preferences must update an already mounted table")
+            precondition(preferencesTable.tableColumn(withIdentifier: .init("artist"))!.isHidden)
+            let filenameItem = preferencesTable.headerView!.menu!.items.first { ($0.representedObject as? String) == "filename" }!
+            preferencesCoordinator.toggleColumn(filenameItem)
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let saved = NativeTrackTable.columnCustomization(from: defaults.data(forKey: NativeTrackTable.columnCustomizationKey)!)
+            precondition(!NativeTrackTable.columns.first { $0.id == "filename" }!.isVisible(in: saved),
+                         "header changes must persist to the same preference used by the toolbar")
+            // Reopening the table restores the selection.
+            window.contentView = NSHostingView(rootView: ColumnPreferencesTest(tracks: Array(tracks.prefix(2)))
+                .defaultAppStorage(defaults))
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let reopenedTable = findTable(window.contentView!)!
+            precondition(reopenedTable.tableColumn(withIdentifier: .init("artist"))!.isHidden)
+            defaults.set(Data(), forKey: NativeTrackTable.columnCustomizationKey)
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            for definition in NativeTrackTable.columns {
+                precondition(reopenedTable.tableColumn(withIdentifier: .init(definition.id))!.isHidden == !definition.visible,
+                             "restoring defaults must update every column immediately")
+            }
+            // Prevent an empty table through either column menu.
+            var lastColumn = NativeTrackTable.columnCustomization(from: Data())
+            for column in NativeTrackTable.columns where column.id != "title" {
+                NativeTrackTable.setColumnVisibility(column.id, visible: false, in: &lastColumn)
+            }
+            NativeTrackTable.setColumnVisibility("title", visible: false, in: &lastColumn)
+            precondition(NativeTrackTable.columns.filter { $0.isVisible(in: lastColumn) }.map(\.id) == ["title"])
+            let invalid = NativeTrackTable.columnCustomization(from: Data("invalid".utf8))
+            precondition(NativeTrackTable.columns.allSatisfy { $0.isVisible(in: invalid) == $0.visible })
+            print("Column preferences: live updates, header persistence, reopening, defaults and last-column protection passed")
             NSApp.terminate(nil)
         }
     }
@@ -282,6 +383,7 @@ sed 's/static let shared = ArtworkFileCache()/static let shared = ArtworkFileCac
 swiftc -O -D NEW_CACHE -parse-as-library "$test_dir/Stubs.swift" "$test_dir/UI.swift" "$test_dir/ArtworkFileCache.swift" \
     Core/Artwork/{ArtworkRequest,ArtworkLoadLimiter,ArtworkResolver,TrackThumbnailCache}.swift \
     Core/Metadata/ExternalArtworkResolver.swift Utilities/ImageUtils.swift Views/Components/Artwork/ThumbnailImageView.swift \
-    Views/Components/TrackViews/NativeTrackTable.swift Models/Enums/ContextMenuItem.swift -o "$test_dir/scroll-test"
+    Views/Components/TrackViews/{NativeTrackTable,TrackTableOptionsDropdown,TrackTableView}.swift \
+    Managers/PlaylistSortManager.swift Models/Enums/ContextMenuItem.swift -o "$test_dir/scroll-test"
 "$test_dir/scroll-test" "$test_dir/music" --fixture
 /usr/bin/time -l "$test_dir/scroll-test" "$test_dir/music"

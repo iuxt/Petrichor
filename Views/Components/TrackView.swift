@@ -10,6 +10,7 @@ struct TrackView: View {
     @Binding var sortOrder: [KeyPathComparator<Track>]
     let onPlayTrack: (Track) -> Void
     let contextMenuItems: ([Track], PlaybackManager) -> [ContextMenuItem]
+    var sortContext: TrackSortContext = .library
     var queuePlayBehavior: QueuePlayBehavior = .replace
 
     @AppStorage("trackTableRowSize")
@@ -25,7 +26,8 @@ struct TrackView: View {
             contextMenuItems: contextMenuItems,
             sortOrder: $sortOrder,
             tableRowSize: $tableRowSize,
-            queuePlayBehavior: queuePlayBehavior
+            queuePlayBehavior: queuePlayBehavior,
+            sortContext: sortContext
         )
     }
 }

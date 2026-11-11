@@ -99,7 +99,8 @@ struct PlaylistDetailView: View {
                         sortOrder: $playlistSortOrder,
                         tableRowSize: $trackTableRowSize,
                         playlistID: playlistID,
-                        showCustomSort: playlist?.type == .regular
+                        showCustomSort: playlist?.type == .regular,
+                        sortContext: .playlist
                     )
                     .id(playlistID)
                 }
@@ -259,7 +260,8 @@ struct PlaylistDetailView: View {
                             playlistManager: playlistManager,
                             currentContext: .playlist(playlist)
                         )
-                    }
+                    },
+                    sortContext: .playlist
                 )
                 .id(playlistID)
             } else {
@@ -382,7 +384,11 @@ struct PlaylistDetailView: View {
                 NotificationCenter.default.post(
                     name: .trackTableSortChanged,
                     object: nil,
-                    userInfo: ["isCustomSort": true]
+                    userInfo: [
+                        "isCustomSort": true,
+                        "sortContext": TrackSortContext.playlist,
+                        "sortPlaylistID": playlistID.uuidString
+                    ]
                 )
             } else {
                 let ascending = sortManager.getSortAscending(for: playlistID)
@@ -416,7 +422,11 @@ struct PlaylistDetailView: View {
                 NotificationCenter.default.post(
                     name: .trackTableSortChanged,
                     object: nil,
-                    userInfo: ["isCustomSort": true]
+                    userInfo: [
+                        "isCustomSort": true,
+                        "sortContext": TrackSortContext.playlist,
+                        "sortPlaylistID": playlistID.uuidString
+                    ]
                 )
             }
         } else {

@@ -9,7 +9,7 @@ struct SearchInputField: NSViewRepresentable {
     
     init(
         text: Binding<String>,
-        placeholder: String = "Search...",
+        placeholder: String = String(appLocalized: "Search..."),
         fontSize: CGFloat = 12,
         shouldFocus: Bool = false
     ) {
@@ -96,7 +96,7 @@ struct SearchInputField: NSViewRepresentable {
     VStack(spacing: 20) {
         SearchInputField(
             text: $searchText,
-            placeholder: "Search library...",
+            placeholder: String(appLocalized: "Search library..."),
             fontSize: 12
         )
         .frame(width: 280)

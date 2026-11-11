@@ -43,7 +43,8 @@ struct FoldersView: View {
             TrackListHeader(
                 title: node.name,
                 sortOrder: $trackTableSortOrder,
-                tableRowSize: $trackTableRowSize
+                tableRowSize: $trackTableRowSize,
+                sortContext: .folder
             )
         } else {
             TrackListHeader(title: String(appLocalized: "Select a Folder"), trackCount: 0)
@@ -117,7 +118,8 @@ struct FoldersView: View {
                 } else {
                     return []
                 }
-            }
+            },
+            sortContext: .folder
         )
     }
 

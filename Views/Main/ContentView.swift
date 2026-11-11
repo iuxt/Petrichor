@@ -430,7 +430,7 @@ struct ContentView: View {
 
                 SearchInputField(
                     text: $libraryManager.globalSearchText,
-                    placeholder: "Search",
+                    placeholder: String(appLocalized: "Search"),
                     fontSize: 12,
                     shouldFocus: shouldFocusSearch && !isImmersiveActive
                 )
@@ -472,7 +472,7 @@ struct ContentView: View {
         ToolbarItem(placement: .confirmationAction) {
             SearchInputField(
                 text: $libraryManager.globalSearchText,
-                placeholder: "Search",
+                placeholder: String(appLocalized: "Search"),
                 fontSize: 12,
                 shouldFocus: shouldFocusSearch && !isImmersiveActive
             )

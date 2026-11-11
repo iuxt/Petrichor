@@ -14,12 +14,22 @@ struct NativeTrackTable: NSViewRepresentable {
     let onPlay: (Track) -> Void
     let onDoubleClick: (Track) -> Void
     let menuItems: ([Track]) -> [ContextMenuItem]
+    var sortContext: TrackSortContext = .library
 
     struct Column {
         let id: String
         let title: String
         let width: CGFloat
         let visible: Bool
+
+        var displayName: String {
+            TrackSortField(rawValue: id)?.displayName ?? title
+        }
+
+        func isVisible(in customization: TableColumnCustomization<Track>) -> Bool {
+            let visibility = customization[visibility: id]
+            return visibility == .visible || (visibility == .automatic && visible)
+        }
     }
     static var columns: [Column] { [
         Column(id: "trackNumber", title: "#", width: 45, visible: false),
@@ -34,6 +44,23 @@ struct NativeTrackTable: NSViewRepresentable {
         Column(id: "dateAdded", title: String(appLocalized: "Date Added"), width: 110, visible: false),
         Column(id: "duration", title: String(appLocalized: "Duration"), width: 65, visible: true)
     ] }
+
+    static let columnCustomizationKey = "trackTableColumnCustomizationData"
+
+    static func columnCustomization(from data: Data) -> TableColumnCustomization<Track> {
+        (try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: data))
+            ?? TableColumnCustomization<Track>()
+    }
+
+    static func setColumnVisibility(
+        _ id: String, visible: Bool, in customization: inout TableColumnCustomization<Track>
+    ) {
+        guard let column = columns.first(where: { $0.id == id }) else { return }
+        // Both menu entry points must leave at least one column visible.
+        if !visible, column.isVisible(in: customization),
+           columns.filter({ $0.isVisible(in: customization) }).count <= 1 { return }
+        customization[visibility: id] = visible ? .visible : .hidden
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -73,6 +100,7 @@ struct NativeTrackTable: NSViewRepresentable {
         table.activateSelection = { [weak coordinator = context.coordinator] in coordinator?.activateSelection() }
         table.viewportChanged = { [weak coordinator = context.coordinator] in coordinator?.schedulePrefetch() }
         let headerMenu = NSMenu()
+        headerMenu.autoenablesItems = false
         for column in table.tableColumns {
             let item = NSMenuItem(title: column.title, action: #selector(Coordinator.toggleColumn(_:)), keyEquivalent: "")
             item.representedObject = column.identifier.rawValue
@@ -137,12 +165,16 @@ struct NativeTrackTable: NSViewRepresentable {
             defer { applying = false; initialized = true }
             for definition in NativeTrackTable.columns {
                 guard let column = table.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(definition.id)) else { continue }
-                let visibility = parent.customization[visibility: definition.id]
-                column.isHidden = visibility == .hidden || (visibility == .automatic && !definition.visible)
+                if let field = TrackSortField(rawValue: definition.id) {
+                    column.sortDescriptorPrototype = parent.sortContext.allows(field)
+                        ? NSSortDescriptor(key: definition.id, ascending: true) : nil
+                }
+                column.isHidden = !definition.isVisible(in: parent.customization)
             }
             for item in table.headerView?.menu?.items ?? [] {
                 if let id = item.representedObject as? String, let column = table.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(id)) {
                     item.state = column.isHidden ? .off : .on
+                    item.isEnabled = column.isHidden || table.tableColumns.filter({ !$0.isHidden }).count > 1
                 }
             }
             let field = TrackSortField.detect(from: parent.sortOrder)
@@ -297,7 +329,8 @@ struct NativeTrackTable: NSViewRepresentable {
 
         func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
             guard !applying, let sort = tableView.sortDescriptors.first,
-                  let key = sort.key, let field = TrackSortField(rawValue: key) else { return }
+                  let key = sort.key, let field = TrackSortField(rawValue: key),
+                  parent.sortContext.allows(field) else { return }
             parent.sortOrder = [field == .dateAdded
                 ? KeyPathComparator(\Track.sortableDateAdded, order: sort.ascending ? .forward : .reverse)
                 : field.getComparator(ascending: sort.ascending)]
@@ -316,9 +349,7 @@ struct NativeTrackTable: NSViewRepresentable {
         @objc func toggleColumn(_ item: NSMenuItem) {
             guard let key = item.representedObject as? String,
                   let column = table?.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(key)) else { return }
-            // Keep at least one visible column, matching the native table contract.
-            if !column.isHidden && table?.tableColumns.filter({ !$0.isHidden }).count == 1 { return }
-            parent.customization[visibility: key] = column.isHidden ? .visible : .hidden
+            NativeTrackTable.setColumnVisibility(key, visible: column.isHidden, in: &parent.customization)
             update(parent)
         }
 

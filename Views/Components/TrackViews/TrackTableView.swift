@@ -21,6 +21,7 @@ struct TrackTableView: View {
     @Binding var sortOrder: [KeyPathComparator<Track>]
     @Binding var tableRowSize: TableRowSize
     var queuePlayBehavior: QueuePlayBehavior = .replace
+    var sortContext: TrackSortContext = .library
     
     @EnvironmentObject var playbackManager: PlaybackManager
     @EnvironmentObject var playlistManager: PlaylistManager
@@ -31,19 +32,16 @@ struct TrackTableView: View {
     @State private var artworkRevision = 0
     
     @State private var isCustomSort: Bool = false
-    @State private var hasInitializedCustomization = false
-    @State private var columnCustomization: TableColumnCustomization<Track> = {
-        if let data = UserDefaults.standard.data(forKey: "trackTableColumnCustomizationData"),
-           !data.isEmpty,
-           let decoded = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: data) {
-            return decoded
-        }
-        return TableColumnCustomization<Track>()
-    }()
-    
-    @AppStorage("trackTableColumnCustomizationData")
+    @AppStorage(NativeTrackTable.columnCustomizationKey)
     private var columnCustomizationData = Data()
-    
+
+    // Read the shared preference directly so toolbar and header menus, all track
+    // lists, and newly opened windows always use the same column selection.
+    private var columnCustomization: TableColumnCustomization<Track> {
+        get { NativeTrackTable.columnCustomization(from: columnCustomizationData) }
+        nonmutating set { saveColumnCustomization(newValue) }
+    }
+
     private func isCurrentTrack(_ track: Track) -> Bool {
         guard let currentTrack = playbackManager.currentTrack else { return false }
         if let currentId = currentTrack.trackId, let trackId = track.trackId {
@@ -54,14 +52,12 @@ struct TrackTableView: View {
 
     var body: some View {
         tableView
-            .onChange(of: columnCustomization) { _, newValue in
-                if hasInitializedCustomization {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        self.saveColumnCustomization(newValue)
-                    }
-                }
-            }
             .onChange(of: sortOrder) { oldValue, newValue in
+                let normalized = sortContext.normalized(newValue)
+                guard normalized == newValue else {
+                    sortOrder = normalized
+                    return
+                }
                 if oldValue != newValue {
                     // Table column header click overrides custom sort
                     if isCustomSort {
@@ -80,9 +76,16 @@ struct TrackTableView: View {
                     NotificationCenter.default.post(
                         name: .trackTableSortChanged,
                         object: nil,
-                        userInfo: ["sortOrder": newValue, "fromTable": true]
+                        userInfo: [
+                            "sortOrder": newValue, "fromTable": true,
+                            "sortContext": sortContext,
+                            "sortPlaylistID": playlistID?.uuidString ?? ""
+                        ]
                     )
                 }
+            }
+            .onChange(of: sortContext) {
+                sortOrder = sortContext.normalized(sortOrder)
             }
             .onChange(of: tracks) {
                 if let playlistID = playlistID {
@@ -104,7 +107,6 @@ struct TrackTableView: View {
             }
             .onAppear {
                 initializeSortedTracks()
-                hasInitializedCustomization = true
             }
             .onDisappear {
                 sortTask?.cancel()
@@ -144,11 +146,15 @@ struct TrackTableView: View {
     private var tableView: some View {
         NativeTrackTable(
             tracks: sortedTracks, selection: $selection, sortOrder: $sortOrder,
-            customization: $columnCustomization, rowSize: tableRowSize,
+            customization: Binding(
+                get: { columnCustomization },
+                set: { columnCustomization = $0 }
+            ), rowSize: tableRowSize,
             currentTrack: playbackManager.currentTrack, isPlaying: playbackManager.isPlaying,
             artworkRevision: artworkRevision,
             onPlay: handleDoubleTap, onDoubleClick: handleDoubleTap,
-            menuItems: { contextMenuItems($0, playbackManager) }
+            menuItems: { contextMenuItems($0, playbackManager) },
+            sortContext: sortContext
         )
     }
 
@@ -166,6 +172,7 @@ struct TrackTableView: View {
 
         // Follow overridden sort order for entities and playlists
         if entityID != nil || playlistID != nil {
+            sortOrder = sortContext.normalized(sortOrder)
             sortedTracks = tracks.sorted(using: sortOrder)
             return
         }
@@ -174,9 +181,9 @@ struct TrackTableView: View {
            let key = savedSort["key"] as? String,
            let ascending = savedSort["ascending"] as? Bool,
            let field = TrackSortField.from(storageKey: key) {
-            let comparator = field.getComparator(ascending: ascending)
-            sortOrder = [comparator]
-            sortedTracks = tracks.sorted(using: [comparator])
+            let order = sortContext.normalized([field.getComparator(ascending: ascending)])
+            sortOrder = order
+            sortedTracks = tracks.sorted(using: order)
             return
         }
         
@@ -223,10 +230,11 @@ struct TrackTableView: View {
         guard !isCustomSort, !tracks.isEmpty else { return }
 
         let initialTracks = tracks
+        let effectiveSortOrder = sortContext.normalized(newSortOrder)
 
         sortTask = Task { @MainActor in
             let sorted = await Task.detached(priority: .userInitiated) {
-                initialTracks.sorted(using: newSortOrder)
+                initialTracks.sorted(using: effectiveSortOrder)
             }.value
             guard !Task.isCancelled else { return }
             sortedTracks = sorted
@@ -236,6 +244,8 @@ struct TrackTableView: View {
 
     private func saveSortOrderToUserDefaults(_ sortOrder: [KeyPathComparator<Track>], key: String = "trackTableSortOrder") {
         let field = TrackSortField.detect(from: sortOrder)
+        // Album/folder/playlist position sorts must not become the library default.
+        guard playlistID == nil, TrackSortContext.library.normalized(sortOrder) == sortOrder else { return }
         let ascending = TrackSortField.isAscending(from: sortOrder)
         let storage: [String: Any] = ["key": field.storageKey, "ascending": ascending]
         UserDefaults.standard.set(storage, forKey: key)
@@ -295,6 +305,8 @@ struct TrackTableView: View {
     }
 
     private func handleSortChangedNotification(_ notification: Notification) {
+        guard (notification.userInfo?["sortContext"] as? TrackSortContext).map({ $0 == sortContext }) ?? true,
+              (notification.userInfo?["sortPlaylistID"] as? String).map({ $0 == (playlistID?.uuidString ?? "") }) ?? true else { return }
         // Handle custom sort flag from dropdown
         if let customSort = notification.userInfo?["isCustomSort"] as? Bool {
             isCustomSort = customSort
@@ -305,12 +317,13 @@ struct TrackTableView: View {
         }
 
         if let newSortOrder = notification.userInfo?["sortOrder"] as? [KeyPathComparator<Track>] {
-            sortOrder = newSortOrder
+            let order = sortContext.normalized(newSortOrder)
+            sortOrder = order
 
             if let userDefaultsKey = notification.userInfo?["userDefaultsKey"] as? String {
-                saveSortOrderToUserDefaults(newSortOrder, key: userDefaultsKey)
+                saveSortOrderToUserDefaults(order, key: userDefaultsKey)
             } else {
-                saveSortOrderToUserDefaults(newSortOrder)
+                saveSortOrderToUserDefaults(order)
             }
         }
     }

@@ -108,6 +108,7 @@ struct TrackListHeader<Trailing: View>: View {
     let sortOrder: Binding<[KeyPathComparator<Track>]>?
     let tableRowSize: Binding<TableRowSize>?
     let trailing: (() -> Trailing)?
+    var sortContext: TrackSortContext = .library
 
     // With sort options + trailing content
     init(
@@ -115,6 +116,7 @@ struct TrackListHeader<Trailing: View>: View {
         subtitle: String? = nil,
         sortOrder: Binding<[KeyPathComparator<Track>]>,
         tableRowSize: Binding<TableRowSize>,
+        sortContext: TrackSortContext = .library,
         @ViewBuilder trailingContent: @escaping () -> Trailing
     ) {
         self.title = title
@@ -122,6 +124,7 @@ struct TrackListHeader<Trailing: View>: View {
         self.trackCount = nil
         self.sortOrder = sortOrder
         self.tableRowSize = tableRowSize
+        self.sortContext = sortContext
         self.trailing = trailingContent
     }
 
@@ -130,13 +133,15 @@ struct TrackListHeader<Trailing: View>: View {
         title: String,
         subtitle: String? = nil,
         sortOrder: Binding<[KeyPathComparator<Track>]>,
-        tableRowSize: Binding<TableRowSize>
+        tableRowSize: Binding<TableRowSize>,
+        sortContext: TrackSortContext = .library
     ) where Trailing == EmptyView {
         self.title = title
         self.subtitle = subtitle
         self.trackCount = nil
         self.sortOrder = sortOrder
         self.tableRowSize = tableRowSize
+        self.sortContext = sortContext
         self.trailing = nil
     }
 
@@ -193,7 +198,8 @@ struct TrackListHeader<Trailing: View>: View {
             if let sortOrder = sortOrder, let tableRowSize = tableRowSize {
                 TrackTableOptionsDropdown(
                     sortOrder: sortOrder,
-                    tableRowSize: tableRowSize
+                    tableRowSize: tableRowSize,
+                    sortContext: sortContext
                 )
             }
         }

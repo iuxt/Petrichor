@@ -109,7 +109,8 @@ struct EntityDetailView: View {
                             playlistManager: playlistManager,
                             currentContext: .library
                         )
-                    }
+                    },
+                    sortContext: sortContext
                 )
             }
         }
@@ -193,13 +194,20 @@ struct EntityDetailView: View {
             HStack(spacing: 12) {
                 TrackTableOptionsDropdown(
                     sortOrder: $trackTableSortOrder,
-                    tableRowSize: $trackTableRowSize
+                    tableRowSize: $trackTableRowSize,
+                    sortContext: sortContext
                 )
             }
             .padding([.bottom, .trailing], 12)
         }
     }
     
+    private var sortContext: TrackSortContext {
+        if entity is AlbumEntity { return .album }
+        if entity is FolderEntity { return .folder }
+        return .library
+    }
+
     private var isPersonEntity: Bool {
         entity is ArtistEntity
     }
@@ -534,7 +542,9 @@ extension EntityDetailView {
                   let key = savedSort["key"] as? String,
                   let ascending = savedSort["ascending"] as? Bool,
                   let field = TrackSortField.from(storageKey: key) {
-            trackTableSortOrder = [field.getComparator(ascending: ascending)]
+            trackTableSortOrder = sortContext.normalized([field.getComparator(ascending: ascending)])
+        } else {
+            trackTableSortOrder = [TrackSortField.title.getComparator(ascending: true)]
         }
 
         self.tracks = fetchedTracks

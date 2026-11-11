@@ -89,13 +89,23 @@ struct LibraryView: View {
 
     // MARK: - Tracks List View
 
+    private var sortContext: TrackSortContext {
+        if libraryManager.globalSearchText.isEmpty,
+           selectedFilterType == .albums,
+           let item = selectedFilterItem, !item.isAllItem {
+            return .album
+        }
+        return .library
+    }
+
     private var tracksListView: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             TrackListHeader(
                 title: headerTitle,
                 sortOrder: $trackTableSortOrder,
-                tableRowSize: $trackTableRowSize
+                tableRowSize: $trackTableRowSize,
+                sortContext: sortContext
             )
 
             Divider()
@@ -121,6 +131,7 @@ struct LibraryView: View {
                             currentContext: .library
                         )
                     },
+                    sortContext: sortContext,
                     queuePlayBehavior: libraryManager.globalSearchText.isEmpty ? .replace : .append
                 )
             }
