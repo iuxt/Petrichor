@@ -201,9 +201,7 @@ struct LibraryView: View {
             var tracks = libraryManager.searchResults
 
             if let filterItem = selectedFilterItem, !filterItem.isAllItem {
-                tracks = tracks.filter { track in
-                    selectedFilterType.trackMatches(track, filterValue: filterItem.name)
-                }
+                tracks = tracks.filter(filterItem.matches)
             }
 
             cachedFilteredTracks = tracks

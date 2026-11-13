@@ -185,7 +185,36 @@ enum LibraryFilterType: String, CaseIterable {
         }
     }
 
+    private enum AlbumGroup: Hashable {
+        case album(Int64)
+        case unassigned(String)
+
+        init(_ track: Track) {
+            if let id = track.albumId {
+                self = .album(id)
+            } else {
+                self = .unassigned(track.album.isEmpty ? LibraryFilterType.albums.unknownPlaceholder : track.album)
+            }
+        }
+    }
+
     func getFilterItems(from tracks: [Track]) -> [LibraryFilterItem] {
+        if self == .albums {
+            return Dictionary(grouping: tracks, by: AlbumGroup.init).values.map { tracks in
+                let first = tracks[0]
+                let albumArtist = tracks.lazy.compactMap(\.albumArtist).first { !$0.isEmpty }
+                let sharedArtist = tracks.allSatisfy { $0.artist == first.artist }
+                    && !first.artist.isEmpty && first.artist != LibraryFilterType.artists.unknownPlaceholder
+                return LibraryFilterItem(
+                    name: first.album.isEmpty ? unknownPlaceholder : first.album,
+                    count: tracks.count,
+                    filterType: self,
+                    albumId: first.albumId,
+                    albumArtist: first.albumId == nil ? nil : albumArtist ?? (sharedArtist ? first.artist : nil)
+                )
+            }
+        }
+
         if usesMultiArtistParsing {
             // Multi-artist parsing with deduplication
             var normalizedToArtistInfo: [String: (displayName: String, tracks: Set<Track>)] = [:]

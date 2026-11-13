@@ -32,7 +32,8 @@ extension DatabaseManager {
             name: actualName,
             count: count,
             filterType: filterType,
-            albumId: albumId
+            albumId: albumId,
+            albumArtist: filterType == .albums ? row["album_artist"] : nil
         )
     }
     
@@ -190,52 +191,30 @@ extension DatabaseManager {
             return try dbQueue.read { db in
                 let hideDuplicates = UserDefaults.standard.bool(forKey: "hideDuplicateTracks")
                 
-                let albumsQuery = if hideDuplicates {
-                    """
-                    SELECT
-                        a.title as name,
-                        a.sort_title,
-                        COUNT(DISTINCT CASE WHEN t.is_duplicate = 0 THEN t.id END) as track_count,
-                        a.id as id
-                    FROM albums a
-                    LEFT JOIN tracks t ON a.id = t.album_id
-                    GROUP BY a.id, a.title, a.sort_title
-                    HAVING track_count > 0
-                    """
-                } else {
-                    """
-                    SELECT
-                        title as name,
-                        sort_title,
-                        total_tracks as track_count,
-                        id
-                    FROM albums
-                    WHERE total_tracks > 0
-                    """
-                }
-
                 let duplicateClause = hideDuplicates ? "AND t.is_duplicate = 0" : ""
-                let unknownAlbumQuery = """
-                    SELECT
-                        'Unknown Album' as name,
-                        'Unknown Album' as sort_title,
-                        COUNT(*) as track_count,
-                        NULL as id
-                    FROM tracks t
-                    WHERE t.album = 'Unknown Album' \(duplicateClause)
-                    GROUP BY t.album
-                """
-                
                 let sql = """
-                    \(albumsQuery)
-                    
+                    SELECT a.title AS name, a.sort_title, COUNT(*) AS track_count, a.id AS id,
+                        (SELECT artists.name
+                         FROM album_artists
+                         JOIN artists ON artists.id = album_artists.artist_id
+                         WHERE album_artists.album_id = a.id AND album_artists.role = 'primary'
+                         ORDER BY album_artists.position
+                         LIMIT 1) AS album_artist
+                    FROM albums a
+                    JOIN tracks t ON t.album_id = a.id \(duplicateClause)
+                    GROUP BY a.id
+
                     UNION ALL
-                    
-                    \(unknownAlbumQuery)
-                    
-                    ORDER BY sort_title COLLATE NOCASE
-                """
-                
+
+                    SELECT 'Unknown Album' AS name, 'Unknown Album' AS sort_title,
+                        COUNT(*) AS track_count, NULL AS id, NULL AS album_artist
+                    FROM tracks t
+                    WHERE t.album_id IS NULL AND t.album = 'Unknown Album' \(duplicateClause)
+                    HAVING COUNT(*) > 0
+
+                    ORDER BY sort_title COLLATE NOCASE, id
+                    """
+
                 let rows = try Row.fetchAll(db, sql: sql)
                 return rows.map { row in rowToFilterItem(row, filterType: .albums) }
             }

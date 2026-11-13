@@ -180,30 +180,10 @@ struct LibrarySidebarView: View {
     }
 
     private func handleItemSelection(_ item: LibrarySidebarItem) {
-        if selectedSidebarItem?.id == item.id &&
-           selectedFilterItem?.name == item.filterName {
-            return
-        }
-        
-        // Update the selected sidebar item
-        selectedSidebarItem = item
-
-        if item.filterName.isEmpty {
-            // "All" item selected - use appropriate track count based on search state
-            let totalCount = libraryManager.searchResults.count
-            selectedFilterItem = LibraryFilterItem.allItem(for: selectedFilterType, totalCount: totalCount)
+        if let filterItem = item.filterItem {
+            selectedFilterItem = filterItem
         } else {
-            // Regular filter item - calculate actual count based on current search
-            let tracksToFilter = libraryManager.searchResults
-            let matchingTracks = tracksToFilter.filter { track in
-                selectedFilterType.trackMatches(track, filterValue: item.filterName)
-            }
-
-            selectedFilterItem = LibraryFilterItem(
-                name: item.filterName,
-                count: matchingTracks.count,
-                filterType: selectedFilterType
-            )
+            selectAllSearchResults()
         }
     }
 
@@ -279,6 +259,9 @@ struct LibrarySidebarView: View {
         // Sort regular items based on sortAscending state
         regularItems.sort { item1, item2 in
             let comparison = item1.name.localizedCaseInsensitiveCompare(item2.name)
+            if comparison == .orderedSame, item1.filterType == .albums {
+                return (item1.albumId ?? 0) < (item2.albumId ?? 0)
+            }
             return sortAscending ?
                 comparison == .orderedAscending :
                 comparison == .orderedDescending
@@ -300,8 +283,8 @@ struct LibrarySidebarView: View {
 
     private func createContextMenuItems(for item: LibrarySidebarItem) -> [ContextMenuItem] {
         // Don't show context menu for "All" items
-        guard !item.filterName.isEmpty else { return [] }
-        return libraryManager.contextMenuItems(filterType: item.filterType, filterValue: item.filterName, albumId: item.albumId)
+        guard let filterItem = item.filterItem else { return [] }
+        return libraryManager.contextMenuItems(filterType: filterItem.filterType, filterValue: filterItem.name, albumId: filterItem.albumId)
     }
 }
 

@@ -152,17 +152,18 @@ struct LibrarySidebarItem: SidebarItem {
     let count: Int?
     let filterType: LibraryFilterType
     let filterName: String
-    let albumId: Int64?
+    let filterItem: LibraryFilterItem?
 
     init(filterItem: LibraryFilterItem) {
         self.id = filterItem.id
         self.title = filterItem.name
-        self.subtitle = String(appLocalized: "\(filterItem.count) songs")
+        let songCount = String(appLocalized: "\(filterItem.count) songs")
+        self.subtitle = filterItem.albumArtist.map { "\($0) · \(songCount)" } ?? songCount
         self.icon = Self.getIcon(for: filterItem.filterType, isAllItem: false)
         self.count = nil
         self.filterType = filterItem.filterType
         self.filterName = filterItem.name
-        self.albumId = filterItem.albumId
+        self.filterItem = filterItem
     }
 
     // Special "All" item
@@ -174,7 +175,7 @@ struct LibrarySidebarItem: SidebarItem {
         self.count = nil
         self.filterType = filterType
         self.filterName = ""
-        self.albumId = nil
+        self.filterItem = nil
     }
 
     private static func getIcon(for filterType: LibraryFilterType, isAllItem: Bool) -> String {
