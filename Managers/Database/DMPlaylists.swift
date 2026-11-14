@@ -302,43 +302,19 @@ extension DatabaseManager {
     }
 
     /// Load tracks for a specific playlist on demand
+    func playbackTracksForSmartPlaylist(_ playlist: Playlist) async throws -> [Track] {
+        if playlist.smartCriteria?.autoUpdate ?? true {
+            return try await getTracksForSmartPlaylist(playlist)
+        }
+        return try await dbQueue.read { db in
+            try self.snapshotTracks(for: playlist.id, in: db)
+        }
+    }
+
     func loadTracksForPlaylist(_ playlistId: UUID) -> [Track] {
         do {
             return try dbQueue.read { db in
-                // Get playlist tracks in order with their dateAdded
-                let playlistTracks = try PlaylistTrack
-                    .filter(PlaylistTrack.Columns.playlistId == playlistId.uuidString)
-                    .order(PlaylistTrack.Columns.position)
-                    .fetchAll(db)
-                
-                guard !playlistTracks.isEmpty else {
-                    return []
-                }
-                
-                let trackIds = playlistTracks.map { $0.trackId }
-                
-                // Fetch tracks for this playlist only
-                let tracks = try applyDuplicateFilter(Track.all())
-                    .filter(trackIds.contains(Track.Columns.trackId))
-                    .fetchAll(db)
-                
-                // Create dictionaries for quick lookup
-                var trackDict: [Int64: Track] = [:]
-                for track in tracks {
-                    if let trackId = track.trackId {
-                        trackDict[trackId] = track
-                    }
-                }
-                
-                var sortedTracks: [Track] = []
-                for playlistTrack in playlistTracks {
-                    if var track = trackDict[playlistTrack.trackId] {
-                        track.dateAdded = playlistTrack.dateAdded
-                        sortedTracks.append(track)
-                    }
-                }
-                
-                return sortedTracks
+                try self.snapshotTracks(for: playlistId, in: db)
             }
         } catch {
             Logger.error("Failed to load tracks for playlist \(playlistId): \(error)")
@@ -346,6 +322,43 @@ extension DatabaseManager {
         }
     }
     
+    private func snapshotTracks(for playlistId: UUID, in db: Database) throws -> [Track] {
+        // Get playlist tracks in order with their dateAdded
+        let playlistTracks = try PlaylistTrack
+            .filter(PlaylistTrack.Columns.playlistId == playlistId.uuidString)
+            .order(PlaylistTrack.Columns.position)
+            .fetchAll(db)
+
+        guard !playlistTracks.isEmpty else {
+            return []
+        }
+
+        let trackIds = playlistTracks.map { $0.trackId }
+
+        // Fetch tracks for this playlist only
+        let tracks = try applyDuplicateFilter(Track.all())
+            .filter(trackIds.contains(Track.Columns.trackId))
+            .fetchAll(db)
+
+        // Create dictionaries for quick lookup
+        var trackDict: [Int64: Track] = [:]
+        for track in tracks {
+            if let trackId = track.trackId {
+                trackDict[trackId] = track
+            }
+        }
+
+        var sortedTracks: [Track] = []
+        for playlistTrack in playlistTracks {
+            if var track = trackDict[playlistTrack.trackId] {
+                track.dateAdded = playlistTrack.dateAdded
+                sortedTracks.append(track)
+            }
+        }
+
+        return sortedTracks
+    }
+
     // MARK: - Incremental Track Mutations
 
     /// Append tracks that aren't already present, preserving existing rows and their order.

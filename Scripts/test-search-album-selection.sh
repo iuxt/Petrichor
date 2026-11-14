@@ -48,6 +48,8 @@ let items = LibraryFilterType.albums.getFilterItems(from: tracks)
 precondition(items.count == 4)
 let selection = Selection()
 for (id, artist, trackIDs) in [(Int64(10), "甲", [3, 1]), (20, "乙", [4, 2])] {
+    let request = LibraryFilterRequest(filterType: .albums, value: "同名专辑", albumId: id)
+    precondition(items.filter(request.matches).map(\.albumId) == [id])
     let row = LibrarySidebarItem(filterItem: items.first { $0.albumId == id }!)
     precondition(row.title == "同名专辑" && row.subtitle?.contains(artist) == true)
     selection.handleItemSelection(row)
@@ -56,6 +58,8 @@ for (id, artist, trackIDs) in [(Int64(10), "甲", [3, 1]), (20, "乙", [4, 2])] 
     precondition(tracks.filter(selected.matches).map(\.id) == trackIDs)
 }
 for item in items where item.albumId == nil {
+    let request = LibraryFilterRequest(filterType: .albums, value: item.name)
+    precondition(items.filter(request.matches) == [item])
     precondition(tracks.filter(item.matches).map(\.id) == [item.name == "同名专辑" ? 5 : 6])
 }
 selection.handleItemSelection(LibrarySidebarItem(allItemFor: .albums, count: tracks.count))

@@ -4,7 +4,7 @@ struct LibrarySidebarView: View {
     @EnvironmentObject var libraryManager: LibraryManager
     @Binding var selectedFilterType: LibraryFilterType
     @Binding var selectedFilterItem: LibraryFilterItem?
-    @Binding var pendingSearchText: String?
+    @Binding var pendingFilter: LibraryFilterRequest?
     @Binding var filteredItems: [LibraryFilterItem]
     @Binding var selectedSidebarItem: LibrarySidebarItem?
 
@@ -56,7 +56,8 @@ struct LibrarySidebarView: View {
             updateFilteredItems()
         }
         .onChange(of: selectedFilterType) { _, newType in
-            handleFilterTypeChange(newType)
+            if pendingFilter?.filterType == newType { applyPendingFilter() }
+            else { handleFilterTypeChange(newType) }
         }
         .onChange(of: libraryManager.tracks) {
             updateFilteredItems()
@@ -77,26 +78,11 @@ struct LibrarySidebarView: View {
                 selectedSidebarItem = selectedFilterItem.map { LibrarySidebarItem(filterItem: $0) }
             }
         }
-        .onChange(of: pendingSearchText) { _, newValue in
-            if let searchValue = newValue {
-                pendingSearchText = nil
-                
-                let allItems = libraryManager.getLibraryFilterItems(for: selectedFilterType)
-                
-                let matchingItem = allItems.first { item in
-                    if selectedFilterType.usesMultiArtistParsing {
-                        return ArtistParser.normalizeArtistName(item.name) == ArtistParser.normalizeArtistName(searchValue)
-                    } else {
-                        return item.name == searchValue
-                    }
-                }
-                
-                if let item = matchingItem {
-                    searchText = item.name
-                    selectedFilterItem = item
-                    selectedSidebarItem = LibrarySidebarItem(filterItem: item)
-                    updateFilteredItems()
-                }
+        .onChange(of: pendingFilter, initial: true) {
+            if let request = pendingFilter, selectedFilterType != request.filterType {
+                selectedFilterType = request.filterType
+            } else {
+                applyPendingFilter()
             }
         }
         .onChange(of: libraryManager.searchResults) {
@@ -144,6 +130,18 @@ struct LibrarySidebarView: View {
     }
 
     // MARK: - Helper Methods
+
+    private func applyPendingFilter() {
+        guard let request = pendingFilter, request.filterType == selectedFilterType else { return }
+        pendingFilter = nil
+        let items = libraryManager.getLibraryFilterItems(for: request.filterType)
+        guard let item = items.first(where: request.matches) else { return }
+        libraryManager.globalSearchText = ""
+        searchText = item.name
+        selectedFilterItem = item
+        selectedSidebarItem = LibrarySidebarItem(filterItem: item)
+        updateFilteredItems()
+    }
 
     private func selectAllSearchResults() {
         let count = libraryManager.searchResults.count
@@ -291,14 +289,14 @@ struct LibrarySidebarView: View {
 #Preview {
     @Previewable @State var selectedFilterType: LibraryFilterType = .artists
     @Previewable @State var selectedFilterItem: LibraryFilterItem?
-    @Previewable @State var pendingSearchText: String?
+    @Previewable @State var pendingFilter: LibraryFilterRequest?
     @Previewable @State var filteredItems: [LibraryFilterItem] = []
     @Previewable @State var selectedSidebarItem: LibrarySidebarItem?
 
     LibrarySidebarView(
         selectedFilterType: $selectedFilterType,
         selectedFilterItem: $selectedFilterItem,
-        pendingSearchText: $pendingSearchText,
+        pendingFilter: $pendingFilter,
         filteredItems: $filteredItems,
         selectedSidebarItem: $selectedSidebarItem
     )

@@ -6,7 +6,6 @@ struct LibraryView: View {
 
     @Binding var selectedFilterType: LibraryFilterType
     @Binding var selectedFilterItem: LibraryFilterItem?
-    @Binding var pendingSearchText: String?
     @Binding var cachedFilteredTracks: [Track]
 
     @AppStorage("trackTableRowSize")
@@ -17,7 +16,13 @@ struct LibraryView: View {
     @State private var trackTableSortOrder = [KeyPathComparator(\Track.title)]
     @State private var filterUpdateTask: Task<Void, Never>?
     @State private var lastFilterUpdateAt: Date = .distantPast
-    @Binding var pendingFilter: LibraryFilterRequest?
+
+    init(selectedFilterType: Binding<LibraryFilterType>, selectedFilterItem: Binding<LibraryFilterItem?>,
+         cachedFilteredTracks: Binding<[Track]>) {
+        _selectedFilterType = selectedFilterType
+        _selectedFilterItem = selectedFilterItem
+        _cachedFilteredTracks = cachedFilteredTracks
+    }
 
     var body: some View {
         if !libraryManager.shouldShowMainUI {
@@ -25,7 +30,6 @@ struct LibraryView: View {
         } else {
             tracksListView
                 .onAppear {
-                    processPendingFilter()
                     if !libraryManager.globalSearchText.isEmpty || cachedFilteredTracks.isEmpty {
                         updateFilteredTracks()
                     }
@@ -48,9 +52,6 @@ struct LibraryView: View {
                 .onChange(of: libraryManager.totalTrackCount) {
                     updateFilteredTracks()
                 }
-                .onChange(of: pendingFilter) {
-                    processPendingFilter()
-                }
                 .onChange(of: libraryManager.globalSearchText) {
                     updateFilteredTracks()
                 }
@@ -61,30 +62,6 @@ struct LibraryView: View {
                     updateFilteredTracks()
                 }
         }
-    }
-
-    // MARK: - Helper Methods
-
-    private func processPendingFilter() {
-        guard let request = pendingFilter else { return }
-        
-        pendingFilter = nil
-        selectedFilterType = request.filterType
-        pendingSearchText = request.value
-    }
-
-    init(
-        selectedFilterType: Binding<LibraryFilterType>,
-        selectedFilterItem: Binding<LibraryFilterItem?>,
-        pendingSearchText: Binding<String?>,
-        cachedFilteredTracks: Binding<[Track]>,
-        pendingFilter: Binding<LibraryFilterRequest?> = .constant(nil)
-    ) {
-        self._selectedFilterType = selectedFilterType
-        self._selectedFilterItem = selectedFilterItem
-        self._pendingSearchText = pendingSearchText
-        self._cachedFilteredTracks = cachedFilteredTracks
-        self._pendingFilter = pendingFilter
     }
 
     // MARK: - Tracks List View
@@ -250,13 +227,11 @@ struct LibraryView: View {
 #Preview {
     @Previewable @State var filterType: LibraryFilterType = .artists
     @Previewable @State var filterItem: LibraryFilterItem?
-    @Previewable @State var searchText: String?
     @Previewable @State var cachedTracks: [Track] = []
 
     LibraryView(
         selectedFilterType: $filterType,
         selectedFilterItem: $filterItem,
-        pendingSearchText: $searchText,
         cachedFilteredTracks: $cachedTracks
     )
         .environmentObject({

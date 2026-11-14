@@ -188,9 +188,7 @@ extension LibraryManager {
 
     func refreshEntities(notify: Bool = true) {
         entitiesLoaded = false
-        cachedArtistEntities = databaseManager.getArtistEntities()
-        cachedAlbumEntities = databaseManager.getAlbumEntities()
-        entitiesLoaded = true
+        loadEntities()
         updateTotalCounts(notify: notify)
         Logger.info("Refreshed entities: \(cachedArtistEntities.count) artists and \(cachedAlbumEntities.count) albums")
         objectWillChange.send()
@@ -271,8 +269,9 @@ extension LibraryManager {
                 // The user explicitly asked for a refresh, so never stay silent here —
                 // report what happened instead: nothing changed, or folders were skipped.
                 await MainActor.run {
+                    AppCoordinator.shared?.playlistManager.reloadFileBackedPlaylists()
                     if unavailableFolders.isEmpty {
-                        NotificationManager.shared.addMessage(.info, String(appLocalized: "Library is up to date, no changes detected"))
+                        NotificationManager.shared.addMessage(.info, String(appLocalized: "Music files are up to date"))
                     } else {
                         let message = unavailableFolders.count == 1
                             ? String(appLocalized: "Folder '\(unavailableFolders[0])' is unavailable, skipped refresh")
@@ -469,10 +468,10 @@ extension LibraryManager {
     internal func loadEntities() {
         guard !entitiesLoaded else { return }
 
+        // @Published delivers synchronously; observers may enter a lazy getter again.
+        entitiesLoaded = true
         cachedArtistEntities = databaseManager.getArtistEntities()
         cachedAlbumEntities = databaseManager.getAlbumEntities()
-        
-        entitiesLoaded = true
         Logger.info("Loaded \(cachedArtistEntities.count) artists and \(cachedAlbumEntities.count) albums")
     }
 }

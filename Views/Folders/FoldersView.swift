@@ -6,6 +6,7 @@ struct FoldersView: View {
     @EnvironmentObject var playlistManager: PlaylistManager
     @Binding var selectedFolderNode: FolderNode?
     @State private var selectedTrackID: UUID?
+    @State private var folderLoadTask: Task<Void, Never>?
     @State private var folderTracks: [Track] = []
     @State private var trackTableSortOrder = [KeyPathComparator(\Track.title)]
 
@@ -17,9 +18,11 @@ struct FoldersView: View {
             NoMusicEmptyStateView(context: .mainWindow)
         } else {
             folderTracksView
-                .onChange(of: selectedFolderNode) { _, newNode in
+                .onChange(of: selectedFolderNode, initial: true) { _, newNode in
+                    folderTracks = []
                     handleFolderNodeSelection(newNode)
                 }
+                .onDisappear { folderLoadTask?.cancel() }
                 .onReceive(NotificationCenter.default.publisher(for: .libraryDataDidChange)) { _ in
                     handleFolderNodeSelection(selectedFolderNode)
                 }
@@ -144,18 +147,21 @@ struct FoldersView: View {
     // MARK: - Hierarchical Sidebar Helper Methods
 
     private func handleFolderNodeSelection(_ node: FolderNode?) {
-        guard let node = node else {
+        folderLoadTask?.cancel()
+        guard let node else {
             folderTracks = []
             return
         }
 
-        loadTracksForFolderNode(node)
-    }
-
-    private func loadTracksForFolderNode(_ node: FolderNode) {
-        // Assign directly (not via an isLoading swap) so the track table stays mounted across
-        // folder switches and the active sort order is retained, matching the other track views.
-        folderTracks = node.getImmediateTracks(using: libraryManager)
+        let path = node.url.standardizedFileURL.path
+        let database = libraryManager.databaseManager
+        folderLoadTask = Task {
+            let tracks = await Task.detached(priority: .userInitiated) {
+                database.getImmediateTracksForFolderPath(path)
+            }.value
+            guard !Task.isCancelled, selectedFolderNode == node else { return }
+            folderTracks = tracks
+        }
     }
 }
 

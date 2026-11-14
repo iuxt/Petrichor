@@ -25,6 +25,12 @@ search = method('Managers/Library/LMQueries.swift', '    func updateSearchResult
 sort = method('Views/Components/TrackViews/TrackTableView.swift', '    private func performBackgroundSort(')
 Path(sys.argv[1]).write_text('import Foundation\nextension LibraryManager {\n' + search + '\n}\nextension TableHarness {\n' + sort + '\n}\n')
 
+editor = 'Views/Playlists/Sheets/RegularPlaylistEditorSheet.swift'
+members = ['private var filterQuery:', 'private var isFiltering:', 'private var displayedPlaylistTracks:',
+           'private func removeDisplayed()', 'private func filterPlaylist()']
+with Path(sys.argv[1]).open('a') as output:
+    output.write('extension FilterHarness {\n' + '\n'.join(method(editor, signature).replace('private var', 'var') for signature in members) + '\n}\n')
+
 view = Path('Views/Library/LibraryView.swift').read_text()
 sidebar = Path('Views/Library/LibrarySidebarView.swift').read_text()
 table = Path('Views/Components/TrackViews/TrackTableView.swift').read_text()
@@ -68,6 +74,7 @@ final class Gate: @unchecked Sendable {
 }
 struct Track: Sendable {
     let id: Int
+    var trackId: Int64? { Int64(id) }
     var gate: Gate? = nil
     var title: String { gate?.wait(); return String(id) }
 }
@@ -102,7 +109,21 @@ final class DatabaseManager: @unchecked Sendable {
     var searchResults: [Track] = []
     var isSearching = false
 }
+@MainActor final class FilterHarness {
+    let libraryManager = LibraryManager()
+    var playlistTracks = [Track(id: 1), Track(id: 2)]
+    var playlistFilter = ""
+    var completedFilterQuery: String?
+    var filterMatchIDs: Set<Int64>?
+    var filterTask: Task<Void, Never>?
+}
+// The sort scheduling fixture only uses title order. Context normalization is
+// exercised independently by test-track-sort-context.sh.
+struct TitleSortContext {
+    func normalized(_ order: [KeyPathComparator<Track>]) -> [KeyPathComparator<Track>] { order }
+}
 @MainActor final class TableHarness {
+    let sortContext = TitleSortContext()
     var tracks: [Track] = []
     var sortedTracks: [Track] = []
     var sortTask: Task<Void, Never>?
@@ -120,6 +141,23 @@ final class DatabaseManager: @unchecked Sendable {
     @MainActor static func main() async {
         let manager = LibraryManager()
         let db = manager.databaseManager
+        let editor = FilterHarness()
+        let songs = editor.libraryManager.databaseManager
+        songs.prepare("first", id: 1)
+        editor.playlistFilter = "first"
+        editor.filterPlaylist()
+        editor.removeDisplayed()
+        expect(editor.playlistTracks.count == 2, "Pending filter removed unfiltered rows")
+        await editor.filterTask?.value
+        editor.playlistFilter = "second"
+        editor.removeDisplayed()
+        expect(editor.playlistTracks.count == 2, "Previous query still allowed removal")
+        songs.prepare("second", id: 2)
+        editor.filterPlaylist()
+        await editor.filterTask?.value
+        editor.removeDisplayed()
+        expect(editor.playlistTracks.map(\.id) == [1], "Removal did not respect current matches")
+
         // Rapid input must run only the final query.
         db.prepare("final", id: 1)
         for query in ["fi", "fin", "fina", "final"] { manager.globalSearchText = query }

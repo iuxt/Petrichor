@@ -405,22 +405,22 @@ struct PlaylistAppEntity: AppEntity {
 struct PlaylistEntityQuery: EntityStringQuery {
     @MainActor
     func entities(for identifiers: [UUID]) async throws -> [PlaylistAppEntity] {
-        allPlaylists().filter { identifiers.contains($0.id) }
+        await allPlaylists().filter { identifiers.contains($0.id) }
     }
 
     @MainActor
     func suggestedEntities() async throws -> [PlaylistAppEntity] {
-        allPlaylists()
+        await allPlaylists()
     }
 
     @MainActor
     func entities(matching string: String) async throws -> [PlaylistAppEntity] {
-        AutomationLibrary.filterByName(allPlaylists(), matching: string, name: \.name)
+        AutomationLibrary.filterByName(await allPlaylists(), matching: string, name: \.name)
     }
 
     @MainActor
-    private func allPlaylists() -> [PlaylistAppEntity] {
-        (AppCoordinator.shared?.playlistManager.playlists ?? [])
+    private func allPlaylists() async -> [PlaylistAppEntity] {
+        (await AppCoordinator.shared?.playlistManager.loadedPlaylists() ?? [])
             .map { PlaylistAppEntity(id: $0.id, name: $0.name) }
     }
 }

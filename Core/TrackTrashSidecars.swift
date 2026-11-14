@@ -23,7 +23,7 @@ enum TrackTrashSidecars {
         let remainingAudio = contents.filter { url in
             url.standardizedFileURL.path != removedPath
                 && supportedAudioExtensions.contains(url.pathExtension.lowercased())
-                && isRegularFile(url, fileManager: fileManager)
+                && isRegularFile(url)
         }
         let stem = audioURL.deletingPathExtension().lastPathComponent
         // Conservatively preserve case variants too, including on case-insensitive volumes.
@@ -34,7 +34,7 @@ enum TrackTrashSidecars {
         if !sharesLyrics {
             for ext in lyricExtensions {
                 let lyricURL = audioURL.deletingPathExtension().appendingPathExtension(ext)
-                if fileManager.fileExists(atPath: lyricURL.path) { urls.append(lyricURL) }
+                if isRegularFile(lyricURL) { urls.append(lyricURL) }
             }
         }
         if remainingAudio.isEmpty {
@@ -53,16 +53,13 @@ enum TrackTrashSidecars {
         }
 
         return contents.filter { url in
-            guard isRegularFile(url, fileManager: fileManager) else { return false }
+            guard isRegularFile(url) else { return false }
             guard supportedArtworkExtensions.contains(url.pathExtension.lowercased()) else { return false }
             return knownArtworkFilenames.contains(url.deletingPathExtension().lastPathComponent.lowercased())
         }
     }
 
-    private static func isRegularFile(_ url: URL, fileManager: FileManager) -> Bool {
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]) else {
-            return fileManager.fileExists(atPath: url.path)
-        }
-        return values.isRegularFile == true
+    private static func isRegularFile(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 }

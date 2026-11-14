@@ -83,13 +83,13 @@ extension PlaylistManager {
     /// Replace every in-memory copy of a track after its file metadata is reindexed.
     func applyMetadataEditResult(_ track: Track) {
         for index in currentQueue.indices where currentQueue[index].trackId == track.trackId {
-            currentQueue[index] = track
+            currentQueue[index] = track.withRowID(currentQueue[index].id)
         }
 
         for playlistIndex in playlists.indices {
             for trackIndex in playlists[playlistIndex].tracks.indices
             where playlists[playlistIndex].tracks[trackIndex].trackId == track.trackId {
-                playlists[playlistIndex].tracks[trackIndex] = track
+                playlists[playlistIndex].tracks[trackIndex] = track.withRowID(playlists[playlistIndex].tracks[trackIndex].id)
             }
         }
 

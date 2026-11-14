@@ -96,7 +96,6 @@ struct ContentView: View {
     @AppStorage("librarySelectedFilterType")
     private var libraryFilterType: LibraryFilterType = .artists
     @State private var libraryFilterItem: LibraryFilterItem?
-    @State private var libraryPendingSearchText: String?
     @State private var libraryFilteredItems: [LibraryFilterItem] = []
     @State private var libraryCachedTracks: [Track] = []
     @State private var librarySelectedSidebarItem: LibrarySidebarItem?
@@ -322,7 +321,7 @@ struct ContentView: View {
                 LibrarySidebarView(
                     selectedFilterType: $libraryFilterType,
                     selectedFilterItem: $libraryFilterItem,
-                    pendingSearchText: $libraryPendingSearchText,
+                    pendingFilter: $pendingLibraryFilter,
                     filteredItems: $libraryFilteredItems,
                     selectedSidebarItem: $librarySelectedSidebarItem
                 )
@@ -349,9 +348,7 @@ struct ContentView: View {
                 LibraryView(
                     selectedFilterType: $libraryFilterType,
                     selectedFilterItem: $libraryFilterItem,
-                    pendingSearchText: $libraryPendingSearchText,
-                    cachedFilteredTracks: $libraryCachedTracks,
-                    pendingFilter: $pendingLibraryFilter
+                    cachedFilteredTracks: $libraryCachedTracks
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -556,11 +553,10 @@ extension View {
                 shouldFocusSearch.wrappedValue.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .goToLibraryFilter)) { notification in
-                if let filterType = notification.userInfo?["filterType"] as? LibraryFilterType,
-                   let filterValue = notification.userInfo?["filterValue"] as? String {
+                if let request = notification.object as? LibraryFilterRequest {
                     withAnimation(.easeInOut(duration: AnimationDuration.standardDuration)) {
                         selectedTab.wrappedValue = .library
-                        pendingLibraryFilter.wrappedValue = LibraryFilterRequest(filterType: filterType, value: filterValue)
+                        pendingLibraryFilter.wrappedValue = request
                     }
                 }
             }

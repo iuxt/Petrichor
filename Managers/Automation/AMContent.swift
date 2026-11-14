@@ -16,9 +16,8 @@ extension AutomationManager {
         playNow(tracks(filterType: filterType, value: value))
     }
 
-    @discardableResult
-    func playPlaylist(id: UUID) -> Bool {
-        playNow(playlistTracks(id: id))
+    func playPlaylist(id: UUID) async throws {
+        _ = playNow(try await playlistTracks(id: id))
     }
 
     /// Albums take an explicit `albumId` because titles are not unique; without it,
@@ -36,8 +35,8 @@ extension AutomationManager {
         enqueue(albumTracks(name: name, albumId: albumId), playNext: playNext)
     }
 
-    func enqueuePlaylist(id: UUID, playNext: Bool) {
-        enqueue(playlistTracks(id: id), playNext: playNext)
+    func enqueuePlaylist(id: UUID, playNext: Bool) async throws {
+        enqueue(try await playlistTracks(id: id), playNext: playNext)
     }
 
     // MARK: - Helpers
@@ -57,9 +56,11 @@ extension AutomationManager {
         return library.databaseManager.getTracksForAlbumEntity(entity)
     }
 
-    private func playlistTracks(id: UUID) -> [Track] {
-        guard let playlist, let match = playlist.playlists.first(where: { $0.id == id }) else { return [] }
-        return playlist.getPlaylistTracks(match)
+    private func playlistTracks(id: UUID) async throws -> [Track] {
+        guard let playlist else { throw PlaylistPlaybackError.notFound }
+        let tracks = try await playlist.tracksForPlayback(playlistID: id)
+        guard !tracks.isEmpty else { throw PlaylistPlaybackError.empty }
+        return tracks
     }
 
     @discardableResult

@@ -14,12 +14,6 @@ struct LyricsLoader {
         languageTag: String? = nil
     ) async throws -> (lyrics: [LyricLine], source: LyricsSource, availableScripts: [LyricScript],
                        availableLanguages: [LyricLanguage], selectedLanguage: LyricLanguage, fileURL: URL?) {
-        var lines: [LyricLine]?
-        var source: LyricsSource = .none
-        var availableScripts: [LyricScript] = [.original]
-        var availableLanguages: [LyricLanguage] = [.original]
-        var selectedLanguage: LyricLanguage = .original
-
         // 1. External TTML/KSC/LRC/SRT files
         let audioURL = track.url
         let target = track.lyricsFileTarget
@@ -32,43 +26,43 @@ struct LyricsLoader {
                 transform: { lines in segment.map { $0.lyrics(from: lines) } ?? lines })
         }.value
         if let external {
-            lines = external.lyrics
-            source = external.source
-            availableScripts = external.availableScripts
-            availableLanguages = external.availableLanguages
-            selectedLanguage = external.selectedLanguage
+            return (external.lyrics, external.source, external.availableScripts, external.availableLanguages,
+                    external.selectedLanguage, external.fileURL)
         }
 
-        // 2. Embedded lyrics from database
-        let fullTrack = try? await track.fullTrack(using: dbQueue)
-        if lines == nil,
-           let fullTrack = fullTrack,
-           let embeddedText = fullTrack.extendedMetadata?.lyrics,
-           !embeddedText.isEmpty {
-            let embedded = parseAnyLyrics(embeddedText)
-            lines = segment.map { $0.lyrics(from: embedded) } ?? embedded
-            source = .embedded
+        guard let fullTrack = try? await track.fullTrack(using: dbQueue),
+              let raw = fullTrack.extendedMetadata?.lyrics, !raw.isEmpty else {
+            return ([], .none, [.original], [.original], .original, nil)
         }
-
-        // Fallback to empty array
-        return (lines ?? [], source, availableScripts, availableLanguages, selectedLanguage, external?.fileURL)
+        let embedded = parseEmbedded(raw, script: script, languageTag: languageTag)
+        let lines = segment.map { $0.lyrics(from: embedded.lyrics) } ?? embedded.lyrics
+        return (lines, .embedded, embedded.availableScripts, embedded.availableLanguages, embedded.selectedLanguage, nil)
     }
-    
-    // MARK: - Helpers
-    
-    /// Try to parse as LRC first, then fallback to plain text lines
-    private static func parseAnyLyrics(_ raw: String) -> [LyricLine] {
-        // Attempt LRC parsing first, covering external and embedded timestamped lyrics.
-        let lrcResult = LyricLine.parseLRC(from: raw)
-        if !lrcResult.isEmpty {
-            return lrcResult
+
+    private static func parseEmbedded(_ text: String, script: LyricScript, languageTag: String?) -> LyricsSidecarLoader.Result {
+        let raw = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}")))
+        if raw.hasPrefix("<") {
+            let parsed = TTMLLyricsParser.parse(Data(raw.utf8), script: script, languageTag: languageTag)
+            if !parsed.lines.isEmpty {
+                return .init(lyrics: parsed.lines, source: .embedded, availableScripts: parsed.availableScripts,
+                             availableLanguages: parsed.availableLanguages, selectedLanguage: parsed.selectedLanguage)
+            }
         }
-        
-        // Plain text: split by newlines, each line with startTime=0
-        let lines = raw.components(separatedBy: "\n")
+        if raw.localizedCaseInsensitiveContains("karaoke.add") {
+            let lines = LyricLine.parseKSC(from: raw)
+            if !lines.isEmpty { return .init(lyrics: lines, source: .embedded) }
+        }
+        if raw.contains("-->") {
+            let lines = LyricLine.parseSRT(from: raw)
+            if !lines.isEmpty { return .init(lyrics: lines, source: .embedded) }
+        }
+        let timed = LyricLine.parseLRC(from: raw)
+        if !timed.isEmpty { return .init(lyrics: timed, source: .embedded) }
+
+        let lines = raw.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .map { LyricLine(text: $0, startTime: 0, endTime: nil) }
-        return lines
+        return .init(lyrics: lines, source: .embedded)
     }
 }

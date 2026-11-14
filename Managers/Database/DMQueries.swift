@@ -559,7 +559,7 @@ extension DatabaseManager {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_")
-        return "\(escaped)/%"
+        return escaped == "/" ? "/%" : "\(escaped)/%"
     }
 
     /// Get tracks located directly in a folder path (immediate children only, no sub-folders).

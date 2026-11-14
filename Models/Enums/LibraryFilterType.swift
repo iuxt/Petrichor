@@ -311,4 +311,17 @@ enum LibraryFilterType: String, CaseIterable {
 struct LibraryFilterRequest: Equatable {
     let filterType: LibraryFilterType
     let value: String
+    var albumId: Int64? = nil
+
+    func matches(_ item: LibraryFilterItem) -> Bool {
+        guard item.filterType == filterType else { return false }
+        if filterType == .albums {
+            guard let albumId else { return item.albumId == nil && item.name == value }
+            return item.albumId == albumId
+        }
+        if filterType.usesMultiArtistParsing {
+            return ArtistParser.normalizeArtistName(item.name) == ArtistParser.normalizeArtistName(value)
+        }
+        return item.name == value
+    }
 }

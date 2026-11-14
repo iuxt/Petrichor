@@ -180,18 +180,31 @@ extension PlaylistManager {
         await removeTracksFromPlaylist(tracks: [track], playlistID: playlistID)
     }
 
-    private func persistRegularPlaylistTracks(playlistID: UUID, tracks: [Track]) {
-        guard let index = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
-        let playlist = playlists[index]
+    /// The sheet may stay open across a reload. Its rows belong to the original
+    /// M3U snapshot; reject a concurrent edit before writing those rows back.
+    func saveEditedTracks(_ tracks: [Track], original: Playlist) -> Bool {
+        guard let current = playlists.first(where: { $0.id == original.id }),
+              let backing = current.fileBacking, let previous = original.fileBacking,
+              backing.fileURL == previous.fileURL, backing.sourceContent == previous.sourceContent else {
+            NotificationManager.shared.addMessage(.error, PlaylistFileStoreError.fileChanged.localizedDescription)
+            return false
+        }
+        return persistRegularPlaylistTracks(tracks, for: original)
+    }
 
+    @discardableResult
+    private func persistRegularPlaylistTracks(_ tracks: [Track], for playlist: Playlist) -> Bool {
+        guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return false }
         do {
             invalidateFilePlaylistLoad()
             let updated = try playlistFileStore.write(tracks: tracks, for: playlist)
             playlists[index] = updated
+            return true
         } catch {
             Logger.error("Failed to write playlist file: \(error)")
             NotificationManager.shared.addMessage(.error, error.localizedDescription)
             reloadFileBackedPlaylists()
+            return false
         }
     }
 
@@ -202,10 +215,10 @@ extension PlaylistManager {
             return
         }
 
-        let existingIDs = Set(playlist.tracks.compactMap { $0.trackId })
+        var existingIDs = Set(playlist.tracks.compactMap { $0.trackId })
         let now = Date()
         let newTracks = tracks
-            .filter { track in track.trackId.map { !existingIDs.contains($0) } ?? false }
+            .filter { track in track.trackId.map { existingIDs.insert($0).inserted } ?? false }
             .map { track -> Track in
                 var copy = track
                 copy.dateAdded = now
@@ -214,7 +227,7 @@ extension PlaylistManager {
 
         guard !newTracks.isEmpty else { return }
 
-        persistRegularPlaylistTracks(playlistID: playlistID, tracks: playlist.tracks + newTracks)
+        persistRegularPlaylistTracks(playlist.tracks + newTracks, for: playlist)
     }
     
     /// Remove multiple tracks from a playlist efficiently
@@ -224,27 +237,9 @@ extension PlaylistManager {
             return
         }
 
-        let idsToRemove = Set(tracks.compactMap { $0.trackId })
-        let remaining = playlist.tracks.filter { track in
-            track.trackId.map { !idsToRemove.contains($0) } ?? true
-        }
-
-        persistRegularPlaylistTracks(playlistID: playlistID, tracks: remaining)
-    }
-    
-    /// Apply a new track order to a playlist by ID and persist it to the backing M3U file.
-    func applyPlaylistTrackOrder(playlistID: UUID, orderedTrackIds: [Int64]) async {
-        guard let playlist = playlists.first(where: { $0.id == playlistID && $0.type == .regular && $0.isContentEditable }) else {
-            return
-        }
-
-        let byId = Dictionary(
-            playlist.tracks.compactMap { track in track.trackId.map { ($0, track) } }
-        ) { first, _ in first }
-        let reordered = orderedTrackIds.compactMap { byId[$0] }
-
-        guard reordered.count == playlist.tracks.count else { return }
-
-        persistRegularPlaylistTracks(playlistID: playlistID, tracks: reordered)
+        let rowsToRemove = Set(tracks.map(\.id))
+        let remaining = playlist.tracks.filter { !rowsToRemove.contains($0.id) }
+        guard remaining.count != playlist.tracks.count else { return }
+        persistRegularPlaylistTracks(remaining, for: playlist)
     }
 }

@@ -29,7 +29,7 @@ final class PlaylistFileStore {
         var playlists: [Playlist] = []
         var missingEntries: [URL: [String]] = [:]
         var usedNames = Set<String>()
-        var usedIDs = Set<UUID>()
+        var persistedIndices: [Int] = []
 
         for folder in folders {
             for fileURL in M3UPlaylistCodec.playlistFiles(in: folder.url, fileManager: fileManager) {
@@ -50,20 +50,19 @@ final class PlaylistFileStore {
                         name: displayName,
                         tracks: matched.tracks,
                         fileBacking: PlaylistFileBacking(musicFolderURL: folder.url, fileURL: fileURL,
-                                                         unresolvedEntries: matched.missing, sourceContent: content)
+                                                         entries: matched.entries, sourceContent: content)
                     )
                     playlist.trackCount = matched.tracks.count
                     playlist.dateModified = modificationDate(for: fileURL) ?? Date()
                     playlist = playlist.withStableFileBackedID(for: fileURL)
-                    if let storedID = Self.persistedID(in: content), !usedIDs.contains(storedID) {
+                    if let storedID = Self.persistedID(in: content) {
+                        persistedIndices.append(playlists.count)
                         playlist.id = storedID
                     }
-                    usedIDs.insert(playlist.id)
                     playlists.append(playlist)
 
-                    if !matched.missing.isEmpty {
-                        missingEntries[fileURL] = matched.missing
-                    }
+                    let missing = matched.entries.filter { $0.rowID == nil }.map(\.path)
+                    if !missing.isEmpty { missingEntries[fileURL] = missing }
                 } catch is CancellationError {
                     return LoadResult(playlists: [], missingEntries: [:])
                 } catch {
@@ -72,6 +71,20 @@ final class PlaylistFileStore {
             }
         }
 
+        // A renamed file owns its persisted ID even if a legacy file reappears at its old path.
+        let persisted = Set(persistedIndices)
+        var usedIDs = Set<UUID>()
+        for index in persistedIndices + playlists.indices.filter({ !persisted.contains($0) }) {
+            guard !usedIDs.insert(playlists[index].id).inserted, let backing = playlists[index].fileBacking else { continue }
+            let path = backing.fileURL.standardizedFileURL.path
+            var candidate = UUID.stablePlaylistID(for: path)
+            var suffix = 0
+            while !usedIDs.insert(candidate).inserted {
+                suffix += 1
+                candidate = UUID.stablePlaylistID(for: "\(path)#\(suffix)")
+            }
+            playlists[index].id = candidate
+        }
         return LoadResult(playlists: playlists, missingEntries: missingEntries)
     }
 
@@ -87,7 +100,6 @@ final class PlaylistFileStore {
                 fileBacking: PlaylistFileBacking(musicFolderURL: defaultFolder.url, fileURL: fileURL)
             )
             playlist.trackCount = tracks.count
-            playlist = playlist.withStableFileBackedID(for: fileURL)
             return try write(tracks: tracks, for: playlist)
         }
     }
@@ -115,7 +127,7 @@ final class PlaylistFileStore {
             updated.name = target.deletingPathExtension().lastPathComponent
             updated.dateModified = Date()
             updated.fileBacking = PlaylistFileBacking(musicFolderURL: backing.musicFolderURL, fileURL: target,
-                                                      unresolvedEntries: backing.unresolvedEntries, sourceContent: content)
+                                                      entries: backing.entries, sourceContent: content)
             return updated
         }
     }
@@ -164,19 +176,25 @@ final class PlaylistFileStore {
 
     func write(tracks: [Track], for playlist: Playlist) throws -> Playlist {
         guard let backing = playlist.fileBacking else { throw PlaylistFileStoreError.missingBackingFile }
-        var content = M3UPlaylistCodec.render(trackURLs: tracks.map(\.playlistURL), musicFolder: backing.musicFolderURL,
-                                             playlistFileURL: backing.fileURL)
-        for entry in backing.unresolvedEntries { content += entry + "\r\n" }
-        content = Self.content(content, preservingID: playlist.id)
+        var rowIDs = Set<UUID>()
+        let rows = tracks.map { rowIDs.insert($0.id).inserted ? $0 : $0.withRowID(UUID()) }
+        let ordered = rows.map { track in
+            M3UPlaylistCodec.Entry(path: M3UPlaylistCodec.relativeOrAbsolutePath(
+                for: track.playlistURL, musicFolder: backing.musicFolderURL, playlistFileURL: backing.fileURL
+            ), rowID: track.id)
+        }
+        let entries = M3UPlaylistCodec.editedEntries(original: backing.entries, ordered: ordered)
+        let content = Self.content(entries.map(\.path).joined(separator: "\r\n"), preservingID: playlist.id)
         try withSecurityScope(for: backing.musicFolderURL) {
             if backing.sourceContent != nil { _ = try checkedContent(for: backing) }
             try content.write(to: backing.fileURL, atomically: true, encoding: .utf8)
         }
 
         var updated = playlist
-        updated.tracks = tracks
+        updated.tracks = rows
         updated.trackCount = tracks.count
         updated.dateModified = Date()
+        updated.fileBacking?.entries = entries
         updated.fileBacking?.sourceContent = content
         return updated
     }
@@ -229,10 +247,9 @@ final class PlaylistFileStore {
         musicFolder: URL,
         fileURL: URL,
         databaseManager: DatabaseManager
-    ) async -> (tracks: [Track], missing: [String]) {
+    ) async -> (tracks: [Track], entries: [M3UPlaylistCodec.Entry]) {
         var tracks: [Track] = []
-        var missing: [String] = []
-        var seen = Set<Int64>()
+        var orderedEntries: [M3UPlaylistCodec.Entry] = []
 
         for entry in entries {
             if Task.isCancelled { return ([], []) }
@@ -244,14 +261,11 @@ final class PlaylistFileStore {
                 }
             }
 
-            if let matched, let trackId = matched.trackId, seen.insert(trackId).inserted {
-                tracks.append(matched)
-            } else if matched == nil {
-                missing.append(entry)
-            }
+            if let matched { tracks.append(matched) }
+            orderedEntries.append(.init(path: entry, rowID: matched?.id))
         }
 
-        return (tracks, missing)
+        return (tracks, orderedEntries)
     }
 
     private func modificationDate(for url: URL) -> Date? {

@@ -60,6 +60,13 @@ guard lonelySidecars == expectedLonely else {
     exit(1)
 }
 
+let lyricDirectory = root.appendingPathComponent("Lonely.lrc")
+try FileManager.default.removeItem(at: lyricDirectory)
+try FileManager.default.createDirectory(at: lyricDirectory, withIntermediateDirectories: true)
+touch(lyricDirectory.appendingPathComponent("keep.txt"))
+precondition(!TrackTrashSidecars.sidecarURLs(forAudioURL: lonely).contains(lyricDirectory))
+precondition(FileManager.default.fileExists(atPath: lyricDirectory.appendingPathComponent("keep.txt").path))
+
 touch(shared)
 touch(neighbor)
 let sharedSidecars = Set(TrackTrashSidecars.sidecarURLs(forAudioURL: shared).map(\.lastPathComponent))

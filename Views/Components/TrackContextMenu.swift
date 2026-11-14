@@ -334,18 +334,15 @@ enum TrackContextMenu {
 
         // swiftlint:disable:next localized_context_menu_title - dynamic filter category and value
         return .button(title: "\(filterType.pluralDisplayName): \(filterType.localizedDisplay(displayValue))") {
-            postGoToNotification(filterType: filterType, filterValue: displayValue)
+            postGoToNotification(filterType: filterType, filterValue: displayValue,
+                                 albumId: filterType == .albums ? track.albumId : nil)
         }
     }
     
-    private static func postGoToNotification(filterType: LibraryFilterType, filterValue: String) {
+    private static func postGoToNotification(filterType: LibraryFilterType, filterValue: String, albumId: Int64? = nil) {
         NotificationCenter.default.post(
             name: .goToLibraryFilter,
-            object: nil,
-            userInfo: [
-                "filterType": filterType,
-                "filterValue": filterValue
-            ]
+            object: LibraryFilterRequest(filterType: filterType, value: filterValue, albumId: albumId)
         )
     }
     
@@ -380,11 +377,15 @@ enum TrackContextMenu {
                 let title = isInPlaylist ? "✓ \(playlistName)" : playlistName
                 
                 playlistItems.append(.button(title: title) {
-                    playlistManager.updateTrackInPlaylist(
-                        track: track,
-                        playlist: playlist,
-                        add: !isInPlaylist
-                    )
+                    if isInPlaylist {
+                        Task {
+                            guard let current = playlistManager.playlists.first(where: { $0.id == playlist.id }) else { return }
+                            let members = current.tracks.filter { $0.trackId == trackId }
+                            await playlistManager.removeTracksFromPlaylist(tracks: members, playlistID: playlist.id)
+                        }
+                    } else {
+                        playlistManager.updateTrackInPlaylist(track: track, playlist: playlist, add: true)
+                    }
                 })
             }
         }

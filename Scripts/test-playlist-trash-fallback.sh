@@ -7,20 +7,16 @@ trap 'rm -rf "$tmpdir"' EXIT
 cat > "$tmpdir/stubs.swift" <<'SWIFT'
 import Foundation
 
-struct Track { var playlistURL: URL { url };
+struct Track {
+    var id = UUID()
+    func withRowID(_ id: UUID) -> Track { var copy = self; copy.id = id; return copy }
+    var playlistURL: URL { url }
     var trackId: Int64?
     let url: URL
 }
 
 struct Folder {
     let url: URL
-}
-
-struct PlaylistFileBacking {
-    let musicFolderURL: URL
-    let fileURL: URL
-    var unresolvedEntries: [String] = []
-    var sourceContent: String? = nil
 }
 
 struct Playlist {
@@ -44,38 +40,13 @@ enum Logger {
     static func error(_ message: String) {}
 }
 
-enum M3UPlaylistCodec {
-    static func playlistFiles(in musicFolder: URL, fileManager: FileManager = .default) -> [URL] {
-        []
-    }
-
-    static func readText(from fileURL: URL) throws -> String {
-        ""
-    }
-
-    static func parseTrackEntries(from content: String) -> [String] {
-        []
-    }
-
-    static func pathVariations(for entry: String, musicFolder: URL, playlistFileURL: URL) -> [String] {
-        []
-    }
-
-    static func playlistDirectory(in musicFolder: URL) -> URL {
-        musicFolder.appendingPathComponent("playlists", isDirectory: true)
-    }
-
-    static func render(trackURLs: [URL], musicFolder: URL, playlistFileURL: URL) -> String {
-        trackURLs.map(\.path).joined(separator: "\n")
-    }
-}
-
 enum FilesystemUtils {
     static func sanitizeFilename(_ filename: String) -> String {
         filename
     }
 }
 SWIFT
+sed -n '/^struct PlaylistFileBacking:/,/^}/p' Models/Core/Playlist.swift >> "$tmpdir/stubs.swift"
 
 cat > "$tmpdir/main.swift" <<'SWIFT'
 import Foundation
@@ -156,6 +127,7 @@ SWIFT
 swiftc \
     "$tmpdir/stubs.swift" \
     Utilities/LocalizationSettings.swift \
+    Core/M3UPlaylistCodec.swift \
     Core/TrackTrashFallback.swift \
     Managers/Playlist/PlaylistFileStore.swift \
     "$tmpdir/main.swift" \

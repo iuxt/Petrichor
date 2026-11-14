@@ -149,15 +149,29 @@ final class PlaylistManager: ObservableObject {
         }
     }
     
-    /// Get tracks for a playlist, loading them if needed
-    func getPlaylistTracks(_ playlist: Playlist) -> [Track] {
-        if playlist.type == .smart {
-            return playlist.tracks
-        }
-
-        return playlist.tracks
+    func loadedPlaylists() async -> [Playlist] {
+        await filePlaylistLoadTask?.value
+        return playlists
     }
-    
+
+    /// Resolve a playlist for an intent even before its detail view has been opened.
+    func tracksForPlayback(playlistID: UUID) async throws -> [Track] {
+        if !playlists.contains(where: { $0.id == playlistID }) {
+            await filePlaylistLoadTask?.value
+        }
+        await smartPlaylistPersistenceTasks[playlistID]?.task.value
+        guard let playlist = playlists.first(where: { $0.id == playlistID }) else {
+            throw PlaylistPlaybackError.notFound
+        }
+        guard playlist.type == .smart else { return playlist.tracks }
+        guard let database = libraryManager?.databaseManager else { throw PlaylistPlaybackError.notFound }
+        let tracks = try await database.playbackTracksForSmartPlaylist(playlist)
+        guard playlists.contains(where: { $0.id == playlistID && $0.smartCriteria == playlist.smartCriteria }) else {
+            throw PlaylistPlaybackError.changed
+        }
+        return tracks
+    }
+
     /// Keep system playlists first; user order is independent of storage type.
     func sortPlaylists(smart: [Playlist], regular: [Playlist]) -> [Playlist] {
         let saved = UserDefaults.standard.stringArray(forKey: "playlistSidebarOrder") ?? []
@@ -177,5 +191,17 @@ final class PlaylistManager: ObservableObject {
     func reorderPlaylists(_ reorderedPlaylists: [Playlist]) {
         UserDefaults.standard.set(reorderedPlaylists.map { $0.id.uuidString }, forKey: "playlistSidebarOrder")
         playlists = reorderedPlaylists
+    }
+}
+
+enum PlaylistPlaybackError: LocalizedError {
+    case notFound, empty, changed
+
+    var errorDescription: String? {
+        switch self {
+        case .notFound: String(appLocalized: "Playlist not found")
+        case .empty: String(appLocalized: "No songs in this playlist")
+        case .changed: String(appLocalized: "The playlist changed. Try again.")
+        }
     }
 }

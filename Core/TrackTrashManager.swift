@@ -23,9 +23,6 @@ enum TrackTrashManager {
                 if didStartAccess { accessURL?.stopAccessingSecurityScopedResource() }
             }
 
-            guard FileManager.default.fileExists(atPath: lyricsURL.path) else {
-                throw CocoaError(.fileNoSuchFile)
-            }
             try moveItemToTrash(lyricsURL, fileManager: .default)
         }.value
     }
@@ -295,6 +292,9 @@ enum TrackTrashManager {
     }
 
     private static func moveItemToTrash(_ url: URL, fileManager: FileManager) throws {
+        guard try fileManager.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType == .typeRegular else {
+            throw CocoaError(.fileReadUnknown, userInfo: [NSURLErrorKey: url])
+        }
         var resultingURL: NSURL?
 
         do {

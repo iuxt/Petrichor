@@ -63,6 +63,16 @@ extension String { init(appLocalized key: String) { self = key } }
         embeddedTrack.embedded = original
         let embedded = try await LyricsLoader.loadLyrics(for: embeddedTrack, using: db)
         precondition(embedded.source == .embedded && embedded.fileURL == nil && embedded.lyrics.map(\.startTime) == [0, 10])
+        for (text, lyric, start) in [
+            (xml, "word", 1.0),
+            ("karaoke.add('00:03.000','00:04.000','中文','500,500');", "中文", 3.0),
+            ("1\n00:00:05,000 --> 00:00:06,000\nsubtitle", "subtitle", 5.0)
+        ] {
+            let file = Track(url: audio, cueSegment: nil, embedded: text)
+            let result = try await LyricsLoader.loadLyrics(for: file, using: db)
+            precondition(result.source == .embedded && result.fileURL == nil)
+            precondition(result.lyrics.map(\.text) == [lyric] && result.lyrics.first?.startTime == start)
+        }
         let overlapping = LyricLine(text: "crossing", startTime: 179, endTime: 182,
             timingSegments: [LyricTimingSegment(text: "cross", startOffset: 0, duration: 2), LyricTimingSegment(text: "ing", startOffset: 2, duration: 1)], duetSide: .right)
         let cropped = segment.lyrics(from: [overlapping])

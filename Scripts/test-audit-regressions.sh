@@ -52,21 +52,18 @@ import Foundation
 SWIFT
 cat > "$test_dir/FileStubs.swift" <<'SWIFT'
 import Foundation
-struct Track { var trackId: Int64?; var url: URL; var playlistURL: URL { url } }
+struct Track {
+    var id = UUID()
+    func withRowID(_ id: UUID) -> Track { var copy = self; copy.id = id; return copy }
+    var trackId: Int64?; var url: URL; var playlistURL: URL { url } }
 struct Folder { var url: URL }
-struct PlaylistFileBacking: Hashable {
-    let musicFolderURL: URL
-    let fileURL: URL
-    var unresolvedEntries: [String] = []
-    var sourceContent: String? = nil
-}
-
 
 struct Playlist { var id = UUID(); var name: String; var tracks: [Track]; var fileBacking: PlaylistFileBacking? = nil; var trackCount = 0; var dateModified = Date() }
 class DatabaseManager { var byPath: [String: Track] = [:]; func findTrackByPath(_ path: String) async -> Track? {
  // Match whole canonical paths, as scanner-created database records do.
  let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
- return byPath.values.first { $0.url.resolvingSymlinksInPath().standardizedFileURL.path == canonical }
+ guard let stored = byPath.values.first(where: { $0.url.resolvingSymlinksInPath().standardizedFileURL.path == canonical }) else { return nil }
+ return Track(trackId: stored.trackId, url: stored.url)
 } }
 enum Logger { static func error(_ message: String) {}; static func warning(_ message: String) {}; static func info(_ message: String) {} }
 extension String { init(appLocalized: String) { self = appLocalized } }
@@ -74,6 +71,8 @@ enum FilesystemUtils { static func sanitizeFilename(_ value: String) -> String {
 enum TrackTrashFallback { static let appTrashFolderName = "audit"; static func fallbackURL(for url: URL, trashDirectory: URL, fileManager: FileManager) -> URL { trashDirectory.appendingPathComponent(url.lastPathComponent) } }
 
 SWIFT
+sed -n '/^struct PlaylistFileBacking:/,/^}/p' Models/Core/Playlist.swift >> "$test_dir/FileStubs.swift"
+
 cat > "$test_dir/FileMain.swift" <<'SWIFT'
 import Foundation
 @main struct Main {
@@ -83,7 +82,7 @@ import Foundation
  root = root.resolvingSymlinksInPath().standardizedFileURL
  let song = Track(trackId: 1, url: root.appendingPathComponent("known.mp3"))
  let other = Track(trackId: 2, url: root.appendingPathComponent("other.mp3"))
- let url = root.appendingPathComponent("playlists/Test.m3u")
+ let url = root.appendingPathComponent("playlists/A.m3u")
  try "#EXTM3U\n../known.mp3\n../unresolved.mp3\n".write(to: url, atomically: true, encoding: .utf8)
  let db = DatabaseManager(); db.byPath[song.url.path] = song; db.byPath[other.url.path] = other
  // A same-name song outside the root must never steal the relative M3U entry.
@@ -93,24 +92,45 @@ import Foundation
  let store = PlaylistFileStore()
  let loaded = await store.loadPlaylists(from: [Folder(url: root)], databaseManager: db)
  let playlist = loaded.playlists[0]
- precondition(playlist.tracks.count == 1 && playlist.fileBacking?.unresolvedEntries == ["../unresolved.mp3"])
+ precondition(playlist.tracks.count == 1 && loaded.missingEntries[playlist.fileBacking!.fileURL] == ["../unresolved.mp3"])
  precondition(playlist.tracks[0].trackId == song.trackId)
  let renamed = try store.rename(playlist, to: "Renamed")
  precondition(renamed.id == playlist.id)
- let edited = try store.write(tracks: [song, other], for: renamed)
+ let edited = try store.write(tracks: renamed.tracks + [other], for: renamed)
  let reloaded = await store.loadPlaylists(from: [Folder(url: root)], databaseManager: db)
  precondition(reloaded.playlists[0].id == playlist.id && reloaded.playlists[0].tracks.count == 2)
  precondition(reloaded.playlists[0].tracks.map(\.trackId) == [song.trackId, other.trackId])
  let target = edited.fileBacking!.fileURL
  let entries = M3UPlaylistCodec.parseTrackEntries(from: try String(contentsOf: target, encoding: .utf8))
- precondition(entries.count == 3 && entries.contains("../unresolved.mp3"))
+ precondition(entries == ["../known.mp3", "../unresolved.mp3", "../other.mp3"])
  let sameName = try store.rename(edited, to: "Renamed"); precondition(sameName.id == edited.id)
  let external = try String(contentsOf: target, encoding: .utf8) + "../externally-added.mp3\n"
  try external.write(to: target, atomically: true, encoding: .utf8)
  do { _ = try store.write(tracks: [], for: sameName); fatalError("Must reject stale writes") }
  catch PlaylistFileStoreError.fileChanged { }
  let unchanged = try String(contentsOf: target, encoding: .utf8); precondition(unchanged == external)
- print("M3U unresolved entries, stable rename, and stale-write regressions passed")
+ let replacement = try store.createPlaylist(named: "A", tracks: [song, song], in: Folder(url: root))
+ precondition(replacement.id != renamed.id && Set(replacement.tracks.map(\.id)).count == 2)
+ let secondLoad = await store.loadPlaylists(from: [Folder(url: root)], databaseManager: db)
+ precondition(secondLoad.playlists.map(\.id) == [replacement.id, renamed.id])
+ // An external (legacy, untagged) replacement also sorts before the renamed playlist.
+ let paths = ["../offline-intro", "../known.mp3", "../offline-middle", "../known.mp3", "../offline-end"]
+ try paths.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+ let legacyLoad = await store.loadPlaylists(from: [Folder(url: root)], databaseManager: db)
+ let legacy = legacyLoad.playlists[0]
+ precondition(legacy.id != renamed.id && legacyLoad.playlists[1].id == renamed.id)
+ precondition(legacy.tracks.map(\.trackId) == [1, 1] && legacy.tracks[0].id != legacy.tracks[1].id)
+ let appended = try store.write(tracks: legacy.tracks + [other], for: legacy)
+ func pathsOnDisk() throws -> [String] { M3UPlaylistCodec.parseTrackEntries(from: try String(contentsOf: url, encoding: .utf8)) }
+ let afterAppend = try pathsOnDisk()
+ precondition(afterAppend == paths + ["../other.mp3"])
+ let reordered = try store.write(tracks: [other, legacy.tracks[1], legacy.tracks[0]], for: appended)
+ let afterReorder = try pathsOnDisk()
+ precondition(afterReorder == ["../offline-intro", "../other.mp3", "../offline-middle", "../known.mp3", "../offline-end", "../known.mp3"])
+ _ = try store.write(tracks: [other, legacy.tracks[0]], for: reordered)
+ let afterRemoval = try pathsOnDisk()
+ precondition(afterRemoval == ["../offline-intro", "../other.mp3", "../offline-middle", "../offline-end", "../known.mp3"])
+ print("M3U identity, duplicate occurrences, offline order, and stale-write regressions passed")
  }
 }
 
@@ -150,7 +170,7 @@ precondition(complete.musicFiles.count == 2)
 print("Incomplete scan regression passed")
 ''')
 track = Path('Models/Core/Track.swift').read_text()
-fields = track[track.index('    let id = UUID()'):track.index('    // MARK: - Localized Display')]
+fields = track[track.index('    private(set) var id = UUID()'):track.index('    // MARK: - Localized Display')]
 equality = track[track.index('    static func =='):track.index('// MARK: - Audio Format')]
 (out / 'TrackEquality.swift').write_text('import Foundation\nstruct CueTrackSegment: Equatable { let libraryPath: String; var sheetURL: URL { URL(fileURLWithPath: libraryPath) }; var number: Int { 1 }; var albumSourceURL: URL { sheetURL } }\nstruct LyricsFileTarget { init(audioURL: URL, cueSheetURL: URL?, cueTrackNumber: Int?) {} }\nstruct Track: Equatable, Hashable {\n' + fields + equality + '''
 let old = Track(trackId: 1, url: URL(fileURLWithPath: "/music/a.mp3"), title: "Before", artist: "Artist", album: "Album", duration: 30, format: "mp3", composer: "", genre: "", year: "")

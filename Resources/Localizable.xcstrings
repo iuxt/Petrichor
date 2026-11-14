@@ -4407,13 +4407,13 @@
         }
       }
     },
-    "Library is up to date, no changes detected": {
+    "Music files are up to date": {
       "comment": "A message displayed in the notification tray when a library refresh finds no changes.",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料库已是最新，未检测到变化"
+            "value": "音乐文件已是最新"
           }
         }
       }
@@ -5649,6 +5649,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有正在播放的歌曲"
+          }
+        }
+      }
+    },
+    "No songs in this playlist": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此播放列表中没有歌曲"
           }
         }
       }
@@ -9228,6 +9238,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "歌词请求超时，请重试。"
+          }
+        }
+      }
+    },
+    "The playlist changed. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放列表已更改，请重试。"
           }
         }
       }

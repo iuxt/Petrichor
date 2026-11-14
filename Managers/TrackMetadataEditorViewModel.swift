@@ -64,7 +64,8 @@ final class TrackMetadataEditorViewModel: ObservableObject {
         tracks: [Track],
         fileService: any TrackMetadataFileServicing = SFBTrackMetadataFileService()
     ) {
-        self.tracks = tracks
+        var seenPaths = Set<String>()
+        self.tracks = tracks.filter { seenPaths.insert($0.libraryPath).inserted }
         self.fileService = fileService
     }
 

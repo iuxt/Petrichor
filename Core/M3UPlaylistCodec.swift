@@ -1,6 +1,41 @@
 import Foundation
 
 enum M3UPlaylistCodec {
+    struct Entry: Hashable {
+        let path: String
+        // A single occurrence of a resolved track in the displayed playlist.
+        let rowID: UUID?
+    }
+
+    /// Keep offline entries in their original slots relative to surviving rows.
+    /// Newly added trailing rows come after the original file, including offline entries.
+    static func editedEntries(original: [Entry], ordered: [Entry]) -> [Entry] {
+        let retained = Set(ordered.compactMap(\.rowID))
+        let originalPaths = Dictionary(uniqueKeysWithValues: original.compactMap { entry in
+            entry.rowID.map { ($0, entry.path) }
+        })
+        var remaining = ordered[...]
+        var result: [Entry] = []
+        for entry in original {
+            guard let id = entry.rowID else {
+                result.append(entry)
+                continue
+            }
+            guard retained.contains(id) else { continue }
+            // Fill the next surviving slot in the user's new order, including
+            // any new rows the user inserted immediately before it.
+            while let next = remaining.popFirst() {
+                if let id = next.rowID, let path = originalPaths[id] {
+                    result.append(Entry(path: path, rowID: id))
+                    break
+                }
+                result.append(next)
+            }
+        }
+        result.append(contentsOf: remaining)
+        return result
+    }
+
     static let supportedExtensions: Set<String> = ["m3u", "m3u8"]
     private static let header = "#EXTM3U"
     private static let commentPrefix = "#"

@@ -87,6 +87,7 @@ extension String {
 }
 
 struct Track: Equatable, Sendable {
+    var libraryPath: String { url.path }
     var cueSegment: Int?
 
     let trackId: Int64?
@@ -546,7 +547,7 @@ struct Harness {
         let service = ScriptedFileService(recorder: recorder, loads: [
             1: .loaded(originalOne), 2: .loaded(originalTwo), 3: .loaded(snapshot(three, title: "Untouched"))
         ], writes: [1: savedOne, 2: savedTwo], writeFailuresRemaining: [1: 1])
-        let model = TrackMetadataEditorViewModel(tracks: [one, two, three], fileService: service)
+        let model = TrackMetadataEditorViewModel(tracks: [one, two, one, three], fileService: service)
         model.load()
         await waitUntil("embedding load") { model.phase == .editing }
         model.stageLyrics("Replacement lyrics", for: originalOne.target)

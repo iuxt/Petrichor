@@ -32,7 +32,7 @@ private enum EditorTab: TabbedItem {
 /// The staged list is always the exact set that will be saved.
 struct RegularPlaylistEditorSheet: View {
     @Binding var isPresented: Bool
-    private let editingPlaylistID: UUID?
+    private let editingPlaylist: Playlist?
     private let originalName: String
 
     @EnvironmentObject var libraryManager: LibraryManager
@@ -46,10 +46,8 @@ struct RegularPlaylistEditorSheet: View {
     // user adds from the search tab and shrinks as they remove.
     @State private var playlistTracks: [Track] = []
 
-    // Snapshot of the playlist's original membership, used to diff into add/remove sets on
-    // save. Empty in create mode.
-    @State private var originalTrackIDs: Set<Int64> = []
-    @State private var didLoad = false
+    // Count staged changes by occurrence, including repeated entries in imported M3Us.
+    private let originalRowIDs: Set<UUID>
 
     // Set once the user drags to reorder, so save only rewrites positions when needed.
     @State private var didReorder = false
@@ -65,11 +63,15 @@ struct RegularPlaylistEditorSheet: View {
     // active; otherwise it holds the database IDs of the library tracks matching the query.
     @State private var playlistFilter = ""
     @State private var filterMatchIDs: Set<Int64>?
+    @State private var completedFilterQuery: String?
     @State private var filterTask: Task<Void, Never>?
 
     init(isPresented: Binding<Bool>, editingPlaylist: Playlist?) {
         self._isPresented = isPresented
-        self.editingPlaylistID = editingPlaylist?.id
+        self.editingPlaylist = editingPlaylist
+        let tracks = editingPlaylist?.tracks ?? []
+        _playlistTracks = State(initialValue: tracks)
+        originalRowIDs = Set(tracks.map(\.id))
         self.originalName = editingPlaylist?.name ?? ""
         _name = State(initialValue: editingPlaylist?.name ?? "")
         // Start on the relevant tab: an existing playlist opens to its contents, a new one
@@ -77,7 +79,7 @@ struct RegularPlaylistEditorSheet: View {
         _selectedTab = State(initialValue: editingPlaylist == nil ? .add : .playlist)
     }
 
-    private var isEditing: Bool { editingPlaylistID != nil }
+    private var isEditing: Bool { editingPlaylist != nil }
 
     // Shared height so the search box and the bulk-action buttons line up.
     private static let controlHeight: CGFloat = 28
@@ -127,9 +129,6 @@ struct RegularPlaylistEditorSheet: View {
             )
         }
         .frame(width: 640, height: 700)
-        .onAppear {
-            loadExistingTracks()
-        }
         .onDisappear {
             searchTask?.cancel()
             filterTask?.cancel()
@@ -185,6 +184,8 @@ struct RegularPlaylistEditorSheet: View {
 
             if playlistTracks.isEmpty {
                 emptyPlaylistHint
+            } else if LibrarySearch.isSearchableQuery(filterQuery), completedFilterQuery != filterQuery {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if displayedPlaylistTracks.isEmpty {
                 noFilterMatchesView
             } else {
@@ -388,11 +389,13 @@ extension RegularPlaylistEditorSheet {
         Set(playlistTracks.compactMap { $0.trackId })
     }
 
-    private var isFiltering: Bool { filterMatchIDs != nil }
+    private var filterQuery: String { playlistFilter.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isFiltering: Bool { !filterQuery.isEmpty }
 
     /// Staged tracks shown in the Playlist tab: all of them, or just the filter matches.
     private var displayedPlaylistTracks: [Track] {
-        guard let ids = filterMatchIDs else { return playlistTracks }
+        guard isFiltering else { return playlistTracks }
+        guard completedFilterQuery == filterQuery, let ids = filterMatchIDs else { return [] }
         return playlistTracks.filter { track in track.trackId.map { ids.contains($0) } ?? false }
     }
 
@@ -402,15 +405,12 @@ extension RegularPlaylistEditorSheet {
 
     /// Tracks staged that weren't in the original playlist.
     private var addedCount: Int {
-        playlistTracks.filter { track in
-            track.trackId.map { !originalTrackIDs.contains($0) } ?? true
-        }.count
+        playlistTracks.filter { !originalRowIDs.contains($0.id) }.count
     }
 
     /// Original tracks no longer staged.
     private var removedCount: Int {
-        let staged = stagedTrackIDs
-        return originalTrackIDs.filter { !staged.contains($0) }.count
+        originalRowIDs.subtracting(playlistTracks.map(\.id)).count
     }
 
     /// Search matches not already in the playlist (i.e. what "Add All" would add).
@@ -448,16 +448,6 @@ extension RegularPlaylistEditorSheet {
         return nil
     }
 
-    // MARK: - Loading
-
-    private func loadExistingTracks() {
-        guard let playlistID = editingPlaylistID, !didLoad else { return }
-        didLoad = true
-        let tracks = playlistManager.playlists.first { $0.id == playlistID }?.tracks ?? []
-        playlistTracks = tracks
-        originalTrackIDs = Set(tracks.compactMap { $0.trackId })
-    }
-
     // MARK: - Add / Remove
 
     private func addTrack(_ track: Track) {
@@ -481,8 +471,7 @@ extension RegularPlaylistEditorSheet {
     }
 
     private func removeTrack(_ track: Track) {
-        guard let trackId = track.trackId else { return }
-        playlistTracks.removeAll { $0.trackId == trackId }
+        playlistTracks.removeAll { $0.id == track.id }
     }
 
     /// Removes the currently-visible tracks: everything when unfiltered, or just the matches
@@ -505,22 +494,24 @@ extension RegularPlaylistEditorSheet {
 
     private func filterPlaylist() {
         filterTask?.cancel()
-        let query = playlistFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard LibrarySearch.isSearchableQuery(query) else {
-            filterMatchIDs = nil
-            return
-        }
+        let query = filterQuery
+        completedFilterQuery = nil
+        filterMatchIDs = nil
+        guard LibrarySearch.isSearchableQuery(query) else { return }
+        let database = libraryManager.databaseManager
         filterTask = Task {
             try? await Task.sleep(nanoseconds: TimeConstants.searchDebounceDuration)
             guard !Task.isCancelled else { return }
 
             // Same FTS5 path as the add search and library search; intersect with the staged
             // tracks at display time.
-            let results = LibrarySearch.searchTracks([], with: query)
-            let ids = Set(results.compactMap { $0.trackId })
+            let ids = await Task.detached(priority: .userInitiated) {
+                Set(database.searchTracksUsingFTS(query).compactMap(\.trackId))
+            }.value
 
             await MainActor.run {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, filterQuery == query else { return }
+                completedFilterQuery = query
                 filterMatchIDs = ids
             }
         }
@@ -532,86 +523,25 @@ extension RegularPlaylistEditorSheet {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
 
-        let stagedTracks = playlistTracks
-        let staged = stagedTrackIDs
-        let editingID = editingPlaylistID
-        let originalIDs = originalTrackIDs
-
-        isPresented = false
-
-        if let editingID {
-            // Edit: diff staged contents against the original membership.
-            let trackIdsToAdd = stagedTracks
-                .compactMap { $0.trackId }
-                .filter { !originalIDs.contains($0) }
-            let trackIdsToRemove = originalIDs.filter { !staged.contains($0) }
-            let nameChanged = trimmedName != originalName
-            // Only persist positions if the user actually dragged; add/remove alone keeps
-            // the existing order correct.
-            let orderedTrackIds = didReorder ? stagedTracks.compactMap { $0.trackId } : nil
-
-            Task<Void, Never> {
-                await applyEdits(
-                    playlistID: editingID,
-                    newName: nameChanged ? trimmedName : nil,
-                    trackIdsToAdd: trackIdsToAdd,
-                    trackIdsToRemove: Array(trackIdsToRemove),
-                    orderedTrackIds: orderedTrackIds
-                )
-            }
-        } else {
-            // Create: the staged list is the playlist's initial contents.
-            let trackIdsToAdd = stagedTracks.compactMap { $0.trackId }
-            Task<Void, Never> {
-                let tracks = libraryManager.databaseManager.getTracksWithArtwork(byIds: trackIdsToAdd)
-                await MainActor.run {
-                    _ = playlistManager.createRegularPlaylist(name: trimmedName, tracks: tracks)
+        if let editingPlaylist {
+            if hasChanges || didReorder {
+                guard playlistManager.saveEditedTracks(playlistTracks, original: editingPlaylist) else { return }
+                if didReorder {
+                    PlaylistSortManager.shared.setSortField(.custom, for: editingPlaylist.id)
+                    NotificationCenter.default.post(
+                        name: .trackTableSortChanged, object: nil,
+                        userInfo: ["isCustomSort": true, "sortPlaylistID": editingPlaylist.id.uuidString]
+                    )
                 }
             }
-        }
-    }
-
-    private func applyEdits(
-        playlistID: UUID,
-        newName: String?,
-        trackIdsToAdd: [Int64],
-        trackIdsToRemove: [Int64],
-        orderedTrackIds: [Int64]?
-    ) async {
-        if let newName,
-           let playlist = await MainActor.run(body: { playlistManager.playlists.first { $0.id == playlistID } }) {
-            await MainActor.run {
-                playlistManager.renamePlaylist(playlist, newName: newName)
+            if trimmedName != originalName,
+               let current = playlistManager.playlists.first(where: { $0.id == editingPlaylist.id }) {
+                playlistManager.renamePlaylist(current, newName: trimmedName)
             }
+        } else {
+            playlistManager.createRegularPlaylist(name: trimmedName, tracks: playlistTracks)
         }
-
-        if !trackIdsToAdd.isEmpty {
-            let tracksToAdd = libraryManager.databaseManager.getTracksWithArtwork(byIds: trackIdsToAdd)
-            await playlistManager.addTracksToPlaylist(tracks: tracksToAdd, playlistID: playlistID)
-        }
-
-        if !trackIdsToRemove.isEmpty {
-            let tracksToRemove = libraryManager.databaseManager.getTracksWithArtwork(byIds: trackIdsToRemove)
-            await playlistManager.removeTracksFromPlaylist(tracks: tracksToRemove, playlistID: playlistID)
-        }
-
-        if let orderedTrackIds {
-            // Persist the new positions, then mark this playlist as custom-sorted so the
-            // detail view reflects the manual order (matching the old reorder sheet).
-            await playlistManager.applyPlaylistTrackOrder(playlistID: playlistID, orderedTrackIds: orderedTrackIds)
-            await MainActor.run {
-                PlaylistSortManager.shared.setSortField(.custom, for: playlistID)
-                NotificationCenter.default.post(
-                    name: .trackTableSortChanged,
-                    object: nil,
-                    userInfo: ["isCustomSort": true]
-                )
-            }
-        }
-
-        if !trackIdsToAdd.isEmpty || !trackIdsToRemove.isEmpty {
-            Logger.info("Updated playlist: added \(trackIdsToAdd.count), removed \(trackIdsToRemove.count) tracks")
-        }
+        isPresented = false
     }
 
     // MARK: - Search
@@ -623,6 +553,7 @@ extension RegularPlaylistEditorSheet {
 
         guard !trimmedQuery.isEmpty else {
             searchResults = []
+            isSearching = false
             hasSearched = false
             return
         }
@@ -634,16 +565,20 @@ extension RegularPlaylistEditorSheet {
             return
         }
 
+        searchResults = []
         isSearching = true
         hasSearched = true
 
+        let database = libraryManager.databaseManager
         searchTask = Task {
             try? await Task.sleep(nanoseconds: TimeConstants.searchDebounceDuration)
             guard !Task.isCancelled else { return }
 
             // Keep every match; tracks already in the playlist are shown dimmed (not hidden)
             // so the results stay a full picture of the library.
-            let results = LibrarySearch.searchTracks([], with: trimmedQuery)
+            let results = await Task.detached(priority: .userInitiated) {
+                database.searchTracksUsingFTS(trimmedQuery)
+            }.value
 
             await MainActor.run {
                 guard !Task.isCancelled else { return }

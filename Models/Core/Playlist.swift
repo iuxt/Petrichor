@@ -78,7 +78,7 @@ struct SmartPlaylistCriteria: Codable, Equatable {
 struct PlaylistFileBacking: Hashable {
     let musicFolderURL: URL
     let fileURL: URL
-    var unresolvedEntries: [String] = []
+    var entries: [M3UPlaylistCodec.Entry] = []
     var sourceContent: String? = nil
 }
 

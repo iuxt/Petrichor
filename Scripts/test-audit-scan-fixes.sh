@@ -19,6 +19,61 @@ def block(path, marker):
         depth += (text[end] == '{') - (text[end] == '}')
         end += 1
     return text[start:end]
+home = 'Views/Home/HomeView.swift'
+library = 'Managers/Library/LMLibrary.swift'
+assert 'sortAlbumEntities(albums)' in block(home, '.onReceive(libraryManager.$cachedAlbumEntities)')
+refresh = block(library, 'if foldersToRefresh.isEmpty')
+assert 'reloadFileBackedPlaylists()' in refresh
+(out / 'Albums.swift').write_text('''import Foundation
+import Combine
+struct AlbumEntity {
+ let name: String
+ var artistName: String?, year: String?, dateAdded: Date?
+}
+enum Logger { static func info(_ message: String) {} }
+class Database {
+ var reads = 0
+ func getAlbumEntities() -> [AlbumEntity] {
+  reads += 1
+  return [AlbumEntity(name: reads == 1 ? "Before" : "After")]
+ }
+ func getArtistEntities() -> [String] { [] }
+}
+class Library: ObservableObject {
+ let databaseManager = Database()
+ var entitiesLoaded = false
+ @Published var cachedAlbumEntities: [AlbumEntity] = []
+ @Published var cachedArtistEntities: [String] = []
+ func updateTotalCounts(notify: Bool) {}
+''' + block('Managers/Library/LibraryManager.swift', '    var albumEntities:') + '\n'
++ block(library, '    internal func loadEntities()') + '\n'
++ block(library, '    func refreshEntities(') + '''
+}
+''' + block(home, 'enum AlbumSortOption:') + '''
+class Albums {
+ let libraryManager = Library()
+ var albumSortBy = AlbumSortOption.album
+ var entitySortAscending = true
+ var sortedAlbumEntities: [AlbumEntity] = []
+''' + block(home, '    private func sortAlbumEntities(').replace('private func', 'func') + '''
+}
+@main struct Main {
+ static func main() {
+  let view = Albums(), source = view.libraryManager
+  let observer = source.$cachedAlbumEntities.dropFirst().sink { albums in
+   _ = source.albumEntities
+   view.sortAlbumEntities(albums)
+  }
+  withExtendedLifetime(observer) {
+   _ = source.albumEntities
+   precondition(source.databaseManager.reads == 1 && view.sortedAlbumEntities.first?.name == "Before")
+   source.refreshEntities()
+   precondition(source.databaseManager.reads == 2 && view.sortedAlbumEntities.first?.name == "After")
+  }
+  print("Home albums load once and apply same-count updates from the synchronous publisher")
+ }
+}
+''')
 smart = 'Managers/Playlist/PMSmartPlaylists.swift'
 (out / 'Smart.swift').write_text('''import Foundation
 struct Track { let title: String }
@@ -28,6 +83,7 @@ struct Playlist {
  let id: UUID; var name: String; var type = Kind.smart
  var smartCriteria: SmartPlaylistCriteria?; var tracks: [Track] = []; var trackCount = 0
 }
+enum PlaylistPlaybackError: Error { case notFound, changed }
 enum Logger { static func info(_ s: String) {}; static func error(_ s: String) {} }
 @MainActor final class DatabaseManager {
  var pending: [Int: CheckedContinuation<[Track], Error>] = [:]
@@ -44,19 +100,23 @@ enum Logger { static func info(_ s: String) {}; static func error(_ s: String) {
   let id = reads
   return try await withCheckedThrowingContinuation { pending[id] = $0 }
  }
- func loadTracksForPlaylist(_ id: UUID) -> [Track] { frozen }
+ func playbackTracksForSmartPlaylist(_ playlist: Playlist) async throws -> [Track] {
+  if playlist.smartCriteria?.autoUpdate == false { return frozen }
+  return try await getTracksForSmartPlaylist(playlist)
+ }
  func finish(_ id: Int, _ title: String) { pending.removeValue(forKey: id)!.resume(returning: [Track(title: title)]) }
 }
 @MainActor final class LibraryManager { var databaseManager = DatabaseManager() }
 @MainActor final class PlaylistManager {
+ var filePlaylistLoadTask: Task<Void, Never>?
  var playlists: [Playlist] = []
  var smartPlaylistLoads: [UUID: (criteria: SmartPlaylistCriteria?, token: UUID)] = [:]
  var smartPlaylistPersistenceTasks: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
  var libraryManager: LibraryManager? = LibraryManager()
-''' + block(smart, '    func loadSmartPlaylistTracks(') + '\n' + block(smart, '    private func isCurrentSmartPlaylist(') + '\n' + block(smart, '    private func scheduleSmartPlaylistPersistence(').replace('private ', '') + '\n' + block(smart, '    private func persistSmartPlaylist(') + '''
+''' + block('Managers/Playlist/PlaylistManager.swift', '    func tracksForPlayback(') + '\n' + block(smart, '    func loadSmartPlaylistTracks(') + '\n' + block(smart, '    private func isCurrentSmartPlaylist(') + '\n' + block(smart, '    private func scheduleSmartPlaylistPersistence(').replace('private ', '') + '\n' + block(smart, '    private func persistSmartPlaylist(') + '''
 }
 @main struct Main {
- @MainActor static func main() async {
+ @MainActor static func main() async throws {
   let manager = PlaylistManager()
   let database = manager.libraryManager!.databaseManager
   let old = Playlist(id: UUID(), name: "Test", smartCriteria: SmartPlaylistCriteria(title: "Old"))
@@ -128,6 +188,18 @@ enum Logger { static func info(_ s: String) {}; static func error(_ s: String) {
   precondition(storage.snapshotWrites == [["New snapshot"]])
   precondition(writer.playlists[0].tracks.map(\\.title) == ["New snapshot"])
   precondition(writer.smartPlaylistPersistenceTasks.isEmpty)
+  let cold = PlaylistManager()
+  cold.playlists = [old]
+  let coldDB = cold.libraryManager!.databaseManager
+  let intent = Task { try await cold.tracksForPlayback(playlistID: old.id) }
+  while coldDB.reads < 1 { await Task.yield() }
+  coldDB.finish(1, "Cold result")
+  let fresh = try await intent.value
+  precondition(fresh.first?.title == "Cold result" && cold.playlists[0].tracks.isEmpty)
+  cold.playlists = [frozenNew]
+  coldDB.frozen = [Track(title: "First"), Track(title: "Second")]
+  let snapshot = try await cold.tracksForPlayback(playlistID: frozenNew.id)
+  precondition(snapshot.map(\\.title) == ["First", "Second"] && coldDB.reads == 1)
   print("Smart playlist stale results, duplicate loads, failure, deletion and frozen snapshots passed")
  }
 }
@@ -238,7 +310,7 @@ assert trash.index('prepareCurrentTrackForTrashMove') < trash.index('moveTrackFi
 restore = block('Managers/PlaybackManager.swift', '    func restoreCurrentTrackAfterFailedTrashMove(')
 assert restore.index('snapshot.suspensionGeneration == playbackRequestGeneration') < restore.index('currentTrack = snapshot.track')
 PY
-for name in Smart Artwork Offline Trash; do
+for name in Albums Smart Artwork Offline Trash; do
     swiftc -parse-as-library "$test_dir/$name.swift" -o "$test_dir/$name"
     "$test_dir/$name"
 done

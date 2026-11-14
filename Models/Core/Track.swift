@@ -4,7 +4,13 @@ import AppKit
 import SwiftUI
 
 struct Track: Identifiable, Equatable, Hashable, FetchableRecord, PersistableRecord {
-    let id = UUID()
+    private(set) var id = UUID()
+
+    func withRowID(_ rowID: UUID) -> Track {
+        var updated = self
+        updated.id = rowID
+        return updated
+    }
     var trackId: Int64?
     let url: URL
     var cueSegment: CueTrackSegment?

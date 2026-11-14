@@ -152,15 +152,11 @@ extension PlaylistManager {
         }
 
         let tracks: [Track]
-        if playlist.smartCriteria?.autoUpdate ?? true {
-            do {
-                tracks = try await libraryManager.databaseManager.getTracksForSmartPlaylist(playlist)
-            } catch {
-                Logger.error("Failed to load tracks for smart playlist '\(playlist.name)': \(error)")
-                return
-            }
-        } else {
-            tracks = libraryManager.databaseManager.loadTracksForPlaylist(playlist.id)
+        do {
+            tracks = try await libraryManager.databaseManager.playbackTracksForSmartPlaylist(playlist)
+        } catch {
+            Logger.error("Failed to load tracks for smart playlist '\(playlist.name)': \(error)")
+            return
         }
 
         guard smartPlaylistLoads[playlist.id]?.token == token,
