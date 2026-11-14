@@ -3497,6 +3497,16 @@
         }
       }
     },
+    "File information unavailable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取文件信息"
+          }
+        }
+      }
+    },
     "File Path": {
       "comment": "Metadata label in track file details.",
       "localizations": {
@@ -5490,6 +5500,26 @@
         }
       }
     },
+    "No embedded artwork": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这首歌没有内嵌封面"
+          }
+        }
+      }
+    },
+    "No embedded lyrics": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这首歌没有内嵌歌词"
+          }
+        }
+      }
+    },
     "No matching songs. Try changing the title, artist or source.": {
       "extractionState": "manual",
       "localizations": {
@@ -6943,6 +6973,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在刷新资料库..."
+          }
+        }
+      }
+    },
+    "Release Details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发行信息"
           }
         }
       }

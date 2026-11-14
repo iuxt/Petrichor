@@ -22,7 +22,7 @@ struct TrackMetadataEditorSheet: View {
     @State private var embeddedImportTarget: TrackMetadataEditTarget?
     @State private var importingArtwork = false
 
-    private enum EditorTab: CaseIterable, TabbedItem {
+    private enum EditorTab: CaseIterable, Hashable {
         case details
         case tags
         case artwork
@@ -30,14 +30,12 @@ struct TrackMetadataEditorSheet: View {
 
         var title: String {
             switch self {
-            case .details: String(appLocalized: "Track Information Details")
+            case .details: String(appLocalized: "Details")
             case .tags: String(appLocalized: "Tags")
             case .artwork: String(appLocalized: "Embedded Artwork")
             case .lyrics: String(appLocalized: "Embedded Lyrics")
             }
         }
-
-        var icon: String { "" }
     }
 
     private enum EmbeddedContent {
@@ -51,20 +49,6 @@ struct TrackMetadataEditorSheet: View {
             }
         }
     }
-
-    private static let tabStyle = TabbedButtonStyle(
-        showIcon: false,
-        showTitle: true,
-        iconSize: 12,
-        textSize: 12,
-        iconTextSpacing: 0,
-        buttonWidth: nil,
-        verticalPadding: 5,
-        contentShapeRadius: 6,
-        backgroundViewRadius: 6,
-        expandButtons: true,
-        horizontalContentPadding: 8
-    )
 
     init(request: TrackMetadataEditorRequest) {
         _model = StateObject(
@@ -141,7 +125,34 @@ struct TrackMetadataEditorSheet: View {
     // MARK: - Chrome
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
+            if model.tracks.count == 1, let track = model.tracks.first {
+                AsyncArtworkImage(request: .thumbnail(track.artworkSourceURL, albumTitle: track.album, cueSheetURL: track.cueSegment?.sheetURL)) {
+                    headerSymbol("music.note")
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: track.title.isEmpty ? track.filename : track.title)
+                        .font(.title3.weight(.semibold))
+                    Text(verbatim: [track.displayArtist, track.displayAlbum].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                .accessibilityElement(children: .combine)
+            } else {
+                headerSymbol("music.note.list")
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .accessibilityHidden(true)
+                Text(verbatim: headerTitle)
+                    .font(.title3.weight(.semibold))
+            }
+
+            Spacer(minLength: 12)
             Button {
                 dismiss()
             } label: {
@@ -155,14 +166,18 @@ struct TrackMetadataEditorSheet: View {
             .disabled(model.phase == .saving)
             .help(String(appLocalized: "Close"))
             .accessibilityLabel(String(appLocalized: "Close"))
-
-            Text(verbatim: headerTitle)
-                .font(.headline)
-
-            Spacer()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 22)
         .padding(.vertical, 12)
+    }
+
+    private func headerSymbol(_ symbol: String) -> some View {
+        ZStack {
+            Color.accentColor.opacity(0.10)
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(Color.accentColor)
+        }
     }
 
     @ViewBuilder
@@ -190,7 +205,8 @@ struct TrackMetadataEditorSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
             }
-            .padding(12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
 
         case .editing:
             HStack {
@@ -212,7 +228,8 @@ struct TrackMetadataEditorSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canSave)
             }
-            .padding(12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
 
         case .saving:
             HStack {
@@ -231,7 +248,8 @@ struct TrackMetadataEditorSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(true)
             }
-            .padding(12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
 
         case .results:
             HStack {
@@ -248,7 +266,8 @@ struct TrackMetadataEditorSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
             }
-            .padding(12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
     }
 
@@ -300,35 +319,38 @@ struct TrackMetadataEditorSheet: View {
 
     private func editorContent(isDisabled: Bool) -> some View {
         VStack(spacing: 0) {
-            TabbedButtons(
-                items: EditorTab.allCases,
-                selection: $selectedTab,
-                style: Self.tabStyle,
-                animation: .transform,
-                isDisabled: isDisabled
-            )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-
-            ScrollView {
-                Group {
-                    switch selectedTab {
-                    case .details:
-                        fileInformationGroup
-                    case .tags:
-                        tagInformationGroup
-                    case .artwork:
-                        embeddedInformationGroup(for: .artwork)
-                    case .lyrics:
-                        embeddedInformationGroup(for: .lyrics)
-                    }
+            Picker(headerTitle, selection: $selectedTab) {
+                ForEach(EditorTab.allCases, id: \.self) { tab in
+                    Text(verbatim: tab.title).tag(tab)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 480)
+            .padding(.vertical, 12)
+
+            Group {
+                switch selectedTab {
+                case .details, .tags:
+                    ScrollView {
+                        if selectedTab == .details {
+                            fileInformationGroup
+                        } else {
+                            tagInformationGroup
+                        }
+                    }
+                case .artwork:
+                    embeddedInformationGroup(for: .artwork)
+                case .lyrics:
+                    embeddedInformationGroup(for: .lyrics)
+                }
             }
             .id(selectedTab)
+            .frame(maxWidth: 720, maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 12)
         }
+        .frame(maxWidth: .infinity)
         .disabled(isDisabled)
     }
 
@@ -383,83 +405,94 @@ struct TrackMetadataEditorSheet: View {
     }
 
     private func embeddedInformationGroup(for content: EmbeddedContent) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                if model.snapshots.count > 1 {
-                    Picker(String(appLocalized: "Selected Tracks"), selection: Binding(
-                        get: { embeddedSnapshot?.target },
-                        set: { embeddedTarget = $0 }
-                    )) {
-                        ForEach(model.snapshots, id: \.target) { snapshot in
-                            Text(verbatim: snapshot.file.filename)
-                                .tag(Optional(snapshot.target))
-                        }
+        VStack(alignment: .leading, spacing: 10) {
+            if model.tracks.count > 1, !model.snapshots.isEmpty {
+                Picker(String(appLocalized: "Selected Tracks"), selection: Binding(
+                    get: { embeddedSnapshot?.target },
+                    set: { embeddedTarget = $0 }
+                )) {
+                    ForEach(model.snapshots, id: \.target) { snapshot in
+                        Text(verbatim: snapshot.file.filename).tag(Optional(snapshot.target))
                     }
                 }
+                .frame(maxWidth: 400, alignment: .leading)
+            }
 
-                if let snapshot = embeddedSnapshot {
-                    Text(verbatim: snapshot.file.filename)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+            if let snapshot = embeddedSnapshot {
+                let isArtwork = content == .artwork
+                let artwork = model.pendingArtwork[snapshot.target].map { [$0] } ?? snapshot.embeddedArtwork
+                let lyrics = model.pendingLyrics[snapshot.target] ?? snapshot.embeddedLyrics
+                let isPresent = isArtwork ? !artwork.isEmpty : lyrics != nil
+                let isRemoving = isArtwork ? model.artworkRemovalTargets.contains(snapshot.target)
+                    : model.lyricsRemovalTargets.contains(snapshot.target)
+                let isEmbedding = isArtwork ? model.pendingArtwork[snapshot.target] != nil
+                    : model.pendingLyrics[snapshot.target] != nil
 
-                    switch content {
-                    case .artwork:
-                        let artwork = model.pendingArtwork[snapshot.target].map { [$0] } ?? snapshot.embeddedArtwork
-                        embeddedContentControls(
-                            isPresent: !artwork.isEmpty,
-                            isRemoving: model.artworkRemovalTargets.contains(snapshot.target),
-                            isEmbedding: model.pendingArtwork[snapshot.target] != nil,
-                            isWritable: snapshot.isWritable,
-                            embed: { beginEmbeddedImport(for: snapshot.target, artwork: true) },
-                            undoEmbedding: { model.undoEmbedding(for: snapshot.target, artwork: true) },
-                            toggleRemoval: { model.toggleArtworkRemoval(for: snapshot.target) }
+                VStack(spacing: 0) {
+                    embeddedContentControls(
+                        title: content.title, isPresent: isPresent, isRemoving: isRemoving,
+                        isEmbedding: isEmbedding, isWritable: snapshot.isWritable,
+                        embed: { beginEmbeddedImport(for: snapshot.target, artwork: isArtwork) },
+                        undoEmbedding: { model.undoEmbedding(for: snapshot.target, artwork: isArtwork) },
+                        toggleRemoval: {
+                            if isArtwork { model.toggleArtworkRemoval(for: snapshot.target) }
+                            else { model.toggleLyricsRemoval(for: snapshot.target) }
+                        }
+                    )
+                    .padding(12)
+                    Divider()
+
+                    if !isPresent {
+                        embeddedPlaceholder(
+                            symbol: isArtwork ? "photo" : "text.quote",
+                            title: isArtwork ? String(appLocalized: "No embedded artwork") : String(appLocalized: "No embedded lyrics")
                         )
-                        LazyVStack(spacing: 12) {
-                            ForEach(artwork.indices, id: \.self) { index in
-                                EmbeddedArtworkPreview(data: artwork[index])
+                    } else if isArtwork {
+                        ScrollView {
+                            LazyVStack(spacing: 18) {
+                                ForEach(artwork.indices, id: \.self) { index in
+                                    EmbeddedArtworkPreview(data: artwork[index])
+                                }
                             }
+                            .padding(18)
                         }
-                        .id(snapshot.target)
-                    case .lyrics:
-                        let lyrics = model.pendingLyrics[snapshot.target] ?? snapshot.embeddedLyrics
-                        embeddedContentControls(
-                            isPresent: lyrics != nil,
-                            isRemoving: model.lyricsRemovalTargets.contains(snapshot.target),
-                            isEmbedding: model.pendingLyrics[snapshot.target] != nil,
-                            isWritable: snapshot.isWritable,
-                            embed: { beginEmbeddedImport(for: snapshot.target, artwork: false) },
-                            undoEmbedding: { model.undoEmbedding(for: snapshot.target, artwork: false) },
-                            toggleRemoval: { model.toggleLyricsRemoval(for: snapshot.target) }
-                        )
-                        if let lyrics {
+                        .background(.quaternary.opacity(0.3))
+                    } else if let lyrics {
+                        ScrollView {
                             Text(verbatim: lyrics)
+                                .font(.body)
+                                .lineSpacing(5)
                                 .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(
-                                    Color(nsColor: .textBackgroundColor),
-                                    in: RoundedRectangle(cornerRadius: 5)
-                                )
+                                .frame(maxWidth: 540, alignment: .leading)
+                                .padding(20)
+                                .frame(maxWidth: .infinity)
                         }
                     }
-                } else {
-                    Text(verbatim: String(appLocalized: "Not Present"))
-                        .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .editorPanel()
 
-                Divider()
                 Text(verbatim: String(appLocalized: "Embedding replaces the existing embedded content. Changes are written only when you save. External lyrics and artwork files are kept."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            } else {
+                embeddedPlaceholder(symbol: "doc.questionmark", title: String(appLocalized: "File information unavailable"))
+                    .editorPanel()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Text(verbatim: content.title)
-                .font(.subheadline)
-                .fontWeight(.semibold)
         }
+    }
+
+    private func embeddedPlaceholder(symbol: String, title: String) -> some View {
+        VStack(spacing: 9) {
+            Image(systemName: symbol)
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            Text(verbatim: title)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func beginEmbeddedImport(for target: TrackMetadataEditTarget, artwork: Bool) {
@@ -469,6 +502,7 @@ struct TrackMetadataEditorSheet: View {
     }
 
     private func embeddedContentControls(
+        title: String,
         isPresent: Bool,
         isRemoving: Bool,
         isEmbedding: Bool,
@@ -478,9 +512,13 @@ struct TrackMetadataEditorSheet: View {
         toggleRemoval: @escaping () -> Void
     ) -> some View {
         HStack {
-            Text(verbatim: String(appLocalized: isRemoving ? "Pending Deletion" : (isEmbedding ? "Pending Embedding" : (isPresent ? "Present" : "Not Present"))))
-                .font(.caption)
-                .foregroundStyle(isRemoving ? .orange : .secondary)
+            Text(verbatim: title)
+                .font(.headline)
+            if isRemoving || isEmbedding {
+                Text(verbatim: String(appLocalized: isRemoving ? "Pending Deletion" : "Pending Embedding"))
+                    .font(.caption)
+                    .foregroundStyle(isRemoving ? Color.orange : Color.accentColor)
+            }
             Spacer()
             if model.isImportingEmbeddedContent {
                 ProgressView().controlSize(.small)
@@ -504,30 +542,10 @@ struct TrackMetadataEditorSheet: View {
     // MARK: - File Information
 
     private var fileInformationGroup: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 7) {
-                if model.tracks.count > 1 {
-                    informationRow(
-                        String(appLocalized: "Selected Tracks"),
-                        value: String(model.tracks.count)
-                    )
-                    Divider()
-                }
-
-                informationRow(
-                    String(appLocalized: "Filename"),
-                    value: aggregate(
-                        model.tracks.map { Optional($0.url.lastPathComponent) },
-                        expectedCount: model.tracks.count
-                    )
-                )
-                informationRow(
-                    String(appLocalized: "File Path"),
-                    value: aggregate(
-                        model.tracks.map { Optional($0.url.path) },
-                        expectedCount: model.tracks.count
-                    )
-                )
+        VStack(alignment: .leading, spacing: 14) {
+            Text(verbatim: String(appLocalized: "File Information"))
+                .font(.headline)
+            HStack(alignment: .top, spacing: 16) {
                 informationRow(
                     String(appLocalized: "Format"),
                     value: aggregate(
@@ -551,43 +569,60 @@ struct TrackMetadataEditorSheet: View {
                         format: Self.formattedFileSize
                     )
                 )
+            }
+            .padding(16)
+            .editorPanel()
 
-                if !model.unavailableResults.isEmpty {
-                    Divider()
-                    HStack {
-                        Text(verbatim: String(appLocalized: "Skipped"))
-                        Spacer()
-                        Text(verbatim: String(model.unavailableResults.count))
-                            .monospacedDigit()
-                    }
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
+            VStack(alignment: .leading, spacing: 12) {
+                informationRow(
+                    String(appLocalized: "Filename"),
+                    value: aggregate(
+                        model.tracks.map { Optional($0.url.lastPathComponent) },
+                        expectedCount: model.tracks.count
+                    )
+                )
+                Divider()
+                informationRow(
+                    String(appLocalized: "File Path"),
+                    value: aggregate(
+                        model.tracks.map { Optional($0.url.path) },
+                        expectedCount: model.tracks.count
+                    )
+                )
+            }
+            .padding(16)
+            .editorPanel()
 
-                    ForEach(model.unavailableResults) { result in
-                        if case .skipped(let reason) = result.outcome {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: result.target.displayName)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .lineLimit(1)
-                                Text(verbatim: reason)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .accessibilityElement(children: .combine)
+            if !model.unavailableResults.isEmpty {
+                HStack {
+                    Text(verbatim: String(appLocalized: "Skipped"))
+                    Spacer()
+                    Text(verbatim: String(model.unavailableResults.count))
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+
+                ForEach(model.unavailableResults) { result in
+                    if case .skipped(let reason) = result.outcome {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: result.target.displayName)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Text(verbatim: reason)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Text(verbatim: String(appLocalized: "File Information"))
-                .font(.subheadline)
-                .fontWeight(.semibold)
         }
+        .padding(1)
     }
 
     private func informationRow(_ label: String, value: String) -> some View {
@@ -597,8 +632,7 @@ struct TrackMetadataEditorSheet: View {
                 .foregroundStyle(.secondary)
             Text(verbatim: value)
                 .font(.subheadline)
-                .lineLimit(label == String(appLocalized: "File Path") ? 2 : 1)
-                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -610,83 +644,83 @@ struct TrackMetadataEditorSheet: View {
     // MARK: - Tag Information
 
     private var tagInformationGroup: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 7) {
-                    textRow(String(appLocalized: "Title"), field: .title)
-                    textRow(String(appLocalized: "Artist"), field: .artist)
-                    textRow(String(appLocalized: "Album"), field: .album)
-                    textRow(String(appLocalized: "Album Artist"), field: .albumArtist)
-                    textRow(String(appLocalized: "Composer"), field: .composer)
-                    textRow(String(appLocalized: "Genre"), field: .genre)
-                    textRow(
-                        String(appLocalized: "Release Date"),
-                        field: .releaseDate,
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(verbatim: String(appLocalized: "Tag Information"))
+                    .font(.headline)
+                Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 8) {
+                    GridRow {
+                        tagField(String(appLocalized: "Title"), field: .title)
+                        tagField(String(appLocalized: "Artist"), field: .artist)
+                    }
+                    GridRow {
+                        tagField(String(appLocalized: "Album"), field: .album)
+                        tagField(String(appLocalized: "Album Artist"), field: .albumArtist)
+                    }
+                    GridRow {
+                        tagField(String(appLocalized: "Composer"), field: .composer)
+                        tagField(String(appLocalized: "Genre"), field: .genre)
+                    }
+                }
+            }
+            .padding(14)
+            .editorPanel()
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(verbatim: String(appLocalized: "Release Details"))
+                        .font(.headline)
+                    Spacer()
+                    MixedStateCheckbox(
+                        title: String(appLocalized: "Compilation"),
+                        value: model.compilationValue,
+                        isEnabled: model.phase != .saving,
+                        accessibilityLabel: String(appLocalized: "Compilation"),
+                        onChange: model.setCompilation
+                    )
+                    .fixedSize()
+                }
+                HStack(alignment: .top, spacing: 20) {
+                    tagField(
+                        String(appLocalized: "Release Date"), field: .releaseDate,
                         prompt: String(appLocalized: "YYYY or YYYY-MM-DD")
                     )
+                    .frame(maxWidth: 178)
                     pairedNumberRow(
-                        String(appLocalized: "Track Number"),
-                        field: .trackNumber,
-                        totalField: .trackTotal,
+                        String(appLocalized: "Track Number"), field: .trackNumber, totalField: .trackTotal,
                         totalAccessibilityLabel: String(appLocalized: "Total Tracks")
                     )
                     pairedNumberRow(
-                        String(appLocalized: "Disc Number"),
-                        field: .discNumber,
-                        totalField: .discTotal,
+                        String(appLocalized: "Disc Number"), field: .discNumber, totalField: .discTotal,
                         totalAccessibilityLabel: String(appLocalized: "Total Discs")
                     )
-                    narrowTextRow(String(appLocalized: "BPM"), field: .bpm)
-                    compilationRow
-                    commentRow
-                }
-
-                if let validationMessage = model.validationMessage {
-                    Text(verbatim: validationMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel(String(appLocalized: "Failed"))
-                        .accessibilityValue(validationMessage)
+                    tagField(String(appLocalized: "BPM"), field: .bpm)
+                        .frame(width: 58)
                 }
             }
-        } label: {
-            Text(verbatim: String(appLocalized: "Tag Information"))
-                .font(.subheadline)
-                .fontWeight(.semibold)
-        }
-    }
+            .padding(14)
+            .editorPanel()
 
-    private func textRow(
-        _ label: String,
-        field: TrackMetadataEditableField,
-        prompt: String? = nil
-    ) -> some View {
-        GridRow(alignment: .firstTextBaseline) {
-            fieldLabel(label)
-            metadataTextField(
-                field: field,
-                accessibilityLabel: label,
-                prompt: prompt
-            )
-        }
-    }
+            commentRow
 
-    private func narrowTextRow(
-        _ label: String,
-        field: TrackMetadataEditableField
-    ) -> some View {
-        GridRow(alignment: .firstTextBaseline) {
-            fieldLabel(label)
-            HStack {
-                metadataTextField(
-                    field: field,
-                    accessibilityLabel: label,
-                    prompt: nil
-                )
-                .frame(width: 90)
-                Spacer(minLength: 0)
+            if let validationMessage = model.validationMessage {
+                Text(verbatim: validationMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(String(appLocalized: "Failed"))
+                    .accessibilityValue(validationMessage)
             }
+        }
+        .padding(1)
+    }
+
+    private func tagField(
+        _ label: String, field: TrackMetadataEditableField, prompt: String? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            fieldLabel(label)
+            metadataTextField(field: field, accessibilityLabel: label, prompt: prompt)
         }
     }
 
@@ -696,55 +730,28 @@ struct TrackMetadataEditorSheet: View {
         totalField: TrackMetadataEditableField,
         totalAccessibilityLabel: String
     ) -> some View {
-        GridRow(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 3) {
             fieldLabel(label)
-            HStack(spacing: 7) {
-                metadataTextField(
-                    field: field,
-                    accessibilityLabel: label,
-                    prompt: nil
-                )
-                .frame(width: 72)
-
+            HStack(spacing: 4) {
+                metadataTextField(field: field, accessibilityLabel: label, prompt: nil)
                 Text(verbatim: "/")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
-
-                metadataTextField(
-                    field: totalField,
-                    accessibilityLabel: totalAccessibilityLabel,
-                    prompt: nil
-                )
-                .frame(width: 72)
-
-                Spacer(minLength: 0)
+                metadataTextField(field: totalField, accessibilityLabel: totalAccessibilityLabel, prompt: nil)
             }
-        }
-    }
-
-    private var compilationRow: some View {
-        GridRow(alignment: .center) {
-            fieldLabel(String(appLocalized: "Compilation"))
-            MixedStateCheckbox(
-                title: "",
-                value: model.compilationValue,
-                isEnabled: model.phase != .saving,
-                accessibilityLabel: String(appLocalized: "Compilation"),
-                onChange: model.setCompilation
-            )
-            .fixedSize()
+            .frame(width: 114)
         }
     }
 
     private var commentRow: some View {
-        GridRow(alignment: .top) {
+        VStack(alignment: .leading, spacing: 5) {
             fieldLabel(String(appLocalized: "Comment"))
-                .padding(.top, 5)
 
             ZStack(alignment: .topLeading) {
                 TextEditor(text: fieldBinding(.comment))
                     .font(.body)
-                    .frame(minHeight: 64, idealHeight: 76)
+                    .scrollContentBackground(.hidden)
+                    .frame(height: 54)
                     .padding(2)
                     .accessibilityLabel(String(appLocalized: "Comment"))
                     .accessibilityValue(commentAccessibilityValue)
@@ -784,10 +791,8 @@ struct TrackMetadataEditorSheet: View {
 
     private func fieldLabel(_ label: String) -> some View {
         Text(verbatim: label)
-            .font(.subheadline)
+            .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
-            .frame(width: 96, alignment: .trailing)
-            .gridColumnAlignment(.trailing)
     }
 
     private func metadataTextField(
@@ -1043,6 +1048,18 @@ struct TrackMetadataEditorSheet: View {
     }
 }
 
+private extension View {
+    func editorPanel() -> some View {
+        self
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(.separator.opacity(0.55))
+                    .allowsHitTesting(false)
+            }
+    }
+}
+
 private struct EmbeddedArtworkPreview: View {
     let data: Data
     @State private var image: NSImage?
@@ -1054,7 +1071,8 @@ private struct EmbeddedArtworkPreview: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: 440)
+                    .frame(maxWidth: 420, maxHeight: 300)
+                    .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
                     .accessibilityLabel(String(appLocalized: "Embedded Artwork"))
             } else if didLoad {
                 Text(verbatim: String(appLocalized: "This embedded artwork cannot be displayed."))
@@ -1063,8 +1081,12 @@ private struct EmbeddedArtworkPreview: View {
                 ProgressView().controlSize(.small)
             }
         }
-        .task {
-            image = await Task.detached(priority: .userInitiated) { NSImage(data: data) }.value
+        .task(id: data) {
+            image = nil
+            didLoad = false
+            let preview = await Task.detached(priority: .userInitiated) { NSImage(data: data) }.value
+            guard !Task.isCancelled else { return }
+            image = preview
             didLoad = true
         }
     }
